@@ -15,25 +15,68 @@ namespace BDNukes
         public static AudioClip Crack;    // shock arrival: crack + thump
         public static AudioClip Rumble;   // long rolling rumble
         public static AudioClip StockBoom;
+        public static Material Bolt;      // additive soft line for lightning (LineRenderer)
+        public static AudioClip Geiger;   // one Geiger-counter click
 
         static bool ready;
+        static float builtTextureScale;
+        static Shader alpha, additive;
+        static Texture2D groundNoise;
 
         public static void Init()
         {
             if (ready) return;
             ready = true;
 
-            Shader alpha = FindShader("KSP/Particles/Alpha Blended", "Legacy Shaders/Particles/Alpha Blended", "Particles/Alpha Blended");
-            Shader additive = FindShader("KSP/Particles/Additive", "Legacy Shaders/Particles/Additive", "Particles/Additive");
+            alpha = FindShader("KSP/Particles/Alpha Blended", "Legacy Shaders/Particles/Alpha Blended", "Particles/Alpha Blended");
+            additive = FindShader("KSP/Particles/Additive", "Legacy Shaders/Particles/Additive", "Particles/Additive");
 
-            Smoke = MakeMaterial(alpha, MakeCauliflowerAtlas(256, 7), 3000);
-            Mist = MakeMaterial(alpha, MakeGlowTexture(128, 2.2f), 3001);
-            Glow = MakeMaterial(additive, MakeGlowTexture(128, 3.5f), 3100);
-            Ring = MakeMaterial(additive, MakeRingTexture(256), 3101);
+            Smoke = MakeMaterial(alpha, null, 3000);
+            Mist = MakeMaterial(alpha, null, 3001);
+            Glow = MakeMaterial(additive, null, 3100);
+            Ring = MakeMaterial(additive, null, 3101);
+            // drawn after the cloud, so bolts at the cap's underside and around the stem stay visible
+            Bolt = MakeMaterial(additive, MakeBoltTexture(), 3050);
+            RebuildTextures();
 
             Crack = MakeCrack();
             Rumble = MakeRumble();
+            Geiger = MakeGeigerClick();
             StockBoom = GameDatabase.Instance != null ? GameDatabase.Instance.GetAudioClip("BDArmory/Models/explosion/nuke/nukeBoom") : null;
+        }
+
+        /// <summary>
+        /// (Re)builds the particle textures at the resolution the quality setting asks for. The materials stay the
+        /// same objects, so anything holding NukeAssets.Glow etc. keeps working; only their textures are swapped.
+        /// </summary>
+        public static void RebuildTextures()
+        {
+            if (!ready) { Init(); return; }
+            float ts = NukeSettings.Current.textureScale;
+            if (ts == builtTextureScale && Smoke.mainTexture != null) return;
+            builtTextureScale = ts;
+            Swap(Smoke, MakeCauliflowerAtlas(Pow2(256 * ts), 7));
+            Swap(Mist, MakeGlowTexture(Pow2(128 * ts), 2.2f));
+            Swap(Glow, MakeGlowTexture(Pow2(128 * ts), 3.5f));
+            Swap(Ring, MakeRingTexture(Pow2(256 * ts)));
+            // decals made earlier keep the old noise texture, so it isn't destroyed
+            groundNoise = MakeGroundNoise(Pow2(256 * ts));
+        }
+
+        static int Pow2(float size) => Mathf.Clamp(Mathf.ClosestPowerOfTwo(Mathf.RoundToInt(size)), 32, 2048);
+
+        static void Swap(Material m, Texture2D tex)
+        {
+            var old = m.mainTexture;
+            m.mainTexture = tex;
+            if (old != null && old != tex) Object.Destroy(old);
+        }
+
+        /// <summary>A new alpha-blended (or additive) ground decal material, tiled with burn-scar noise. The caller owns it.</summary>
+        public static Material MakeDecalMaterial(bool add)
+        {
+            Init();
+            return MakeMaterial(add ? additive : alpha, groundNoise, add ? 2902 : 2900);
         }
 
         static Shader FindShader(params string[] names)
@@ -113,23 +156,31 @@ namespace BDNukes
             {
                 for (int i = 0; i < col.Length; i++) col[i] = new Color(0f, 0f, 0f, 0f);
 
-                // lumps sorted back-to-front; bigger ones towards the middle
-                int lumps = 34 + rng.Next(14);
-                var lx = new float[lumps]; var ly = new float[lumps]; var lr = new float[lumps];
+                // lumps sorted back-to-front; bigger ones towards the middle, with a wide spread of sizes
+                // (a few big masses, many small knobbles) so the puff doesn't read as a cluster of equal balls
+                int lumps = 48 + rng.Next(20);
+                var lx = new float[lumps]; var ly = new float[lumps]; var lr = new float[lumps]; var lb = new float[lumps];
                 for (int k = 0; k < lumps; k++)
                 {
                     float ang = (float)rng.NextDouble() * 2f * Mathf.PI;
                     float dist = Mathf.Pow((float)rng.NextDouble(), 0.7f) * 0.62f;
                     lx[k] = Mathf.Cos(ang) * dist;
                     ly[k] = Mathf.Sin(ang) * dist * 0.85f;
-                    lr[k] = Mathf.Lerp(0.34f, 0.12f, dist / 0.62f) * (0.75f + 0.5f * (float)rng.NextDouble());
+                    float sizeRand = (float)rng.NextDouble();
+                    lr[k] = Mathf.Lerp(0.32f, 0.09f, dist / 0.62f) * (0.45f + 1.1f * sizeRand * sizeRand);
+                    lb[k] = 0.86f + 0.24f * (float)rng.NextDouble();
                 }
 
                 for (int k = 0; k < lumps; k++)
                 {
-                    for (int y = 0; y < tile; y++)
+                    // only the pixels inside this lump's bounding box can be touched
+                    int x0 = Mathf.Max(0, Mathf.FloorToInt((lx[k] - lr[k] + 1f) * 0.5f * tile) - 1);
+                    int x1 = Mathf.Min(tile - 1, Mathf.CeilToInt((lx[k] + lr[k] + 1f) * 0.5f * tile) + 1);
+                    int y0 = Mathf.Max(0, Mathf.FloorToInt((ly[k] - lr[k] + 1f) * 0.5f * tile) - 1);
+                    int y1 = Mathf.Min(tile - 1, Mathf.CeilToInt((ly[k] + lr[k] + 1f) * 0.5f * tile) + 1);
+                    for (int y = y0; y <= y1; y++)
                     {
-                        for (int x = 0; x < tile; x++)
+                        for (int x = x0; x <= x1; x++)
                         {
                             float u = (x + 0.5f) / tile * 2f - 1f, v = (y + 0.5f) / tile * 2f - 1f;
                             float dx = (u - lx[k]) / lr[k], dy = (v - ly[k]) / lr[k];
@@ -138,9 +189,11 @@ namespace BDNukes
                             float nz = Mathf.Sqrt(1f - d2);
                             float lambert = Mathf.Max(0f, dx * light.x + dy * light.y + nz * light.z);
                             float detail = Fbm(u * 7f + k * 1.7f, v * 7f + t * 3.1f, seed + k, 3);
-                            float shade = 0.42f + 0.58f * lambert;
-                            shade *= 0.82f + 0.36f * detail;
-                            float a = Mathf.Clamp01((1f - d2) * 3.2f) * (0.8f + 0.2f * detail);
+                            // gentler per-lump sphere shading, plus a broad top-lit gradient over the whole puff
+                            float shade = (0.56f + 0.44f * lambert) * (0.86f + 0.18f * (v * 0.5f + 0.5f)) * lb[k];
+                            shade *= 0.8f + 0.4f * detail;
+                            // soft, noise-eroded lump edges instead of crisp discs
+                            float a = Mathf.Clamp01((1f - d2) * 1.7f) * Mathf.Clamp01(1.5f - d2 * (0.4f + 1.1f * detail)) * (0.75f + 0.25f * detail);
                             int idx = y * tile + x;
                             Color dst = col[idx];
                             // "over" compositing
@@ -199,15 +252,109 @@ namespace BDNukes
                 {
                     float u = (x + 0.5f) / size * 2f - 1f, v = (y + 0.5f) / size * 2f - 1f;
                     float r = Mathf.Sqrt(u * u + v * v);
-                    float ring = Mathf.Exp(-Mathf.Pow((r - 0.9f) / 0.035f, 2f));
+                    float ring = Mathf.Exp(-Mathf.Pow((r - 0.9f) / 0.05f, 2f)); // soft enough not to read as a hard outline
                     float inner = r < 0.9f ? 0.12f * Mathf.Pow(r / 0.9f, 4f) : 0f; // faint limb-brightened shell
-                    float a = Mathf.Clamp01(ring + inner);
-                    if (r > 0.99f) a = 0f;
+                    float a = Mathf.Clamp01(ring + inner) * Mathf.Clamp01((0.995f - r) / 0.06f);
                     px[y * size + x] = new Color(1f, 1f, 1f, a);
                 }
             }
             tex.SetPixels(px);
             tex.Apply(true, true);
+            return tex;
+        }
+
+        /// <summary>Lightning channel: bright white core with a soft blue-violet halo across the line (V), flat along it (U).</summary>
+        static Texture2D MakeBoltTexture()
+        {
+            const int w = 8, h = 64;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                float v = (y + 0.5f) / h * 2f - 1f;
+                float core = Mathf.Exp(-v * v * 60f);
+                float halo = Mathf.Exp(-v * v * 5f) * 0.45f;
+                var c = new Color(0.75f + 0.25f * core, 0.8f + 0.2f * core, 1f, 1f) * Mathf.Clamp01(core + halo);
+                c.a = 1f;
+                for (int x = 0; x < w; x++) px[y * w + x] = c;
+            }
+            tex.SetPixels(px);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>
+        /// Tileable charred-ground noise for the burn scar: grey value and alpha vary in blotches and fine grain,
+        /// so the vertex-coloured decal doesn't look like a flat painted disc.
+        /// </summary>
+        static Texture2D MakeGroundNoise(int size)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
+            var px = new Color[size * size];
+            const int period = 8; // noise lattice cells across the tile; wrapped so the texture tiles seamlessly
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float u = (float)x / size * period, v = (float)y / size * period;
+                    float big = TileNoise(u, v, period, 91);
+                    float fine = TileNoise(u * 4f, v * 4f, period * 4, 92) * 0.5f + TileNoise(u * 8f, v * 8f, period * 8, 93) * 0.5f;
+                    float g = Mathf.Clamp01(0.62f + 0.3f * big + 0.18f * (fine - 0.5f));
+                    float a = Mathf.Clamp01(0.75f + 0.35f * (big - 0.5f) + 0.25f * (fine - 0.5f));
+                    px[y * size + x] = new Color(g, g, g, a);
+                }
+            }
+            tex.SetPixels(px);
+            tex.Apply(true, true);
+            return tex;
+        }
+
+        static float TileNoise(float x, float y, int period, int seed)
+        {
+            int xi = Mathf.FloorToInt(x), yi = Mathf.FloorToInt(y);
+            float xf = x - xi, yf = y - yi;
+            float u = xf * xf * (3f - 2f * xf), v = yf * yf * (3f - 2f * yf);
+            int x0 = ((xi % period) + period) % period, y0 = ((yi % period) + period) % period;
+            int x1 = (x0 + 1) % period, y1 = (y0 + 1) % period;
+            float a = Hash(x0, y0, seed), b = Hash(x1, y0, seed), c = Hash(x0, y1, seed), d = Hash(x1, y1, seed);
+            return Mathf.Lerp(Mathf.Lerp(a, b, u), Mathf.Lerp(c, d, u), v);
+        }
+
+        /// <summary>
+        /// Radiation trefoil for the toolbar button: three 60-degree blades and a centre disc in a ring,
+        /// supersampled for clean edges. Light grey on transparent to match the stock launcher icons.
+        /// </summary>
+        public static Texture2D MakeTrefoilIcon(int size, Color col)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color[size * size];
+            const int ss = 4;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    int hit = 0;
+                    for (int sy = 0; sy < ss; sy++)
+                    {
+                        for (int sx = 0; sx < ss; sx++)
+                        {
+                            float u = (x + (sx + 0.5f) / ss) / size * 2f - 1f, v = (y + (sy + 0.5f) / ss) / size * 2f - 1f;
+                            float r = Mathf.Sqrt(u * u + v * v);
+                            float ang = Mathf.Atan2(v, u) * Mathf.Rad2Deg; // 0 = right, blades point up and down-left/down-right
+                            float rel = Mathf.Repeat(ang - 90f + 30f, 120f);
+                            bool blade = r > 0.24f && r < 0.78f && rel < 60f;
+                            bool hub = r < 0.15f;
+                            bool ring = r > 0.86f && r < 0.97f;
+                            if (blade || hub || ring) hit++;
+                        }
+                    }
+                    var c = col;
+                    c.a = col.a * hit / (float)(ss * ss);
+                    px[y * size + x] = c;
+                }
+            }
+            tex.SetPixels(px);
+            tex.Apply(false, false);
             return tex;
         }
 
@@ -276,6 +423,26 @@ namespace BDNukes
             }
             Normalize(data, 0.9f);
             var clip = AudioClip.Create("bdnukesRumble", n, 1, SampleRate, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        /// <summary>One Geiger-Mueller tube click: a sharp broadband tick with a short ring-down.</summary>
+        static AudioClip MakeGeigerClick()
+        {
+            int n = (int)(SampleRate * 0.012f);
+            var data = new float[n];
+            var rng = new System.Random(777);
+            float phase = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)SampleRate;
+                float white = (float)rng.NextDouble() * 2f - 1f;
+                phase += 2f * Mathf.PI * 3200f / SampleRate;
+                data[i] = (0.8f * white * Mathf.Exp(-t / 0.0008f) + 0.5f * Mathf.Sin(phase) * Mathf.Exp(-t / 0.002f)) * Mathf.Clamp01(t / 0.0001f);
+            }
+            Normalize(data, 0.9f);
+            var clip = AudioClip.Create("bdnukesGeiger", n, 1, SampleRate, false);
             clip.SetData(data, 0);
             return clip;
         }

@@ -40,7 +40,7 @@ namespace BDNukes
 
         /// <summary>
         /// Particle-count scale for a new detonation: with N detonations alive (including the new one),
-        /// each new one gets ~1/sqrt(N) of the particles so a salvo or MIRV stays playable.
+        /// each new one gets N^-lodStrength of the particles (1/sqrt(N) on High) so a salvo or MIRV stays playable.
         /// </summary>
         public static float LODScale()
         {
@@ -48,8 +48,17 @@ namespace BDNukes
             if (!s.burstLOD || instance == null) return 1f;
             int n = 1;
             for (int i = 0; i < instance.active.Count; i++) if (instance.active[i] != null) n++;
-            return Mathf.Clamp(1f / Mathf.Sqrt(n), s.minLODScale, 1f);
+            return Mathf.Clamp(Mathf.Pow(n, -s.lodStrength), s.minLODScale, 1f);
         }
+
+        /// <summary>Number of detonations still drawing their cloud.</summary>
+        public int ActiveCount => active.Count;
+
+        /// <summary>
+        /// The scene's prevailing wind heading (degrees from north), picked once per flight scene so every cloud,
+        /// plume and smoke column in a salvo drifts the same way. Each detonation adds its own small veer.
+        /// </summary>
+        public float WindHeading { get; private set; }
 
         /// <summary>
         /// Claims the crack/rumble for a shock arriving now. Returns false if another detonation's
@@ -71,6 +80,7 @@ namespace BDNukes
         void Awake()
         {
             noiseSeed = Random.value * 100f;
+            WindHeading = Random.Range(0f, 360f);
             white = Texture2D.whiteTexture;
         }
 

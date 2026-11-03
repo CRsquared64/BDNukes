@@ -10,3 +10,6 @@ GameData/BDNukes/Plugins/*.dll
 
 # packaged releases
 release/
+
+# per-player settings saved by the in-game window
+GameData/BDNukes/PluginData/

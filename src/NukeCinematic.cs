@@ -21,8 +21,12 @@ namespace BDNukes
     /// out from the environment or a ModuleNukeCloudProfile on the warhead. Three looks are blended on air
     /// density: the mushroom cloud (dense air), the high-altitude red fireball (thin air) and the vacuum
     /// debris shell. Bursts at or under the sea surface add a Crossroads Baker style water column.
+    ///
+    /// The cloud drifts with a NukeWind (stem leaning downwind). Ground and low bursts hand over to a NukeFallout
+    /// plume and NukeGroundEffects (scorch, afterglow, fires), which outlive the cloud; megaton clouds get
+    /// lightning (NukeCinematicLightning.cs). Everything is sized by the quality preset and the burst LOD.
     /// </summary>
-    internal class NukeCinematic : MonoBehaviour
+    internal partial class NukeCinematic : MonoBehaviour
     {
         static readonly Color Ember = new Color(1f, 0.52f, 0.16f);
         static readonly Color DustDark = new Color(0.46f, 0.37f, 0.30f);
@@ -40,6 +44,18 @@ namespace BDNukes
         NukeSettings s;
         NukeCloudProfile prof;
         float lod = 1f;     // particle-count scale when many detonations are active
+        float budget = 1f;  // extra scale that keeps the detonation under maxParticles
+        bool planning;      // Build's first pass only counts particles
+        int plannedBase;
+        bool overOcean;
+        NukeWind wind;
+        Vector3 capDrift;   // this frame's downwind drift of the cap
+        float stemPhase;    // random phase of the stem's bulges and wiggle
+
+        // --- aftermath handed to NukeFallout / NukeGroundEffects ---
+        float falloutK;     // 0 clean airburst .. 1 dirty surface burst
+        bool groundEffects, scorchFx, firesFx;
+        float rScorch, rOuter;
 
         // --- derived physics ---
         float R;            // fireball radius (m)
@@ -136,7 +152,7 @@ namespace BDNukes
             lon = body.GetLongitude(pos);
             alt = body.GetAltitude(pos);
             double terrain = body.pqsController != null ? body.TerrainAltitude(lat, lon) : 0d;
-            bool overOcean = body.ocean && terrain < 0d;
+            overOcean = body.ocean && terrain < 0d;
             double groundAlt = overOcean ? 0d : terrain;
             hb = Mathf.Max(0f, (float)(alt - groundAlt));
             groundY = (float)(groundAlt - alt);
@@ -206,6 +222,7 @@ namespace BDNukes
             stemFx = airFx && hb < 6f * R;
             ringFx = airFx && s.condensationRings && densRatio > 0.2f && prof.lowYield < 0.01f;
             sparksFx = airFx && hb < 1.5f * R;
+            SetupLightning();
 
             // high-altitude fireball: thin air lets it grow far bigger, and it floats up fast with no mushroom
             Rh = R * Mathf.Clamp(0.8f * Mathf.Pow(1.225f / Mathf.Max(rho, 1e-4f), 1f / 3f), 1f, 8f);
@@ -216,15 +233,74 @@ namespace BDNukes
             lifeVac = 25f;
             if (vacFx || hiFx) SetupField(pos);
             life = Mathf.Max(Mathf.Max(airFx ? lifeAir : 0f, vacFx ? lifeVac : 0f), Mathf.Max(hiFx ? Mathf.Max(lifeHi, auroraFootL != null ? lifeVac : 0f) : 0f, waterFx ? lifeWater : 0f));
+
+            int windSeed = Random.Range(0, 100000);
+            wind = new NukeWind(NukeFXManager.Instance.WindHeading, s.windSpeed, s.windShear, windSeed,
+                Mathf.Max(life, NukeFallout.Lifetime(s, W) + 60f));
+            PlanAftermath();
             Build();
+            SpawnAftermath();
             NukeFXManager.Instance.Register(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
+        }
+
+        /// <summary>
+        /// Decides what outlives the cloud: fallout (surface and low bursts in air or water, more for dirty ones,
+        /// almost none for high airbursts) and the ground effects (scorch where the fireball touches the ground,
+        /// fires within the thermal radius on land).
+        /// </summary>
+        void PlanAftermath()
+        {
+            bool atmo = (airFx || underwater) && body.atmosphere;
+            float dirt = 1f - SS(0.6f * R, 3.5f * R, hb);
+            falloutK = atmo ? dirt * (0.55f + 0.45f * prof.dustiness) + (stemFx ? 0.03f : 0f) : 0f;
+            if (falloutK < 0.02f || !(s.falloutCloud || s.falloutRadiation)) falloutK = 0f;
+
+            rScorch = R * Mathf.Lerp(1.8f, 1.1f, Mathf.Clamp01(hb / (1.2f * R)));
+            rOuter = Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale);
+            scorchFx = s.scorchMarks && !overOcean && hb < 1.2f * R;
+            firesFx = s.lingeringFires && !overOcean && airFx && body.atmosphereContainsOxygen && hb < 8f * R;
+            groundEffects = scorchFx || firesFx;
+        }
+
+        void SpawnAftermath()
+        {
+            if (falloutK <= 0f && !groundEffects) return;
+            double groundAlt = alt + groundY;
+            var p = new NukeAftermathParams
+            {
+                body = body, lat = lat, lon = lon, groundAlt = groundAlt, W = W, R = R, hb = hb,
+                yieldTimeScale = yieldTimeScale, spawnTime = spawnTime, delay = delay, wind = wind,
+                particleScale = s.particleDensity * lod * budget,
+                falloutK = falloutK, water = prof.water || underwater,
+                plumeCol = underwater ? CondWhite * 0.85f : Color.Lerp(colLate, colDark, 0.35f),
+                plumeDark = underwater ? new Color(0.62f, 0.64f, 0.68f) : colDark,
+                dustTint = prof.dustTint,
+                scorch = scorchFx, fires = firesFx, afterglow = scorchFx && s.groundAfterglow,
+                rScorch = rScorch, rOuter = rOuter,
+            };
+            if (underwater)
+            {
+                // Baker: the contaminated spray and base surge, not a mushroom cap
+                p.t0 = 0f; p.tauRise = tauCol; p.riseTime = tCollapse + tFall;
+                p.srcTop = colH * 0.5f; p.srcR0 = colR; p.srcR1 = colR * 3f;
+            }
+            else
+            {
+                p.t0 = t0; p.tauRise = tauRise; p.riseTime = riseTime;
+                p.srcTop = hb + riseDelta; p.srcR0 = R; p.srcR1 = capRadius;
+            }
+            if (falloutK > 0f) NukeFallout.Spawn(p);
+            if (groundEffects) NukeGroundEffects.Spawn(p);
         }
 
         /// <summary>Turns the resolved profile into shape factors, timings and colours.</summary>
         void ApplyProfile(float tropo)
         {
-            tauGlow = tauG * prof.glowScale;
+            // Megaton fireballs stay incandescent longer, but nowhere near tauG's ~60 s at 50 Mt: compress the
+            // glow (and the profile's glow boost) for the biggest yields, ~25-35 s of strong glow at 50 Mt.
+            float mega = SS(1000f, 50000f, W);
+            tauGlow = tauG * Mathf.Lerp(prof.glowScale, Mathf.Sqrt(prof.glowScale), mega) * Mathf.Lerp(1f, 0.45f, mega);
             capRadius *= prof.capSpread;
             capYScale = prof.capAspect / 0.5f;
 
@@ -286,7 +362,21 @@ namespace BDNukes
             if (manager != null) manager.Unregister(this);
         }
 
-        int N(int baseCount) => Mathf.Max(1, Mathf.RoundToInt(baseCount * s.particleDensity * lod));
+        int N(int baseCount) => Mathf.Max(1, Mathf.RoundToInt(baseCount * s.particleDensity * lod * budget));
+
+        /// <summary>
+        /// Adds a layer of baseCount (scaled by density, LOD and budget) particles, or a fixed count if !scaled.
+        /// In the planning pass it only adds up the counts and returns null.
+        /// </summary>
+        Layer Make(Transform parent, string name, Material mat, int baseCount, int seed, bool hierarchyScale, bool scaled = true)
+        {
+            if (planning)
+            {
+                if (scaled) plannedBase += baseCount;
+                return null;
+            }
+            return Add(new Layer(parent, name, mat, scaled ? N(baseCount) : baseCount, seed, hierarchyScale));
+        }
 
         void Build()
         {
@@ -294,17 +384,51 @@ namespace BDNukes
             ground = Child("Ground", transform);
             ground.localPosition = new Vector3(0f, groundY, 0f);
             rings = Child("Rings", transform);
-
             int seed = Random.Range(0, 100000);
-            flash = Add(new Layer(transform, "Flash", NukeAssets.Glow, 3, seed + 1, false));
+            stemPhase = (seed % 1000) * 0.00628f;
+
+            // Pass 1 counts what the layers would cost (with the fallout and fires this burst will spawn) and
+            // works out the budget that keeps the whole detonation under maxParticles; pass 2 builds them.
+            planning = true;
+            plannedBase = (falloutK > 0f ? NukeFallout.BaseParticles(s) : 0) + (groundEffects ? NukeGroundEffects.BaseParticles(firesFx) : 0);
+            BuildLayers(seed);
+            float planned = plannedBase * s.particleDensity * lod;
+            budget = planned > s.maxParticles ? s.maxParticles / planned : 1f;
+            planning = false;
+            BuildLayers(seed);
+            BuildLightning(seed);
+
+            var lightGo = new GameObject("NukeLight");
+            lightGo.transform.SetParent(transform, false);
+            lightFx = lightGo.AddComponent<Light>();
+            lightFx.type = LightType.Point;
+            lightFx.color = new Color(1f, 0.85f, 0.65f);
+            lightFx.range = Mathf.Clamp(80f * R, 3000f, 80000f);
+            lightFx.intensity = 0f;
+            lightFx.shadows = s.lightShadows ? LightShadows.Soft : LightShadows.None;
+
+            var audioGo = new GameObject("NukeAudio");
+            audioGo.transform.SetParent(transform, false);
+            crackSrc = MakeSource(audioGo, NukeAssets.Crack);
+            rumbleSrc = MakeSource(audioGo, NukeAssets.Rumble);
+            boomSrc = MakeSource(audioGo, NukeAssets.StockBoom);
+            lowPass = audioGo.AddComponent<AudioLowPassFilter>();
+            lowPass.cutoffFrequency = 22000f;
+        }
+
+        void BuildLayers(int seed)
+        {
+            flash = Make(transform, "Flash", NukeAssets.Glow, 3, seed + 1, false, false);
 
             if (vacFx)
             {
-                debrisShell = Add(new Layer(transform, "DebrisShell", NukeAssets.Glow, N(320), seed + 2, false));
-                shellLimb = Add(new Layer(transform, "ShellLimb", NukeAssets.Ring, 1, seed + 3, false));
-                fragments = Add(new Layer(transform, "Fragments", NukeAssets.Glow, N(110), seed + 4, false));
-                ionCloud = Add(new Layer(transform, "IonCloud", NukeAssets.Glow, N(70), seed + 5, false));
-
+                debrisShell = Make(transform, "DebrisShell", NukeAssets.Glow, 320, seed + 2, false);
+                shellLimb = Make(transform, "ShellLimb", NukeAssets.Ring, 1, seed + 3, false, false);
+                fragments = Make(transform, "Fragments", NukeAssets.Glow, 110, seed + 4, false);
+                ionCloud = Make(transform, "IonCloud", NukeAssets.Glow, 70, seed + 5, false);
+            }
+            if (debrisShell != null)
+            {
                 // Lumpy, field-elongated shell: low-order random lobes + per-particle jitter.
                 var rng = new System.Random(seed);
                 Vector3 RandDir() => new Vector3((float)rng.NextDouble() * 2f - 1f, (float)rng.NextDouble() * 2f - 1f, (float)rng.NextDouble() * 2f - 1f).normalized;
@@ -319,76 +443,62 @@ namespace BDNukes
                 }
             }
             if ((vacFx || hiFx) && hasField && s.magneticStreamers)
-                streamers = Add(new Layer(transform, "FieldStreamers", NukeAssets.Glow, N(vacFx ? 420 : 300), seed + 6, false));
+                streamers = Make(transform, "FieldStreamers", NukeAssets.Glow, vacFx ? 420 : 300, seed + 6, false);
             if (auroraFootL != null)
             {
                 auroraLayers = new Layer[auroraFootL.Length];
                 for (int k = 0; k < auroraFootL.Length; k++)
-                    auroraLayers[k] = Add(new Layer(transform, "Aurora" + k, NukeAssets.Glow, N(vacFx ? 560 : 380), seed + 40 + k, false));
+                    auroraLayers[k] = Make(transform, "Aurora" + k, NukeAssets.Glow, vacFx ? 560 : 380, seed + 40 + k, false);
             }
 
             if (hiFx)
             {
-                hiFire = Add(new Layer(transform, "HighAltitudeFireball", NukeAssets.Glow, N(240), seed + 7, false));
-                airglow = Add(new Layer(transform, "AirglowRing", NukeAssets.Glow, N(200), seed + 8, false));
+                hiFire = Make(transform, "HighAltitudeFireball", NukeAssets.Glow, 240, seed + 7, false);
+                airglow = Make(transform, "AirglowRing", NukeAssets.Glow, 200, seed + 8, false);
             }
 
             if (airFx)
             {
                 bool stacked = prof.stack > 0.05f;
-                capSmoke = Add(new Layer(cap, "CapSmoke", NukeAssets.Smoke, N(320), seed + 10, true));
-                capDetail = Add(new Layer(cap, "CapDetail", NukeAssets.Smoke, N(stacked ? 700 : 900), seed + 15, true));
-                if (stacked) capUpper = Add(new Layer(cap, "CapUpper", NukeAssets.Smoke, N(300), seed + 16, true));
-                capGlow = Add(new Layer(cap, "CapGlow", NukeAssets.Glow, N(80), seed + 11, true));
-                fireCore = Add(new Layer(cap, "Fireball", NukeAssets.Glow, N(45), seed + 12, true));
+                // without the fine detail layer the main billows take up more of the cap
+                capSmoke = Make(cap, "CapSmoke", NukeAssets.Smoke, s.capDetail ? 320 : 480, seed + 10, true);
+                if (s.capDetail) capDetail = Make(cap, "CapDetail", NukeAssets.Smoke, stacked ? 700 : 900, seed + 15, true);
+                if (stacked) capUpper = Make(cap, "CapUpper", NukeAssets.Smoke, 300, seed + 16, true);
+                capGlow = Make(cap, "CapGlow", NukeAssets.Glow, 110, seed + 11, true);
+                fireCore = Make(cap, "Fireball", NukeAssets.Glow, 45, seed + 12, true);
                 if (ringFx)
                 {
                     ringLayers = new Layer[3];
                     for (int k = 0; k < 3; k++)
-                        ringLayers[k] = Add(new Layer(rings, "CondensationRing" + k, NukeAssets.Mist, N(220), seed + 20 + k, false));
+                        ringLayers[k] = Make(rings, "CondensationRing" + k, NukeAssets.Mist, 220, seed + 20 + k, false);
                 }
                 if (groundFx)
                 {
-                    skirt = Add(new Layer(ground, "DustSkirt", NukeAssets.Smoke, N(320), seed + 30, false));
-                    surge = Add(new Layer(ground, "BaseSurge", NukeAssets.Smoke, N(280), seed + 31, false));
+                    skirt = Make(ground, "DustSkirt", NukeAssets.Smoke, 320, seed + 30, false);
+                    surge = Make(ground, "BaseSurge", NukeAssets.Smoke, 280, seed + 31, false);
                 }
                 if (stemFx)
                 {
-                    stem = Add(new Layer(ground, "Stem", NukeAssets.Smoke, N(420), seed + 32, false));
+                    stem = Make(ground, "Stem", NukeAssets.Smoke, 420, seed + 32, false);
                     if (prof.stemCollars > 0)
-                        collars = Add(new Layer(ground, "StemCollars", NukeAssets.Mist, prof.stemCollars * N(64), seed + 34, false));
+                        collars = Make(ground, "StemCollars", NukeAssets.Mist, prof.stemCollars * 64, seed + 34, false);
                 }
-                if (sparksFx) sparks = Add(new Layer(transform, "Ejecta", NukeAssets.Glow, N(70), seed + 33, false));
+                if (sparksFx) sparks = Make(transform, "Ejecta", NukeAssets.Glow, 70, seed + 33, false);
             }
             if (airFx || underwater)
             {
-                shock = Add(new Layer(transform, "ShockFront", NukeAssets.Ring, 1, seed + 13, false));
-                wilson = Add(new Layer(transform, "WilsonCloud", NukeAssets.Mist, N(220), seed + 14, false));
+                shock = Make(transform, "ShockFront", NukeAssets.Ring, 1, seed + 13, false, false);
+                // over water the Wilson dome is part of the column's look, so it stays on every preset
+                if (s.wilsonCloud || underwater) wilson = Make(transform, "WilsonCloud", NukeAssets.Mist, 220, seed + 14, false);
             }
             if (underwater)
             {
-                waterColumn = Add(new Layer(ground, "WaterColumn", NukeAssets.Smoke, N(520), seed + 50, false));
-                waterSpray = Add(new Layer(ground, "WaterSpray", NukeAssets.Smoke, N(300), seed + 51, false));
-                waterSurge = Add(new Layer(ground, "WaterBaseSurge", NukeAssets.Smoke, N(380), seed + 52, false));
+                waterColumn = Make(ground, "WaterColumn", NukeAssets.Smoke, 520, seed + 50, false);
+                waterSpray = Make(ground, "WaterSpray", NukeAssets.Smoke, 300, seed + 51, false);
+                waterSurge = Make(ground, "WaterBaseSurge", NukeAssets.Smoke, 380, seed + 52, false);
             }
-            if (waterFx) ringWave = Add(new Layer(ground, "RingWaves", NukeAssets.Mist, N(240), seed + 53, false));
-
-            var lightGo = new GameObject("NukeLight");
-            lightGo.transform.SetParent(transform, false);
-            lightFx = lightGo.AddComponent<Light>();
-            lightFx.type = LightType.Point;
-            lightFx.color = new Color(1f, 0.85f, 0.65f);
-            lightFx.range = Mathf.Clamp(80f * R, 3000f, 80000f);
-            lightFx.intensity = 0f;
-            lightFx.shadows = LightShadows.None;
-
-            var audioGo = new GameObject("NukeAudio");
-            audioGo.transform.SetParent(transform, false);
-            crackSrc = MakeSource(audioGo, NukeAssets.Crack);
-            rumbleSrc = MakeSource(audioGo, NukeAssets.Rumble);
-            boomSrc = MakeSource(audioGo, NukeAssets.StockBoom);
-            lowPass = audioGo.AddComponent<AudioLowPassFilter>();
-            lowPass.cutoffFrequency = 22000f;
+            if (waterFx) ringWave = Make(ground, "RingWaves", NukeAssets.Mist, 240, seed + 53, false);
+            if (lightningFx) boltGlow = Make(transform, "LightningGlow", NukeAssets.Glow, BoltPool, seed + 60, false, false);
         }
 
         static Transform Child(string name, Transform parent)
@@ -479,7 +589,9 @@ namespace BDNukes
             sunL = Quaternion.Inverse(transform.rotation) * sunW;
             daylight = Mathf.Clamp01(sunL.y * 3f + 0.3f);
 
-            if (airFx) capPosL = new Vector3(0f, CapHeight(t), 0f);
+            // the whole cloud drifts with the wind aloft; the stem leans from the slower air near the ground
+            capDrift = airFx ? wind.Hi(t) : Vector3.zero;
+            if (airFx) capPosL = new Vector3(0f, CapHeight(t), 0f) + capDrift;
             else if (hiFx) capPosL = new Vector3(0f, HiRise(t), 0f);
             else if (underwater) capPosL = new Vector3(0f, groundY, 0f);
             else capPosL = Vector3.zero;
@@ -524,7 +636,7 @@ namespace BDNukes
                 UpdateCapShape();
                 UpdateFireball();
                 UpdateCapSmoke();
-                UpdateCapDetail();
+                if (capDetail != null) UpdateCapDetail();
                 if (capUpper != null) UpdateCapUpper();
                 UpdateCapGlow();
                 if (ringLayers != null) for (int k = 0; k < ringLayers.Length; k++) UpdateRing(k);
@@ -533,6 +645,7 @@ namespace BDNukes
                 if (stem != null) UpdateStem();
                 if (collars != null) UpdateCollars();
                 if (sparks != null) UpdateSparks();
+                if (lightningFx) UpdateLightning();
             }
             if (shock != null) UpdateShock();
             if (wilson != null) UpdateWilson();
@@ -629,6 +742,15 @@ namespace BDNukes
 
         static Color WithAlpha(Color c, float a) { c.a = Mathf.Clamp01(a); return c; }
 
+        /// <summary>Per-puff brightness and slight warm/cool variation, so neighbouring billows don't read as identical balls.</summary>
+        static Color PuffTone(float rand)
+        {
+            float k = Mathf.Repeat(rand * 13.71f, 1f);
+            float b = 0.84f + 0.3f * k;
+            float w = Mathf.Repeat(rand * 29.3f, 1f) - 0.5f;
+            return new Color(b * (1f + 0.04f * w), b, b * (1f - 0.05f * w), 1f);
+        }
+
         /// <summary>Billboard rotation pointing the billow's lit top at the sun, with a little per-puff variation.</summary>
         float Billow(float rand) => sunRotDeg + (rand - 0.5f) * 50f;
 
@@ -674,11 +796,13 @@ namespace BDNukes
         {
             int n = flash.Begin();
             float fi = FlashIntensity(t);
-            float scale = 1f + 2f * vacW + hiW;
+            // the wide halo sprites belong to the first instants: they shrink after ~1 s, so the flash's slow tail
+            // doesn't leave a huge white halo hanging over a megaton seen from far away
+            float scale = (1f + 2f * vacW + hiW) * Mathf.Lerp(1f, 0.3f, SS(0.3f, 1.5f, t));
             float[] sizes = { 14f, 6f, 2.4f };
             for (int i = 0; i < n; i++)
             {
-                float a = Mathf.Clamp01(fi * (i == 2 ? 1f : 0.7f));
+                float a = Mathf.Clamp01(fi * (i == 2 ? 1f : 0.7f * (1f - SS(0.5f, 2f, t))));
                 flash.Set(i, capPosL, R * sizes[i % 3] * scale, new Color(0.92f, 0.95f, 1f, a), 0f);
             }
             flash.End(n);
@@ -794,8 +918,9 @@ namespace BDNukes
 
                 float inner = 1f - Mathf.Clamp01((p - core).magnitude / 0.6f);
                 float fire = ember * (0.7f + 0.8f * inner) + 0.25f * ember * Mathf.Max(0f, -nL.y);
-                Color col = Shade(Color.Lerp(baseCap, colDark, 0.35f * Mathf.Max(0f, -nL.y)), nL, fire, -nL);
-                float size = (0.5f + 0.35f * r0) * (1f + 0.35f * m) * Mathf.Lerp(1f, dome ? puffDome : puffRing, m);
+                Color col = Shade(Color.Lerp(baseCap, colDark, 0.35f * Mathf.Max(0f, -nL.y)) * PuffTone(r3), nL, fire, -nL);
+                // a few big masses among the medium billows
+                float size = (0.42f + 0.3f * r0 + 0.45f * Mathf.Pow(Mathf.Repeat(r1 * 5.37f, 1f), 5f)) * (1f + 0.35f * m) * Mathf.Lerp(1f, dome ? puffDome : puffRing, m);
                 capSmoke.Set(i, p, size, WithAlpha(col, 0.85f * appear), Billow(r3));
             }
             capSmoke.End(n);
@@ -843,8 +968,9 @@ namespace BDNukes
                 float under = Mathf.Max(0f, -nL.y);
                 float fire = ember * (0.45f + 0.9f * under);
                 Color baseCol = Color.Lerp(baseCap, colDark, 0.45f * under);
-                Color col = Shade(baseCol, nL, fire, -nL);
-                float size = (0.13f + 0.13f * r0) * (1f + 0.18f * Mathf.Sin(t * (0.8f + 1.2f * r0) + r1 * 20f)) * (1f + 0.25f * m)
+                Color col = Shade(baseCol * PuffTone(r3), nL, fire, -nL);
+                // mostly fine detail with the odd larger lump, not a ball pit of equal spheres
+                float size = (0.09f + 0.27f * Mathf.Pow(r0, 2.2f)) * (1f + 0.18f * Mathf.Sin(t * (0.8f + 1.2f * r0) + r1 * 20f)) * (1f + 0.25f * m)
                              * Mathf.Lerp(1f, dome ? puffDome : puffRing, m);
                 capDetail.Set(i, p, size, WithAlpha(col, 0.92f * appear), Billow(r3));
             }
@@ -877,8 +1003,8 @@ namespace BDNukes
                 Vector3 core = new Vector3(ringR * xs * Mathf.Cos(theta), yC, ringR * xs * Mathf.Sin(theta));
                 Vector3 nL = (p - core).sqrMagnitude > 1e-6f ? (p - core).normalized : Vector3.up;
                 float under = Mathf.Max(0f, -nL.y);
-                Color col = Shade(Color.Lerp(baseCap, colDark, 0.4f * under), nL, ember * under, -nL);
-                float size = (0.16f + 0.16f * r0) * prof.billowScale * (0.6f + 0.4f * grow) * Mathf.Sqrt(xs);
+                Color col = Shade(Color.Lerp(baseCap, colDark, 0.4f * under) * PuffTone(r3), nL, ember * under, -nL);
+                float size = (0.1f + 0.3f * Mathf.Pow(r0, 2f)) * prof.billowScale * (0.6f + 0.4f * grow) * Mathf.Sqrt(xs);
                 capUpper.Set(i, p, size, WithAlpha(col, 0.9f * appear), Billow(r3));
             }
             capUpper.End(n);
@@ -890,15 +1016,24 @@ namespace BDNukes
             int n = capGlow.Begin();
             float m = Morph;
             // a pancaking megaton cap keeps its glowing core visible through the cloud for a long time
-            float g = Mathf.Pow(Glow(t), 0.75f) * SS(0f, 0.4f * tauG, t) * FadeOut * (1f + 0.6f * prof.pancake);
+            float g = Mathf.Pow(Glow(t), 0.75f) * SS(0f, 0.4f * tauG, t) * FadeOut * (1f + 0.3f * prof.pancake);
             float roll = 0.55f * tauRise * (1f - Mathf.Exp(-t / tauRise)) * prof.rollSpeed;
-            Color col = FireballColor(Mathf.Max(0.3f, t / tauGlow * 0.8f));
+            float x = Mathf.Max(0.3f, t / tauGlow * 0.8f);
             for (int i = 0; i < n; i++)
             {
-                Vector3 sph = capGlow.SphereDir(i) * 0.6f * Mathf.Sqrt(capGlow.r0[i]);
-                Vector3 tor = CapShape(CapTorus(capGlow.r1[i] * 2f * Mathf.PI, capGlow.r2[i] * 2f * Mathf.PI - roll, 0.78f, 0.22f), false);
-                float size = (0.85f + 0.5f * capGlow.r3[i]) * Mathf.Lerp(1f, Mathf.Sqrt(capXZS), m);
-                capGlow.Set(i, Vector3.Lerp(sph, tor, m), size, WithAlpha(col, g * 0.6f), capGlow.r3[i] * 360f);
+                float r0 = capGlow.r0[i], r1 = capGlow.r1[i], r2 = capGlow.r2[i], r3 = capGlow.r3[i];
+                Vector3 sph = capGlow.SphereDir(i) * 0.6f * Mathf.Sqrt(r0);
+                Vector3 tor = CapShape(CapTorus(r1 * 2f * Mathf.PI, r2 * 2f * Mathf.PI - roll, 0.78f, 0.22f), false);
+                Vector3 p = Vector3.Lerp(sph, tor, m);
+                // Patchy: smaller blobs of very different strength that flare and fade as the cloud churns,
+                // so the heat shows through in places instead of as one even blob. Strongest low in the cap,
+                // where the hot core rolls under; the hottest patches stay yellower, the rest are deep orange.
+                float patch = Mathf.Pow(Mathf.Repeat(r3 * 7.13f, 1f), 2f) * (0.55f + 0.45f * Mathf.Sin(t * (0.3f + 0.5f * r0) + r1 * 30f));
+                float low = 1f - SS(-0.35f, 0.45f, p.y);
+                float a = g * (0.15f + 0.85f * Mathf.Max(0f, patch)) * (0.3f + 0.7f * low);
+                Color col = FireballColor(x * (1.25f - 0.5f * patch));
+                float size = (0.35f + 0.45f * r3) * Mathf.Lerp(1f, Mathf.Sqrt(capXZS), m);
+                capGlow.Set(i, p, size, WithAlpha(col, a * 0.75f), r3 * 360f);
             }
             capGlow.End(n);
         }
@@ -908,9 +1043,12 @@ namespace BDNukes
         {
             int n = shock.Begin();
             float rs = ShockRadius(t);
-            float maxR = 15f * R;
+            float maxR = 8f * R;
             float w = underwater ? 0.5f * flashK + 0.2f : airW;
-            float a = rs < maxR ? 0.35f * w * Mathf.Pow(1f - rs / maxR, 1.5f) * SS(0f, 0.08f, t) : 0f;
+            float a = rs < maxR ? 0.3f * w * Mathf.Pow(1f - rs / maxR, 2f) * SS(0f, 0.08f, t) : 0f;
+            // It's a faint refraction/condensation front: only worth drawing up close. Seen from far away
+            // (high altitude or orbit) it would just be a hard ring outline around the burst.
+            a *= 1f - SS(2f * rs + 4f * R, 5f * rs + 15f * R, camDist);
             Vector3 centre = underwater ? new Vector3(0f, groundY, 0f) : Vector3.zero;
             for (int i = 0; i < n; i++) shock.Set(i, centre, 2.1f * rs, new Color(0.95f, 0.95f, 1f, a), 0f);
             shock.End(n);
@@ -921,7 +1059,9 @@ namespace BDNukes
         void UpdateWilson()
         {
             int n = wilson.Begin();
-            float tW = 3.5f * R / c * (waterFx ? 2.5f : 1f);
+            // a Wilson cloud lasts a few seconds whatever the yield (megatons would otherwise keep a white
+            // shell, limb-brightened into a ring from afar, for most of a minute)
+            float tW = Mathf.Min(3.5f * R / c, 6f) * (waterFx ? 2.5f : 1f);
             float vis = SS(0.03f, 0.25f * tW, t) * (1f - SS(0.6f * tW, 1.4f * tW, t)) * (underwater ? 1f : airW);
             float rw = Mathf.Min(R * 1.2f + c * t * 0.9f, (waterFx ? 5f : 3.6f) * R);
             float glow = underwater ? 0f : Mathf.Pow(Glow(t), 0.4f);
@@ -962,7 +1102,7 @@ namespace BDNukes
             {
                 float theta = (i + layer.r0[i] * 0.8f) / n * 2f * Mathf.PI + 0.015f * t * (k % 2 == 0 ? 1f : -1f);
                 float rr = rk + (layer.r1[i] - 0.5f) * 0.22f * R;
-                Vector3 p = new Vector3(Mathf.Cos(theta) * rr, y + (layer.r2[i] - 0.5f) * 0.12f * R, Mathf.Sin(theta) * rr);
+                Vector3 p = new Vector3(Mathf.Cos(theta) * rr, y + (layer.r2[i] - 0.5f) * 0.12f * R, Mathf.Sin(theta) * rr) + 0.8f * capDrift;
                 Vector3 toFire = (capPosL - p).normalized;
                 Vector3 nL = new Vector3(Mathf.Cos(theta) * 0.3f, -0.95f, Mathf.Sin(theta) * 0.3f).normalized; // underside faces the fireball
                 Color col = Shade(CondWhite, Vector3.up, 0f, toFire);
@@ -994,7 +1134,7 @@ namespace BDNukes
                 float y = R * flat * (0.12f + 0.45f * r2 * (1f - Mathf.Exp(-tt / 6f))) + 0.05f * CapHeight(t) * r2 * flat;
                 // boiling: lumps churn up and down as the skirt spreads
                 y += R * 0.08f * turb * Mathf.Sin(t * (0.4f + 0.5f * r0) + r3 * 25f) * r2;
-                Vector3 p = new Vector3(Mathf.Cos(theta) * rad, y, Mathf.Sin(theta) * rad);
+                Vector3 p = new Vector3(Mathf.Cos(theta) * rad, y, Mathf.Sin(theta) * rad) + Lean(0f) * (0.5f + r2);
                 Vector3 nL = new Vector3(Mathf.Cos(theta) * 0.6f, 0.8f, Mathf.Sin(theta) * 0.6f).normalized;
                 Vector3 fireL = capPosL - (p + ground.localPosition);
                 float prox = Mathf.Clamp01(2.5f * R / Mathf.Max(1f, fireL.magnitude));
@@ -1035,10 +1175,22 @@ namespace BDNukes
         /// <summary>Unspread cap scale: the stem follows the fireball's size, not the pancake's spread.</summary>
         float StemScale => capScale / Mathf.Max(0.3f, prof.capSpread);
 
-        /// <summary>Stem radius at height fraction u (0 ground .. 1 cap): profile width with a flared base.</summary>
-        float StemRadius(float u) => 0.17f * StemScale * prof.stemWidth * (1f + 2.5f * prof.stemTaper * Mathf.Pow(1f - u, 6f));
+        /// <summary>
+        /// Stem radius at height fraction u (0 ground .. 1 cap): profile width with a flared, broadened base, and
+        /// slowly shifting bulges and necks along its length so it isn't a uniform cylinder.
+        /// </summary>
+        float StemRadius(float u)
+        {
+            float b = 1f - u;
+            float flare = 1f + prof.stemTaper * (2.5f * Mathf.Pow(b, 6f) + 0.6f * b * b);
+            float irregular = 1f + prof.turbulence * (0.16f * Mathf.Sin(u * 9f + stemPhase + 0.05f * t) + 0.08f * Mathf.Sin(u * 23f - 0.11f * t + 2f * stemPhase));
+            return 0.17f * StemScale * prof.stemWidth * flare * irregular;
+        }
 
         float StemTop => Mathf.Max(R, hb + capPosL.y - 0.35f * capScale * Mathf.Min(capYS, 1.5f));
+
+        /// <summary>Downwind lean of the stem at height fraction u: slow air at the base, the cap's drift at the top.</summary>
+        Vector3 Lean(float u) => Vector3.Lerp(wind.Low(t) * 0.3f, capDrift, u);
 
         // --- Stem: a smoke column trails the rising fireball while ground dust is sucked up to meet it.
         //     Particles flow continuously upward through the column, swirling, so the stem visibly moves. ---
@@ -1056,29 +1208,36 @@ namespace BDNukes
             float yTop = StemTop;
             // trail hanging below the cap, lengthening quickly; dust column climbing to meet it
             float trailLen = yTop * (fromGround ? 0.25f + 0.45f * SS(start, start + 10f, t) : 0.45f);
-            float dustFront = fromGround ? yTop * SS(start, start + 0.3f * riseTime, t) : 0f;
+            // the dust column is joined to the skirt from the start and races up to meet the trail
+            float dustFront = fromGround ? yTop * Mathf.Lerp(0.3f, 1.05f, SS(start, start + 0.08f * riseTime + 4f, t)) : 0f;
             float flow = prof.rollSpeed / (0.5f * riseTime);
             float glow = Mathf.Pow(Glow(t), 0.6f);
-            float vis = FadeOut * SS(start, start + 3f, t) * (fromGround ? 1f : 0.7f);
+            float vis = FadeOut * SS(start, start + 2f, t) * (fromGround ? 1f : 0.7f);
+            float turb = prof.turbulence;
             for (int i = 0; i < n; i++)
             {
                 float r0 = stem.r0[i], r1 = stem.r1[i], r2 = stem.r2[i], r3 = stem.r3[i];
                 float u = Mathf.Repeat(r0 + t * flow * (0.7f + 0.6f * r3), 1f);
                 float y = u * yTop;
-                float theta = r1 * 2f * Mathf.PI + 0.15f * t * (1.3f - u) * prof.turbulence;
+                float b2 = (1f - u) * (1f - u);
+                float theta = r1 * 2f * Mathf.PI + 0.15f * t * (1.3f - u) * turb;
                 float stemR = StemRadius(u);
-                float rad = stemR * (0.2f + 0.8f * Mathf.Sqrt(r2));
-                Vector3 p = new Vector3(Mathf.Cos(theta) * rad, y, Mathf.Sin(theta) * rad);
+                // churning near the base: puffs surge in and out as the inflow swirls up
+                float rad = stemR * (0.2f + 0.8f * Mathf.Sqrt(r2)) * (1f + 0.4f * turb * b2 * Mathf.Sin(t * (0.5f + r0) + r3 * 20f));
+                // and the column snakes a little along its length
+                Vector3 wiggle = new Vector3(Mathf.Sin(u * 7f + 0.1f * t + stemPhase), 0f, Mathf.Cos(u * 5f - 0.08f * t + stemPhase)) * (0.25f * stemR * turb);
+                Vector3 p = new Vector3(Mathf.Cos(theta) * rad, y, Mathf.Sin(theta) * rad) + wiggle + Lean(u);
 
                 float shownDust = SS(dustFront, dustFront - 0.06f * yTop, y);
                 float shownTrail = SS(yTop - trailLen, yTop - trailLen + 0.08f * yTop, y);
-                float a = Mathf.Max(shownDust, shownTrail) * SS(0f, 0.05f, u) * vis;
+                // nothing fades out at the bottom, so the column stands on the skirt
+                float a = Mathf.Max(shownDust, shownTrail) * vis;
 
                 Vector3 nL = new Vector3(Mathf.Cos(theta), 0.25f, Mathf.Sin(theta)).normalized;
-                Color baseCol = Color.Lerp(stemLow, stemHigh, 0.15f + u * 0.7f);
+                Color baseCol = Color.Lerp(stemLow, stemHigh, 0.15f + u * 0.7f) * (0.9f + 0.2f * r2);
                 Vector3 fireL = (capPosL - (p + ground.localPosition)).normalized;
                 Color col = Shade(baseCol, nL, glow * (0.2f + 0.8f * u * u), fireL);
-                float size = stemR * (1.1f + 0.7f * r3);
+                float size = stemR * (1.1f + 0.7f * r3) * (1f + 0.35f * b2);
                 stem.Set(i, p, size, WithAlpha(col, 0.85f * a), Billow(r3));
             }
             stem.End(n);
@@ -1099,10 +1258,10 @@ namespace BDNukes
             {
                 int k = i % nc, j = i / nc;
                 float frac = 0.22f + 0.6f * (k + 0.5f) / nc;
-                // forms when the column top passes this height, lasts a while, then evaporates
-                float tk = start + frac * 0.25f * riseTime;
-                float hold = 0.18f * riseTime + 4f;
-                float vis = SS(tk, tk + 2.5f, t) * (1f - SS(tk + hold, tk + hold + 0.15f * riseTime, t)) * FadeOut;
+                // each forms in turn as the column climbs, and evaporates within seconds: one or two at a time
+                float tk = start + (k + 0.5f) / nc * 0.45f * riseTime;
+                float hold = 0.04f * riseTime + 3f;
+                float vis = SS(tk, tk + 3f, t) * (1f - SS(tk + hold, tk + hold + 0.06f * riseTime + 3f, t)) * FadeOut;
                 if (vis <= 0.001f)
                 {
                     collars.Set(i, Vector3.zero, 0f, new Color(0, 0, 0, 0), 0f);
@@ -1115,15 +1274,17 @@ namespace BDNukes
                 float stemR = StemRadius(u);
                 // bell: the outer edge droops below the attachment ring
                 float out01 = r1;
-                float rr = stemR * (1.05f + (0.6f + 0.3f * SS(0f, 10f, age)) * out01);
+                // a wide, thick, soft band of mist rather than a crisp ring
+                float rr = stemR * (1f + (0.9f + 0.5f * SS(0f, 10f, age)) * out01);
                 float theta = (j + r0 * 0.6f) / per * 2f * Mathf.PI + 0.02f * t * (k % 2 == 0 ? 1f : -1f);
-                float y = yk - 0.35f * (rr - stemR) + (r2 - 0.5f) * 0.12f * stemR;
-                Vector3 p = new Vector3(Mathf.Cos(theta) * rr, y, Mathf.Sin(theta) * rr);
+                float y = yk - 0.3f * (rr - stemR) + (r2 - 0.5f) * 0.45f * stemR;
+                Vector3 p = new Vector3(Mathf.Cos(theta) * rr, y, Mathf.Sin(theta) * rr) + Lean(u);
                 Vector3 nL = new Vector3(Mathf.Cos(theta) * 0.7f, 0.7f, Mathf.Sin(theta) * 0.7f).normalized;
                 Vector3 fireL = (capPosL - (p + ground.localPosition)).normalized;
-                Color col = Shade(CondWhite, nL, glow * 0.25f, fireL);
-                float size = stemR * (0.55f + 0.3f * r3) * (1f + 0.4f * out01);
-                collars.Set(i, p, size, WithAlpha(col, 0.55f * vis * (1f - 0.5f * out01)), r3 * 360f);
+                // sun-lit and a touch grey, not glowing white
+                Color col = Shade(Color.Lerp(CondWhite, stemHigh, 0.25f) * 0.82f, nL, glow * 0.08f, fireL);
+                float size = stemR * (0.9f + 0.5f * r3) * (1f + 0.5f * out01);
+                collars.Set(i, p, size, WithAlpha(col, 0.2f * vis * (1f - 0.6f * out01)), r3 * 360f);
             }
             collars.End(n);
         }
@@ -1547,9 +1708,11 @@ namespace BDNukes
             readonly ParticleSystem.Particle[] buf;
             readonly int count;
             readonly Vector3[] sphereDirs;
+            readonly Vector3 streakVel;
             bool spawned;
 
-            public Layer(Transform parent, string name, Material mat, int n, int seed, bool hierarchyScale)
+            /// <param name="stretch">If above 0, particles are drawn as vertical streaks this many sizes long (rain-out).</param>
+            public Layer(Transform parent, string name, Material mat, int n, int seed, bool hierarchyScale, float stretch = 0f)
             {
                 count = n;
                 var go = new GameObject(name);
@@ -1587,6 +1750,14 @@ namespace BDNukes
                 var rend = go.GetComponent<ParticleSystemRenderer>();
                 rend.sharedMaterial = mat;
                 rend.renderMode = ParticleSystemRenderMode.Billboard;
+                if (stretch > 0f)
+                {
+                    // stretched along the (local, downward) velocity; the length comes from lengthScale alone
+                    rend.renderMode = ParticleSystemRenderMode.Stretch;
+                    rend.lengthScale = stretch;
+                    rend.velocityScale = 0f;
+                    streakVel = Vector3.down * 0.01f;
+                }
                 rend.sortMode = ParticleSystemSortMode.Distance;
                 rend.minParticleSize = 0f;
                 rend.maxParticleSize = 100f;
@@ -1612,6 +1783,15 @@ namespace BDNukes
 
             public Vector3 SphereDir(int i) => sphereDirs[i];
 
+            public int Count => count;
+
+            /// <summary>Hides (or shows) the whole layer without touching its particles.</summary>
+            public void SetVisible(bool on)
+            {
+                var r = ps.GetComponent<ParticleSystemRenderer>();
+                if (r.enabled != on) r.enabled = on;
+            }
+
             public int Begin()
             {
                 if (!spawned)
@@ -1634,7 +1814,7 @@ namespace BDNukes
             public void Set(int i, Vector3 pos, float size, Color col, float rotDeg)
             {
                 buf[i].position = pos;
-                buf[i].velocity = Vector3.zero;
+                buf[i].velocity = streakVel;
                 buf[i].startSize = Mathf.Max(0f, size);
                 buf[i].startColor = col;
                 buf[i].rotation = rotDeg;

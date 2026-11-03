@@ -119,4 +119,37 @@ namespace BDNukes
             return g;
         }
     }
+
+    /// <summary>
+    /// Blanking the model paths isn't enough: BDArmory's pooled NukeFX object is itself a model (ModelPath, or
+    /// BDArmory/Models/shell/model when that's empty) placed at the burst and pointed up, which showed as a thin
+    /// bright vertical streak at ground zero. When we replace the stock visuals, hide its renderers and stop its
+    /// emitters; the NukeFX component keeps running, so damage is untouched. Pooled objects are reused, so the
+    /// renderers are switched back on when the stock visuals are wanted again.
+    /// </summary>
+    [HarmonyPatch(typeof(NukeFX), "OnEnable")]
+    internal static class Patch_NukeFX_OnEnable_HideStockModel
+    {
+        static void Postfix(NukeFX __instance)
+        {
+            try
+            {
+                if (!HighLogic.LoadedSceneIsFlight || __instance == null) return;
+                var s = NukeSettings.Current;
+                bool hide = s.enabled && s.replaceStockVisuals;
+                foreach (var r in __instance.GetComponentsInChildren<Renderer>(true)) r.enabled = !hide;
+                if (!hide) return;
+                foreach (var e in __instance.GetComponentsInChildren<KSPParticleEmitter>(true))
+                {
+                    e.emit = false;
+                    var em = e.ps.emission;
+                    em.enabled = false;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[BDNukes]: Error hiding stock nuke model: " + e);
+            }
+        }
+    }
 }
