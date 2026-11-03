@@ -1,17 +1,17 @@
 # Draft CKAN metadata. Submit as NetKAN/BDNukes.netkan in a PR to https://github.com/KSP-CKAN/NetKAN
-# Replace YOUR_GITHUB_USER and the forum URL before submitting.
+# Replace the forum URL before submitting.
 spec_version: v1.4
 identifier: BDNukes
 name: BDNukes
 abstract: Cinematic, physically grounded nuclear weapons for BDArmory, including the Tsar Bomba.
 author: Callum
-$kref: '#/ckan/github/YOUR_GITHUB_USER/BDNukes'
+$kref: '#/ckan/github/CRsquared64/BDNukes'
 $vref: '#/ckan/ksp-avc'
 license: MIT
 resources:
   homepage: https://forum.kerbalspaceprogram.com/topic/REPLACE-WITH-THREAD
-  repository: https://github.com/YOUR_GITHUB_USER/BDNukes
-  bugtracker: https://github.com/YOUR_GITHUB_USER/BDNukes/issues
+  repository: https://github.com/CRsquared64/BDNukes
+  bugtracker: https://github.com/CRsquared64/BDNukes/issues
 tags:
   - plugin
   - parts

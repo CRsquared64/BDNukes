@@ -17,13 +17,13 @@ CKAN finds the `BDNukes` folder by the mod identifier, and manual installers jus
 
 ## 3. GitHub
 ```
-git remote add origin https://github.com/<you>/BDNukes.git
+git remote add origin https://github.com/CRsquared64/BDNukes.git
 git push -u origin main
 ```
 Create a release with tag `v<version>` (e.g. `v1.0.0`) and attach the zip as an asset. Use the CHANGELOG section as the notes.
 CKAN's GitHub indexer reads the tag and asset from here.
 
-Then replace the placeholders in `ckan/BDNukes.netkan` (`YOUR_GITHUB_USER`, forum URL).
+Then replace the forum URL placeholder in `ckan/BDNukes.netkan`.
 Optionally add `"URL"`, `"DOWNLOAD"` and `"GITHUB"` fields to `BDNukes.version` so KSP-AVC can notify users of updates.
 
 ## 4. Forum thread (recommended) and SpaceDock (optional)
