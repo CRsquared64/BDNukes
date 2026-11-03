@@ -7,3 +7,6 @@ src/obj/
 
 # built plugin is attached to releases, not committed
 GameData/BDNukes/Plugins/*.dll
+
+# packaged releases
+release/

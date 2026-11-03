@@ -43,6 +43,8 @@ dotnet build -c Release
 The project expects the repo to sit inside your KSP folder (`<KSP>/BDNukes`). Otherwise pass `-p:KSPDir="C:\path\to\Kerbal Space Program"` or set the `KSPDIR` environment variable.
 The build writes `BDNukes.dll` to `GameData/BDNukes/Plugins` and copies the mod folder into your KSP install.
 
+To build a release zip: `powershell -ExecutionPolicy Bypass -File tools/package.ps1` → `release/BDNukes-<version>.zip`.
+
 ## Layout
 ```
 src/                      C# plugin (fuze, parachute, Tsar model, cinematic FX, Harmony patches)
@@ -50,4 +52,11 @@ GameData/BDNukes/         distributable mod folder
   Settings.cfg            all tunables
   Patches/                Module Manager patches for existing BDArmory parts
   Parts/TsarBomba/        Tsar Bomba part
+tools/package.ps1         release packaging
+ckan/BDNukes.netkan       CKAN metadata draft
+docs/PUBLISHING.md        GitHub release → forum → CKAN steps
+docs/ROADMAP.md           researched candidate weapons and the engine work they need
 ```
+
+## License
+MIT. See [LICENSE](LICENSE). BDNukes contains no third-party assets: every mesh, texture and sound is generated in code.

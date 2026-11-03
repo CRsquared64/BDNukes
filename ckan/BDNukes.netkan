@@ -1,0 +1,29 @@
+# Draft CKAN metadata. Submit as NetKAN/BDNukes.netkan in a PR to https://github.com/KSP-CKAN/NetKAN
+# Replace YOUR_GITHUB_USER and the forum URL before submitting.
+spec_version: v1.4
+identifier: BDNukes
+name: BDNukes
+abstract: Cinematic, physically grounded nuclear weapons for BDArmory, including the Tsar Bomba.
+author: Callum
+$kref: '#/ckan/github/YOUR_GITHUB_USER/BDNukes'
+$vref: '#/ckan/ksp-avc'
+license: MIT
+resources:
+  homepage: https://forum.kerbalspaceprogram.com/topic/REPLACE-WITH-THREAD
+  repository: https://github.com/YOUR_GITHUB_USER/BDNukes
+  bugtracker: https://github.com/YOUR_GITHUB_USER/BDNukes/issues
+tags:
+  - plugin
+  - parts
+  - graphics
+  - sound
+  - combat
+depends:
+  - name: ModuleManager
+  - name: Harmony2
+  - name: BDArmory
+suggests:
+  - name: BDArmoryExtended
+install:
+  - find: BDNukes
+    install_to: GameData

@@ -1,0 +1,47 @@
+# Builds BDNukes in Release and produces release/BDNukes-<version>.zip
+# Zip layout (what CKAN and manual installs expect):
+#   GameData/BDNukes/...      the mod, including Plugins/BDNukes.dll, LICENSE and README
+#
+# Usage:  powershell -ExecutionPolicy Bypass -File tools/package.ps1 [-KSPDir "C:\...\Kerbal Space Program"]
+param([string]$KSPDir = "")
+
+$ErrorActionPreference = "Stop"
+$repo = Split-Path -Parent $PSScriptRoot
+$modDir = Join-Path $repo "GameData\BDNukes"
+
+$ver = Get-Content (Join-Path $modDir "BDNukes.version") -Raw | ConvertFrom-Json
+$version = "$($ver.VERSION.MAJOR).$($ver.VERSION.MINOR).$($ver.VERSION.PATCH)"
+Write-Host "Packaging BDNukes $version"
+
+$buildArgs = @("build", (Join-Path $repo "src\BDNukes.csproj"), "-c", "Release", "-p:Version=$version")
+if ($KSPDir -ne "") { $buildArgs += "-p:KSPDir=$KSPDir" }
+& dotnet @buildArgs
+if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+
+$dll = Join-Path $modDir "Plugins\BDNukes.dll"
+if (-not (Test-Path $dll)) { throw "BDNukes.dll missing after build" }
+
+$stage = Join-Path $repo "release\stage"
+if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+$stageMod = Join-Path $stage "GameData\BDNukes"
+New-Item -ItemType Directory -Force $stageMod | Out-Null
+Copy-Item (Join-Path $modDir "*") $stageMod -Recurse -Exclude ".gitkeep"
+Get-ChildItem $stageMod -Recurse -Filter ".gitkeep" | Remove-Item -Force
+Copy-Item (Join-Path $repo "LICENSE") $stageMod
+Copy-Item (Join-Path $repo "README.md") $stageMod
+Copy-Item (Join-Path $repo "CHANGELOG.md") $stageMod
+
+$zip = Join-Path $repo "release\BDNukes-$version.zip"
+if (Test-Path $zip) { Remove-Item $zip -Force }
+# Windows PowerShell's Compress-Archive writes '\' separators, which breaks CKAN and non-Windows unzip.
+# Build the archive by hand with '/' entry names.
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::Open($zip, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    Get-ChildItem $stage -Recurse -File | ForEach-Object {
+        $entry = $_.FullName.Substring($stage.Length + 1).Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $_.FullName, $entry, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
+} finally { $archive.Dispose() }
+Remove-Item $stage -Recurse -Force
+Write-Host "Created $zip"
