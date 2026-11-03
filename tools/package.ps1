@@ -1,6 +1,7 @@
 # Builds BDNukes in Release and produces release/BDNukes-<version>.zip
 # Zip layout (what CKAN and manual installs expect):
 #   GameData/BDNukes/...      the mod, including Plugins/BDNukes.dll, LICENSE and README
+#   Ships/VAB, Ships/SPH      example craft
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools/package.ps1 [-KSPDir "C:\...\Kerbal Space Program"]
 param([string]$KSPDir = "")
@@ -30,6 +31,9 @@ Get-ChildItem $stageMod -Recurse -Filter ".gitkeep" | Remove-Item -Force
 Copy-Item (Join-Path $repo "LICENSE") $stageMod
 Copy-Item (Join-Path $repo "README.md") $stageMod
 Copy-Item (Join-Path $repo "CHANGELOG.md") $stageMod
+# example craft go to <KSP>/Ships/VAB and Ships/SPH
+$ships = Join-Path $repo "Ships"
+if (Test-Path $ships) { Copy-Item $ships (Join-Path $stage "Ships") -Recurse }
 
 $zip = Join-Path $repo "release\BDNukes-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }

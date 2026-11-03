@@ -133,6 +133,8 @@ MODULE
 	billowScale = -1    // puff size multiplier (smaller = finer cauliflower detail)
 	glowScale = -1      // incandescence duration multiplier
 	tint =              // optional "r,g,b" dust tint override
+	ballisticCutoff = true          // agmballistic missiles: cut the motor once the drag-free trajectory reaches the target
+	ballisticCutoffMargin = 1.05    // cut at predicted vacuum range = target range x this (allows for drag)
 }
 ```
 `style = auto` works the look out from the environment: ground vs air burst, ocean vs land, biome

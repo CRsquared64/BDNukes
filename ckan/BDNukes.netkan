@@ -27,3 +27,7 @@ suggests:
 install:
   - find: BDNukes
     install_to: GameData
+  - file: Ships/VAB
+    install_to: Ships
+  - file: Ships/SPH
+    install_to: Ships
