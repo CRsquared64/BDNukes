@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## 1.0.1
+
+### Fixed
+- The M29 Davy Crockett could not fire. Its nuclear round never loaded, because BDArmory reads bullet definitions before Module Manager processes `:NEEDS` tags.
+- The Davy Crockett's "Fire" button was blocked by BDArmory while the mouse was over the part menu. If a shot can't go, the button now says exactly why (reload countdown, out of rounds, barrel blocked, time warp).
+
+## 1.0.0
 
 First release.
 
