@@ -7,8 +7,8 @@ If you need something that isn't here, add it in **your own files** and note it 
 - KSP install: `D:\Games\steamapps\common\Kerbal Space Program` (KSP 1.12, Unity 2019.4.18, BDArmory 1.12.x).
 - Build from a worktree: `dotnet build src/BDNukes.csproj -c Release -p:KSPDir="D:\Games\steamapps\common\Kerbal Space Program" -p:SkipInstall=true`
   (`SkipInstall=true` stops parallel builds from overwriting the live game install).
-- Decompiled BDArmory source for reference (read-only): `D:\UserCache\Temp\claude\D--Games-steamapps-common-Kerbal-Space-Program\3b4adf9a-d793-4a4e-beb8-cbc74ab4533a\scratchpad\decomp\`
-  (e.g. `BDArmory.Weapons.Missiles/MissileLauncher.cs`, `BDArmory.Weapons/ModuleWeapon.cs`, `BDArmory.Bullets/BulletInfo.cs`).
+- BDArmory source for reference: https://github.com/BrettRyland/BDArmory
+  (e.g. `BDArmory/Weapons/Missiles/MissileLauncher.cs`, `BDArmory/Weapons/ModuleWeapon.cs`, `BDArmory/Bullets/BulletInfo.cs`).
 - BDArmory part configs to copy guidance/weapon parameters from: `D:\Games\steamapps\common\Kerbal Space Program\GameData\BDArmory\Parts\`
   and `...\GameData\BDArmoryExtended\Parts\` (e.g. `aim-120`, `AGM86-17`, `jdamMk83`, `mk82BombBrake`, `pac-3`, `m102Howitzer`, `browninganm2`).
 - BDArmory conventions: missiles and bombs have their **nose along +Z** and attach by their **+Y side**
