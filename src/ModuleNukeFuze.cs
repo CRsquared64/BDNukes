@@ -38,11 +38,34 @@ namespace BDNukes
         /// <summary>Seconds after flight start or release before the impact and airburst fuzes go live.</summary>
         [KSPField] public float armingDelay = 3f;
 
+        /// <summary>
+        /// Laydown fuze: once armed and released, touching down (landed, splashed, or a contact slower than
+        /// laydownMaxSpeed) starts this countdown, then the warhead detonates. 0 = off.
+        /// </summary>
+        [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Laydown Delay", guiUnits = "s")]
+        [UI_FloatRange(minValue = 0f, maxValue = 120f, stepIncrement = 1f, scene = UI_Scene.All, affectSymCounterparts = UI_Scene.All)]
+        public float laydownDelay = 0f;
+
+        /// <summary>While laydown is active, contacts slower than this start the countdown and only faster ones trip the impact fuze.</summary>
+        [KSPField] public float laydownMaxSpeed = 60f;
+
+        [KSPField(guiActive = false, guiActiveEditor = false, guiName = "Laydown")]
+        public string laydownStatus = "";
+
+        /// <summary>Set once the weapon has left the vessel it started on (persists across save/load mid-fall).</summary>
+        [KSPField(isPersistant = true)] public bool fuzeReleased;
+
+        /// <summary>Remaining laydown countdown in seconds; negative while not counting down.</summary>
+        [KSPField(isPersistant = true)] public float laydownRemaining = -1f;
+
         PartModule nukeModule;
         MethodInfo nukeDetonate;
         float armTime;
         Vessel lastVessel;
         bool wasAboveAirburst;
+
+        bool LaydownActive => laydownDelay > 0f;
+        bool Released => fuzeReleased || (vessel != null && sourcevessel != null && vessel != sourcevessel);
 
         public override void OnStart(StartState state)
         {
@@ -149,6 +172,10 @@ namespace BDNukes
                 lastVessel = vessel;
                 armTime = Time.time + armingDelay;
             }
+            if (!fuzeReleased && sourcevessel != null && vessel != sourcevessel) fuzeReleased = true;
+
+            UpdateLaydown();
+            if (hasDetonated) return;
 
             if (airburstAltitude <= 0f || vessel.packed) return;
 
@@ -157,20 +184,70 @@ namespace BDNukes
             double agl = vessel.altitude - ground;
 
             if (agl > airburstAltitude + 150f) wasAboveAirburst = true;
-            bool released = vessel != sourcevessel;
-            if ((released || wasAboveAirburst) && Time.time > armTime && vessel.verticalSpeed < -1d && agl <= airburstAltitude)
+            if ((Released || wasAboveAirburst) && Time.time > armTime && vessel.verticalSpeed < -1d && agl <= airburstAltitude)
             {
                 Detonate();
             }
         }
 
+        void UpdateLaydown()
+        {
+            if (!LaydownActive)
+            {
+                laydownRemaining = -1f;
+                return;
+            }
+            if (laydownRemaining < 0f)
+            {
+                if (!vessel.packed && Released && Time.time > armTime && vessel.LandedOrSplashed) StartLaydown();
+                return;
+            }
+            laydownRemaining -= TimeWarp.fixedDeltaTime;
+            if (laydownRemaining <= 0f)
+            {
+                laydownRemaining = 0f;
+                Detonate();
+            }
+        }
+
+        void StartLaydown()
+        {
+            if (laydownRemaining >= 0f) return;
+            laydownRemaining = laydownDelay;
+        }
+
+        public override void OnUpdate()
+        {
+            base.OnUpdate();
+            if (!HighLogic.LoadedSceneIsFlight) return;
+            var field = Fields["laydownStatus"];
+            field.guiActive = LaydownActive;
+            if (!LaydownActive) return;
+            if (hasDetonated) laydownStatus = fuseFailed ? "Dud" : "Detonated";
+            else if (!Armed) laydownStatus = "Safe";
+            else if (laydownRemaining >= 0f) laydownStatus = $"Detonation in {laydownRemaining:0.0} s";
+            else if (!Released) laydownStatus = "Awaiting release";
+            else if (Time.time < armTime) laydownStatus = $"Arming ({armTime - Time.time:0.0} s)";
+            else laydownStatus = "Awaiting touchdown";
+        }
+
         void OnCollisionEnter(Collision col)
         {
-            if (!HighLogic.LoadedSceneIsFlight || !impactFuze || hasDetonated || !Armed) return;
+            if (!HighLogic.LoadedSceneIsFlight || hasDetonated || !Armed) return;
             if (vessel == null || vessel.packed || Time.time < armTime) return;
-            if (col.relativeVelocity.magnitude < impactFuzeSpeed) return;
             Part other = col.collider != null ? col.collider.GetComponentInParent<Part>() : null;
             if (other != null && other.vessel == vessel) return;
+            float speed = col.relativeVelocity.magnitude;
+
+            if (LaydownActive && Released)
+            {
+                // Laydown: soft contacts start the countdown; only a hard hit trips the impact fuze.
+                if (impactFuze && speed > Mathf.Max(laydownMaxSpeed, impactFuzeSpeed)) Detonate();
+                else if (speed <= laydownMaxSpeed) StartLaydown();
+                return;
+            }
+
+            if (!impactFuze || speed < impactFuzeSpeed) return;
             Detonate();
         }
 
@@ -181,6 +258,7 @@ namespace BDNukes
             sb.AppendLine($"Impact fuze: >{impactFuzeSpeed:0} m/s");
             sb.AppendLine("Proximity fuze (toggle in flight/editor)");
             sb.AppendLine("Airburst altitude fuze");
+            sb.AppendLine($"Laydown fuze: 0-120 s delay after touchdown (<{laydownMaxSpeed:0} m/s)");
             sb.AppendLine("Detonate action group / button");
             if (detonateOnDestroyed) sb.AppendLine("Detonates if destroyed while armed");
             return sb.ToString();

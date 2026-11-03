@@ -59,7 +59,9 @@ namespace BDNukes
         {
             var p = s.Split(',');
             if (p.Length != 3) return Vector3.zero;
-            float.TryParse(p[0], out float x); float.TryParse(p[1], out float y); float.TryParse(p[2], out float z);
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            var ns = System.Globalization.NumberStyles.Float;
+            float.TryParse(p[0].Trim(), ns, ci, out float x); float.TryParse(p[1].Trim(), ns, ci, out float y); float.TryParse(p[2].Trim(), ns, ci, out float z);
             return new Vector3(x, y, z);
         }
 
