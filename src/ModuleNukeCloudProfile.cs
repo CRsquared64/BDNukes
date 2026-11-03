@@ -22,6 +22,17 @@ namespace BDNukes
         [KSPField] public float glowScale = -1f;      // incandescence duration multiplier
         [KSPField] public string tint = "";           // optional "r,g,b" dust tint override
 
+        /// <summary>
+        /// Ballistic missiles only (MissileLauncher with homingType = agmballistic and thrust): cut the motor once the
+        /// drag-free trajectory reaches the target, instead of BDArmory's slow throttle-back (see NukeBallisticCutoff).
+        /// </summary>
+        [KSPField] public bool ballisticCutoff = true;
+        /// <summary>Cut when the predicted vacuum range is this multiple of the target range (above 1 allows for drag).</summary>
+        [KSPField] public float ballisticCutoffMargin = 1.05f;
+
+        /// <summary>Set once the motor has been cut; it never relights.</summary>
+        internal bool ballisticCutoffDone;
+
         /// <summary>Snapshot of the requested profile, safe to keep after the part is destroyed.</summary>
         internal NukeCloudProfile ToProfile()
         {
