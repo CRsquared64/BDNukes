@@ -5,6 +5,14 @@ Cinematic, physically grounded nuclear weapons for [BDArmory Continued](https://
 BDNukes adds 15 real-world nuclear weapons, from the 20-ton Davy Crockett to the 50-megaton Tsar Bomba. It replaces BDArmory's nuclear visuals and sound with a full effect whose size *and* character follow yield and burst environment, and it fixes several BDArmory nuclear bugs.
 BDArmory's blast and thermal damage model is kept; BDNukes corrects its vacuum timing and EMP.
 
+![Ground burst over the Space Center](docs/screenshots/01-ground-burst-mushroom.jpg)
+
+| | |
+|---|---|
+| ![Fireball and base surge](docs/screenshots/02-ground-burst-fireball-surge.jpg) | ![Megaton cap](docs/screenshots/03-megaton-cap.jpg) |
+| ![Megaton pancake cap](docs/screenshots/04-megaton-pancake.jpg) | ![Burst on another world](docs/screenshots/05-other-worlds.jpg) |
+| ![Desert burst](docs/screenshots/06-desert-burst.jpg) | ![Vacuum burst](docs/screenshots/08-vacuum-burst.jpg) |
+
 ## Weapons
 All weapons are on their own **BDNukes** page in the VAB/SPH part list, sorted into Bombs, Missiles, ICBMs & Reentry Vehicles, Nuclear Artillery and Warheads. The page also collects BDArmory's own nuclear parts.
 
