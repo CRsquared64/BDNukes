@@ -1,6 +1,6 @@
 # BDNukes
 
-Cinematic, physically grounded nuclear weapons for [BDArmory Continued](https://github.com/BrettRyland/BDArmory) in Kerbal Space Program 1.12.
+Cinematic, physically grounded nuclear weapons for [BDArmory Plus (BDA+)](https://github.com/BrettRyland/BDArmory) in Kerbal Space Program 1.12.
 
 BDNukes adds 15 real-world nuclear weapons, from the 20-ton Davy Crockett to the 50-megaton Tsar Bomba. It replaces BDArmory's nuclear visuals and sound with a full effect whose size *and* character follow yield and burst environment, and it fixes several BDArmory nuclear bugs.
 BDArmory's blast and thermal damage model is kept; BDNukes corrects its vacuum timing and EMP.
@@ -54,7 +54,7 @@ Open the in-game window from the **BDNukes** toolbar button in flight. Pick a qu
 
 ## Requirements
 - KSP 1.12.x
-- BDArmory Continued (1.12.x) and its Physics Range Extender
+- BDArmory Plus (BDA+) 1.12 or later, with Physics Range Extender. The old BDArmory Continued 1.3.x line is not supported
 - Harmony (`000_Harmony`)
 - Module Manager
 - BDArmory Extended (optional; needed for the Small Nuclear Warhead fix)
