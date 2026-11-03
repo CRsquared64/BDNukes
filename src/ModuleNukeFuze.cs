@@ -1,7 +1,9 @@
 using System;
 using System.Reflection;
 using System.Text;
+using BDArmory.Utils;
 using BDArmory.Weapons;
+using BDArmory.Weapons.Missiles;
 using UnityEngine;
 
 namespace BDNukes
@@ -60,6 +62,10 @@ namespace BDNukes
 
         PartModule nukeModule;
         MethodInfo nukeDetonate;
+        FieldInfo nukeHasDetonated;
+        MissileBase missile;
+        bool fuseRolled;
+        float retryTime;
         float armTime;
         Vessel lastVessel;
         bool wasAboveAirburst;
@@ -71,6 +77,7 @@ namespace BDNukes
         {
             base.OnStart(state);
             FindNuke();
+            missile = part.FindModuleImplementing<MissileBase>();
 
             foreach (var ctrl in new[] { Fields["detonationRange"].uiControlEditor, Fields["detonationRange"].uiControlFlight })
             {
@@ -132,6 +139,7 @@ namespace BDNukes
                 {
                     nukeModule = pm;
                     nukeDetonate = pm.GetType().GetMethod("Detonate", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                    nukeHasDetonated = pm.GetType().GetField("hasDetonated", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
                     return;
                 }
             }
@@ -143,14 +151,22 @@ namespace BDNukes
             if (nukeModule == null || nukeDetonate == null)
             {
                 Debug.LogWarning("[BDNukes]: " + part.partInfo?.title + " has ModuleNukeFuze but no BDModuleNuke to detonate.");
+                hasDetonated = true; // nothing to fire: don't warn on every contact
                 return;
+            }
+            if (Time.time < retryTime) return;
+            // the fuze either works or it doesn't: roll once, not on every retry
+            if (!fuseRolled)
+            {
+                fuseRolled = true;
+                if (fuseFailureRate > 0f && UnityEngine.Random.value < fuseFailureRate)
+                {
+                    hasDetonated = true;
+                    fuseFailed = true;
+                    return;
+                }
             }
             hasDetonated = true;
-            if (fuseFailureRate > 0f && UnityEngine.Random.value < fuseFailureRate)
-            {
-                fuseFailed = true;
-                return;
-            }
             try
             {
                 nukeDetonate.Invoke(nukeModule, null);
@@ -158,7 +174,27 @@ namespace BDNukes
             catch (Exception e)
             {
                 Debug.LogError("[BDNukes]: Nuke detonation failed: " + e);
+                return;
             }
+            // BDModuleNuke refuses while its MissileLauncher is still Idle or in Drop. Stay live (and retry
+            // a little later) instead of turning into a silent dud.
+            if (nukeHasDetonated != null && nukeHasDetonated.GetValue(nukeModule) is bool done && !done)
+            {
+                hasDetonated = false;
+                retryTime = Time.time + 0.5f;
+            }
+        }
+
+        /// <summary>
+        /// Still on the aircraft or rocket that carries it: a missile that hasn't been fired, or a warhead that hasn't
+        /// left a vessel with a weapon manager or crew. The airburst fuze must not fire there just because the carrier
+        /// came down through the burst height.
+        /// </summary>
+        bool OnCarrier()
+        {
+            if (Released) return false;
+            if (missile != null) return !missile.HasFired;
+            return vessel.GetCrewCount() > 0 || VesselModuleRegistry.GetMissileFire(vessel, true) != null;
         }
 
         public override void OnFixedUpdate()
@@ -184,7 +220,7 @@ namespace BDNukes
             double agl = vessel.altitude - ground;
 
             if (agl > airburstAltitude + 150f) wasAboveAirburst = true;
-            if ((Released || wasAboveAirburst) && Time.time > armTime && vessel.verticalSpeed < -1d && agl <= airburstAltitude)
+            if ((Released || wasAboveAirburst) && Time.time > armTime && vessel.verticalSpeed < -1d && agl <= airburstAltitude && !OnCarrier())
             {
                 Detonate();
             }

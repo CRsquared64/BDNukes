@@ -83,7 +83,10 @@ namespace BDNukes
 
         void OnDestroy()
         {
-            if (canopy != null) Destroy(canopy);
+            if (canopy == null) return;
+            var mf = canopy.GetComponent<MeshFilter>();
+            if (mf != null && mf.sharedMesh != null) Destroy(mf.sharedMesh);
+            Destroy(canopy);
         }
 
         public void FixedUpdate()

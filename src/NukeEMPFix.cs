@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BDArmory.Damage;
 using BDArmory.FX;
 using BDArmory.Settings;
@@ -26,6 +27,7 @@ namespace BDNukes
     {
         static readonly AccessTools.FieldRef<NukeFX, float> EMPRadius = AccessTools.FieldRefAccess<NukeFX, float>("EMPRadius");
         static RaycastHit[] hits = new RaycastHit[100];
+        static readonly HashSet<Part> counted = new HashSet<Part>();
         const int EMPLayerMask = 67108865; // same mask BDArmory uses for its EMP raycasts (parts + EVA)
 
         static bool Prefix(NukeFX __instance)
@@ -95,18 +97,19 @@ namespace BDNukes
                 n = hits.Length;
             }
 
+            // raycast hits come back unsorted, so a part with several colliders must be counted only once
             float total = 0f;
-            Part last = null;
+            counted.Clear();
             for (int i = 0; i < n; i++)
             {
                 Part p = hits[i].collider != null ? hits[i].collider.GetComponentInParent<Part>() : null;
-                if (p == null || p == last || p.vessel != target.vessel) continue;
-                last = p;
+                if (p == null || p.vessel != target.vessel || !counted.Add(p)) continue;
                 var hp = p.FindModuleImplementing<HitpointTracker>();
                 if (hp == null) continue;
                 if (hp.Diffusivity > 15f) total += hp.Armour;      // conductive armour acts as a Faraday shield
                 if (hp.HullMassAdjust > 0f) total += p.mass * 4f;  // reinforced hull
             }
+            counted.Clear();
             return total;
         }
     }

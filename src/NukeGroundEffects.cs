@@ -64,8 +64,9 @@ namespace BDNukes
             if (glowMat != null) Destroy(glowMat);
             if (decal != null)
             {
-                var mf = decal.GetComponent<MeshFilter>();
-                if (mf != null && mf.sharedMesh != null) Destroy(mf.sharedMesh);
+                // the scorch mesh and the afterglow's copy of it
+                foreach (var mf in decal.GetComponentsInChildren<MeshFilter>(true))
+                    if (mf != null && mf.sharedMesh != null) Destroy(mf.sharedMesh);
             }
         }
 

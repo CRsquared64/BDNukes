@@ -136,7 +136,16 @@ namespace BDNukes
             NukeAssets.Init();
             float lod = NukeFXManager.LODScale();
             var go = new GameObject("BDNukes_Detonation");
-            go.AddComponent<NukeCinematic>().Setup(body, worldPos, Mathf.Max(yield, 0.001f), Mathf.Max(0f, delay), profile, lod);
+            try
+            {
+                go.AddComponent<NukeCinematic>().Setup(body, worldPos, Mathf.Max(yield, 0.001f), Mathf.Max(0f, delay), profile, lod);
+            }
+            catch
+            {
+                // a half-built detonation would throw from LateUpdate every frame
+                Destroy(go);
+                throw;
+            }
         }
 
         void Setup(CelestialBody b, Vector3 pos, float yield, float detonationDelay, NukeCloudProfile request, float lodScale)
@@ -792,6 +801,8 @@ namespace BDNukes
             lightFx.transform.localPosition = capPosL;
         }
 
+        static readonly float[] FlashSizes = { 14f, 6f, 2.4f };
+
         void UpdateFlash()
         {
             int n = flash.Begin();
@@ -799,11 +810,10 @@ namespace BDNukes
             // the wide halo sprites belong to the first instants: they shrink after ~1 s, so the flash's slow tail
             // doesn't leave a huge white halo hanging over a megaton seen from far away
             float scale = (1f + 2f * vacW + hiW) * Mathf.Lerp(1f, 0.3f, SS(0.3f, 1.5f, t));
-            float[] sizes = { 14f, 6f, 2.4f };
             for (int i = 0; i < n; i++)
             {
                 float a = Mathf.Clamp01(fi * (i == 2 ? 1f : 0.7f * (1f - SS(0.5f, 2f, t))));
-                flash.Set(i, capPosL, R * sizes[i % 3] * scale, new Color(0.92f, 0.95f, 1f, a), 0f);
+                flash.Set(i, capPosL, R * FlashSizes[i % 3] * scale, new Color(0.92f, 0.95f, 1f, a), 0f);
             }
             flash.End(n);
         }

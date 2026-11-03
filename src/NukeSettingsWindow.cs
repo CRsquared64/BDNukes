@@ -95,8 +95,9 @@ namespace BDNukes
             int q = GUILayout.Toolbar((int)s.quality, Qualities);
             if (q != (int)s.quality)
             {
-                if ((NukeQuality)q == NukeQuality.Custom) s.BeginCustom();
-                else s.quality = (NukeQuality)q;
+                // picking Custom brings back the saved custom values; only editing a value under a preset
+                // (below) starts a new custom set from that preset
+                s.quality = (NukeQuality)q;
                 s.ApplyQuality();
             }
 
@@ -115,7 +116,9 @@ namespace BDNukes
             float density = Slider("Particle density", v.particleDensity, 0.1f, 4f, "0.00");
             float texScale = Slider("Texture scale (0.5 / 1 / 2)", v.textureScale, 0.5f, 2f, "0.0");
             float lodStr = Slider("Burst LOD strength", v.lodStrength, 0f, 1.5f, "0.00");
-            int maxP = Mathf.RoundToInt(Slider("Max particles per burst", v.maxParticles, 500f, 30000f, "0") / 100f) * 100;
+            // snap to 100s only when the slider moves, so a cfg value like 9050 isn't rewritten every frame
+            float maxPf = Slider("Max particles per burst", v.maxParticles, 500f, 30000f, "0");
+            int maxP = maxPf == v.maxParticles ? v.maxParticles : Mathf.RoundToInt(maxPf / 100f) * 100;
             if (capDetail != v.capDetail || collars != v.stemCollars || rings != v.condensationRings || wilson != v.wilsonCloud
                 || aurora != v.artificialAurora || fallout != v.falloutCloud || lightning != v.lightning || scorch != v.scorchMarks
                 || fires != v.lingeringFires || shadows != v.lightShadows || !Mathf.Approximately(density, v.particleDensity)

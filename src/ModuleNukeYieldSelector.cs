@@ -51,7 +51,13 @@ namespace BDNukes
         {
             base.OnStart(state);
             ParseYields();
-            if (values.Length == 0) return;
+            if (values.Length == 0)
+            {
+                // a chooser with no options throws when the part menu opens
+                Fields["selectedYield"].guiActive = Fields["selectedYield"].guiActiveEditor = false;
+                Debug.LogWarning("[BDNukes]: " + part.partInfo?.title + " has ModuleNukeYieldSelector with no valid yields ('" + yields + "').");
+                return;
+            }
             if (yieldIndex < 0 || yieldIndex >= values.Length) yieldIndex = DefaultIndex();
             selectedYield = labels[yieldIndex];
 

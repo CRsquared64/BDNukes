@@ -34,6 +34,34 @@ namespace BDNukes
 
         public static float DoseOf(ProtoCrewMember c) => c != null && doses.TryGetValue(c.name, out float d) ? d : 0f;
 
+        /// <summary>Writes the doses into the save (NukeDoseScenario), so they follow quicksaves, reverts and other saves.</summary>
+        internal static void SaveDoses(ConfigNode node)
+        {
+            foreach (var kv in doses)
+            {
+                var n = node.AddNode("KERBAL");
+                n.AddValue("name", kv.Key);
+                n.AddValue("dose", kv.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                n.AddValue("warned", warned.Contains(kv.Key));
+            }
+        }
+
+        /// <summary>Replaces the doses with the ones in the save being loaded.</summary>
+        internal static void LoadDoses(ConfigNode node)
+        {
+            doses.Clear();
+            warned.Clear();
+            foreach (var n in node.GetNodes("KERBAL"))
+            {
+                string name = n.GetValue("name");
+                float d = 0f;
+                bool w = false;
+                if (string.IsNullOrEmpty(name) || !n.TryGetValue("dose", ref d) || d <= 0f) continue;
+                doses[name] = d;
+                if (n.TryGetValue("warned", ref w) && w) warned.Add(name);
+            }
+        }
+
         void Awake()
         {
             Instance = this;
@@ -143,6 +171,7 @@ namespace BDNukes
                 {
                     part.RemoveCrewmember(c);
                     c.Die();
+                    GameEvents.onCrewKilled.Fire(new EventReport(FlightEvents.CREW_KILLED, part, c.name, "radiation"));
                     if (v != null)
                     {
                         v.CrewListSetDirty();
@@ -179,5 +208,17 @@ namespace BDNukes
             if (sv < 1f) return (sv * 1000f).ToString("0") + " mSv";
             return sv.ToString("0.00") + " Sv";
         }
+    }
+
+    /// <summary>
+    /// Keeps the kerbals' accumulated doses in the save game. Without it they lived in a static table for the whole
+    /// session: they leaked from one save into another and survived a quickload or revert to before the exposure,
+    /// so a kerbal brought back by a revert could die again at once.
+    /// </summary>
+    [KSPScenario(ScenarioCreationOptions.AddToAllGames, GameScenes.FLIGHT, GameScenes.SPACECENTER, GameScenes.TRACKSTATION, GameScenes.EDITOR)]
+    public class NukeDoseScenario : ScenarioModule
+    {
+        public override void OnLoad(ConfigNode node) => NukeRadiation.LoadDoses(node);
+        public override void OnSave(ConfigNode node) => NukeRadiation.SaveDoses(node);
     }
 }

@@ -12,15 +12,25 @@ namespace BDNukes
     {
         void Awake()
         {
-            try
+            // Patch class by class: PatchAll stops at the first failure, so one BDArmory method that changed
+            // name in an update would also take every later patch (the cinematic itself included) with it.
+            var harmony = new Harmony("BDNukes");
+            int applied = 0, failed = 0;
+            foreach (var type in AccessTools.GetTypesFromAssembly(typeof(BDNukesLoader).Assembly))
             {
-                new Harmony("BDNukes").PatchAll(typeof(BDNukesLoader).Assembly);
-                Debug.Log("[BDNukes]: Harmony patches applied.");
+                try
+                {
+                    var patched = harmony.CreateClassProcessor(type).Patch();
+                    if (patched != null && patched.Count > 0) applied++;
+                }
+                catch (Exception e)
+                {
+                    failed++;
+                    Debug.LogError("[BDNukes]: Failed to apply Harmony patch " + type.Name + ": " + e);
+                }
             }
-            catch (Exception e)
-            {
-                Debug.LogError("[BDNukes]: Failed to apply Harmony patches: " + e);
-            }
+            if (failed == 0) Debug.Log($"[BDNukes]: Harmony patches applied ({applied}).");
+            else Debug.LogError($"[BDNukes]: {failed} Harmony patch(es) failed, {applied} applied. Is this the BDArmory version BDNukes was built for?");
         }
     }
 
@@ -104,10 +114,18 @@ namespace BDNukes
                 double lon2 = lon + offsets[i].x / (radius * cosLat) * 180d / Math.PI;
                 double alt2 = GroundAlt(body, lat2, lon2) + hAbove;
                 Vector3 pos2 = body.GetWorldSurfacePosition(lat2, lon2, alt2);
-                // the hit part belongs to the first warhead only
-                NukeFX.CreateExplosion(pos2, type, vesselName, weaponName, d, blastRadius, yield, thermalShock, emp,
-                    blastSound, flashModel, shockModel, blastModel, plumeModel, debrisModel, modelPath, soundPath,
-                    nukePart, null, sourceVelocity, bulletHitRegistered);
+                // the hit part belongs to the first warhead only; one failing RV must not stop the others
+                // (or the first warhead's own cinematic, which is spawned after this returns)
+                try
+                {
+                    NukeFX.CreateExplosion(pos2, type, vesselName, weaponName, d, blastRadius, yield, thermalShock, emp,
+                        blastSound, flashModel, shockModel, blastModel, plumeModel, debrisModel, modelPath, soundPath,
+                        nukePart, null, sourceVelocity, bulletHitRegistered);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError("[BDNukes]: MIRV warhead " + (i + 2) + " failed: " + e);
+                }
             }
             Debug.Log($"[BDNukes]: MIRV bus released {offsets.Length + 1} warheads over a {bus.spread:0} m footprint.");
         }
@@ -138,6 +156,8 @@ namespace BDNukes
                 var s = NukeSettings.Current;
                 bool hide = s.enabled && s.replaceStockVisuals;
                 foreach (var r in __instance.GetComponentsInChildren<Renderer>(true)) r.enabled = !hide;
+                // BDArmory's own point light would double up with the cinematic's
+                foreach (var l in __instance.GetComponentsInChildren<Light>(true)) l.enabled = !hide;
                 if (!hide) return;
                 foreach (var e in __instance.GetComponentsInChildren<KSPParticleEmitter>(true))
                 {
