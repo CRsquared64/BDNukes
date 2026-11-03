@@ -44,9 +44,6 @@ Real dimensions, masses and burn times. Minimum launch ranges keep AI launchers 
 ## Settings
 Open the in-game window from the **BDNukes** toolbar button in flight. Pick a quality preset (Low / Medium / High / Ultra / Custom) or tune individual effects, then save. Saved values go to `GameData/BDNukes/PluginData/Settings.cfg`; the defaults and comments are in `GameData/BDNukes/Settings.cfg`.
 
-## Example craft
-Ready-made templates for every weapon (silos, launch sites, bombers, interceptors) are in `Ships/VAB` and `Ships/SPH`. See [docs/TEMPLATES.md](docs/TEMPLATES.md).
-
 ## Requirements
 - KSP 1.12.x
 - BDArmory Continued (1.12.x) and its Physics Range Extender
@@ -55,7 +52,7 @@ Ready-made templates for every weapon (silos, launch sites, bombers, interceptor
 - BDArmory Extended (optional; needed for the Small Nuclear Warhead fix)
 
 ## Install
-Copy `GameData/BDNukes` into your KSP `GameData` folder. To get the example craft, also copy `Ships` into your KSP folder, or into a save's `Ships` folder.
+Copy `GameData/BDNukes` into your KSP `GameData` folder.
 
 ## Building
 ```
@@ -75,10 +72,9 @@ GameData/BDNukes/         distributable mod folder
   Parts/                  the weapons
   BulletDefs/             nuclear round and its ammo
   Patches/                Module Manager patches for BDArmory's own nuclear parts
-Ships/                    example craft (VAB, SPH)
-tools/                    release packaging and the craft generator
+tools/package.ps1         release packaging
 ckan/BDNukes.netkan       CKAN metadata
-docs/                     design contract, roadmap, publishing guide, templates
+docs/                     design contract, roadmap, publishing guide
 ```
 
 ## License

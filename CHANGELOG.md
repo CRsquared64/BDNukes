@@ -19,7 +19,6 @@ First release.
   - `ModuleNukeGunTrigger`: one-press fire for nuclear guns.
   - `ModuleNukeDecouple`: a decoupler for fuzed bombs.
 - **Ballistic missile motor cutoff:** thrust is cut once the drag-free trajectory reaches the target.
-- **Example craft** for every weapon.
 
 ### Effects
 - **Cinematic detonations for all BDArmory nukes:** yield-scaled flash, fireball, condensation rings and collars, Wilson cloud, shock front, rolling toroidal cap, flowing dust stem, skirt, base surge, delayed sound and camera shake, and screen glow.
