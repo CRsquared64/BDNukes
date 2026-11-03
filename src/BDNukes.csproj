@@ -42,7 +42,7 @@
       <ModFiles Include="$(RepoModDir)\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(ModFiles)" DestinationFiles="@(ModFiles->'$(InstallModDir)\%(RecursiveDir)%(Filename)%(Extension)')"
-          Condition="Exists('$(KSPDir)\GameData')" SkipUnchangedFiles="true"
+          Condition="Exists('$(KSPDir)\GameData') and '$(SkipInstall)' != 'true'" SkipUnchangedFiles="true"
           Retries="1" ContinueOnError="WarnAndContinue" />
   </Target>
 
