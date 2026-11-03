@@ -33,8 +33,34 @@ namespace BDNukes
         float noiseSeed;
         Texture2D white;
 
+        float lastBlastSound = -1000f;
+
         public void Register(NukeCinematic c) { if (!active.Contains(c)) active.Add(c); }
         public void Unregister(NukeCinematic c) { active.Remove(c); }
+
+        /// <summary>
+        /// Particle-count scale for a new detonation: with N detonations alive (including the new one),
+        /// each new one gets ~1/sqrt(N) of the particles so a salvo or MIRV stays playable.
+        /// </summary>
+        public static float LODScale()
+        {
+            var s = NukeSettings.Current;
+            if (!s.burstLOD || instance == null) return 1f;
+            int n = 1;
+            for (int i = 0; i < instance.active.Count; i++) if (instance.active[i] != null) n++;
+            return Mathf.Clamp(1f / Mathf.Sqrt(n), s.minLODScale, 1f);
+        }
+
+        /// <summary>
+        /// Claims the crack/rumble for a shock arriving now. Returns false if another detonation's
+        /// started within soundMergeWindow, so a salvo doesn't stack dozens of identical cracks.
+        /// </summary>
+        public bool TryClaimBlastSound()
+        {
+            if (Time.time - lastBlastSound < NukeSettings.Current.soundMergeWindow) return false;
+            lastBlastSound = Time.time;
+            return true;
+        }
 
         public void AddShake(float amplitude, float duration)
         {
@@ -96,16 +122,18 @@ namespace BDNukes
         void OnGUI()
         {
             if (Event.current.type != EventType.Repaint || active.Count == 0) return;
-            float flash = 0f, tint = 0f;
+            // Overlapping flashes combine like stacked translucent layers (1 - product of (1 - f)), and the
+            // total is capped so a salvo can't white the screen out for seconds on end.
+            float clear = 1f, tint = 0f;
             for (int i = 0; i < active.Count; i++)
             {
                 if (active[i] == null) continue;
                 active[i].GetScreenContribution(out float f, out float w);
-                flash = Mathf.Max(flash, f);
+                clear *= 1f - Mathf.Clamp01(f);
                 tint = Mathf.Max(tint, w);
             }
             var s = NukeSettings.Current;
-            flash = Mathf.Clamp01(flash * s.screenFlash);
+            float flash = Mathf.Min(Mathf.Clamp01((1f - clear) * s.screenFlash), s.maxScreenFlash);
             tint = Mathf.Clamp01(tint * s.screenTint);
             if (flash < 0.003f && tint < 0.003f) return;
 
