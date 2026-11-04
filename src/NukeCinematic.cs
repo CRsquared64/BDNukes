@@ -879,11 +879,14 @@ namespace BDNukes
             shockDome.transform.localPosition = Vector3.zero;
             shockDome.transform.localScale = Vector3.one * (2f * rs);
             NukeVolumetric.AddShock(shockDome.transform.localToWorldMatrix, shockMat);
-            shockMat.SetFloat("_Strength", 0.018f * s.shockDistortion * k * Mathf.Pow(R / Mathf.Max(R, rs), 0.35f));
+            // from inside the shell its silhouette surrounds the whole view: let it go once the front has passed
+            float outside = SS(0.85f, 1.2f, camDist / Mathf.Max(rs, 1f));
+            shockMat.SetFloat("_Strength", 0.018f * s.shockDistortion * k * outside * Mathf.Pow(R / Mathf.Max(R, rs), 0.35f));
             // ground height in the sphere's own units (radius 0.5): a dome for surface bursts
             float gy = groundFx ? Mathf.Clamp(groundY / (2f * rs), -0.5f, 0.5f) : -1f;
             // a free air burst shows the shell as a clear bubble around the fireball
-            shockMat.SetVector("_ShockParams", new Vector4(gy, (groundFx ? 0.35f : 0.7f) * k * Mathf.Max(daylight, 0.3f), 1f, 0f));
+            // a real shock front is all but invisible: a faint sheen at most, the bending of the light doing the work
+            shockMat.SetVector("_ShockParams", new Vector4(gy, (groundFx ? 0.1f : 0.16f) * k * outside * Mathf.Max(daylight, 0.3f), 1f, 0f));
         }
 
         /// <summary>
@@ -968,7 +971,8 @@ namespace BDNukes
                 vs.stemFlare = 1.2f * prof.stemTaper * Mathf.Lerp(1f, 0.5f, columnS);
                 vs.stemDustTop = groundY + dustFront;
                 vs.stemTrailBottom = groundY + yTop - trailLen;
-                vs.stemDensity = 0.9f * FadeOut * SS(start, start + 2f, t) * (fromGround ? 1f : 0.7f);
+                // a free air burst has no stem: only a burst low enough to raise dust gets a column, from the ground up
+                vs.stemDensity = fromGround ? 0.9f * FadeOut * SS(start, start + 2f, t) : 0f;
                 vs.updraft = (60f * Mathf.Exp(-t / riseTime) + 10f) * prof.rollSpeed;
             }
 

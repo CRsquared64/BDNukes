@@ -191,9 +191,33 @@ namespace BDNukes
         public static Mesh Sphere()
         {
             if (sphere != null) return sphere;
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            sphere = go.GetComponent<MeshFilter>().sharedMesh;
-            Object.Destroy(go);
+            // a fine UV sphere (radius 0.5, like Unity's primitive): the shock front spans the whole view up close,
+            // and the primitive's 20 segments show as facets along its silhouette
+            const int seg = 128, rings = 64;
+            var verts = new Vector3[(seg + 1) * (rings + 1)];
+            var norms = new Vector3[verts.Length];
+            for (int r = 0; r <= rings; r++)
+            {
+                float th = Mathf.PI * r / rings;
+                for (int g = 0; g <= seg; g++)
+                {
+                    float ph = 2f * Mathf.PI * g / seg;
+                    var n = new Vector3(Mathf.Sin(th) * Mathf.Cos(ph), Mathf.Cos(th), Mathf.Sin(th) * Mathf.Sin(ph));
+                    verts[r * (seg + 1) + g] = 0.5f * n;
+                    norms[r * (seg + 1) + g] = n;
+                }
+            }
+            var tris = new int[seg * rings * 6];
+            int k = 0;
+            for (int r = 0; r < rings; r++)
+                for (int g = 0; g < seg; g++)
+                {
+                    int a = r * (seg + 1) + g, b = a + seg + 1;
+                    tris[k++] = a; tris[k++] = a + 1; tris[k++] = b;
+                    tris[k++] = b; tris[k++] = a + 1; tris[k++] = b + 1;
+                }
+            sphere = new Mesh { name = "BDNukesSphere", vertices = verts, normals = norms, triangles = tris };
+            sphere.RecalculateBounds();
             return sphere;
         }
 
