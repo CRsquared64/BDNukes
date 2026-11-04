@@ -50,6 +50,7 @@ namespace BDNukes
         bool overOcean;
         NukeWind wind;
         Vector3 capDrift;   // this frame's downwind drift of the cap
+        float windLag;      // s for the rising cloud to pick up the wind's speed
         float stemPhase;    // random phase of the stem's bulges and wiggle
 
         // --- aftermath handed to NukeFallout / NukeGroundEffects ---
@@ -82,6 +83,7 @@ namespace BDNukes
         bool underwater, waterSurface, waterFx;
         float depth, depthF, colH, colR, tauCol, tCollapse, tFall;
         float flashK = 1f;  // flash/light attenuation (water swallows most of an underwater flash)
+        float tMax;         // s to the thermal pulse's second maximum (0.0417 W^0.44: 0.16 s at 20 kt, 4.9 s at 50 Mt)
 
         // --- cloud shape from the profile ---
         float capYScale;    // vertical stretch of the cap: profile aspect / the neutral 0.5
@@ -96,6 +98,14 @@ namespace BDNukes
         Transform cap, ground, rings;
         Light lightFx;
         readonly List<Layer> layers = new List<Layer>();
+
+        // --- atmosphere between the camera and the cloud, and the weather overhead ---
+        float haze;                 // 0..1 aerial perspective: how far colours are washed toward hazeCol
+        Color hazeCol = new Color(0.6f, 0.68f, 0.78f);
+        float sunVis = 1f;          // direct sunlight reaching the part being shaded (cloud decks above it)
+        float sunVisCap = 1f, sunVisLow = 1f, sunVisCam = 1f;
+        float nextWeatherSample;
+        readonly List<NukeWeather.Deck> decks = new List<NukeWeather.Deck>();
         Layer fireCore, capSmoke, capDetail, capUpper, capGlow, flash, shock, wilson, skirt, surge, stem, collars, sparks;
         Layer[] ringLayers;
         Layer hiFire, airglow;
@@ -110,7 +120,7 @@ namespace BDNukes
         Vector3 fieldL;             // local magnetic field direction at the burst (dipole approximation)
         float vDebris;
         bool hasField;
-        AudioSource crackSrc, rumbleSrc, boomSrc;
+        AudioSource crackSrc, rumbleSrc, boomSrc, roarSrc;
         AudioLowPassFilter lowPass;
         bool soundPlayed, nearShakeDone;
 
@@ -138,7 +148,11 @@ namespace BDNukes
             var go = new GameObject("BDNukes_Detonation");
             try
             {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 go.AddComponent<NukeCinematic>().Setup(body, worldPos, Mathf.Max(yield, 0.001f), Mathf.Max(0f, delay), profile, lod);
+                sw.Stop();
+                if (sw.Elapsed.TotalMilliseconds > 25d)
+                    Debug.Log("[BDNukes]: Detonation setup took " + sw.Elapsed.TotalMilliseconds.ToString("F0") + " ms (" + yield + " kt)");
             }
             catch
             {
@@ -172,6 +186,7 @@ namespace BDNukes
             float densRatio = Mathf.Clamp(rho / 1.225f, 0.05f, 1f);
 
             R = 70f * Mathf.Pow(W, 0.4f) * s.sizeScale;
+            tMax = Mathf.Clamp(0.0417f * Mathf.Pow(W, 0.44f), 0.03f, 6f);
             tauG = (2.5f + 2.2f * Mathf.Pow(W, 0.3f)) * s.glowTimeScale;
             float H = 5800f * Mathf.Pow(W, 0.26f) * s.cloudHeightScale * s.sizeScale;
             float capTop = Mathf.Max(H, hb + 3f * R);
@@ -244,10 +259,17 @@ namespace BDNukes
             life = Mathf.Max(Mathf.Max(airFx ? lifeAir : 0f, vacFx ? lifeVac : 0f), Mathf.Max(hiFx ? Mathf.Max(lifeHi, auroraFootL != null ? lifeVac : 0f) : 0f, waterFx ? lifeWater : 0f));
 
             int windSeed = Random.Range(0, 100000);
-            wind = new NukeWind(NukeFXManager.Instance.WindHeading, s.windSpeed, s.windShear, windSeed,
+            // windShear is the wind at a big cloud's cap (~6 km+); a small cloud tops out in the slower air lower down
+            float capTopAGL = hb + riseDelta;
+            float shear = Mathf.Lerp(1f, s.windShear, SS(300f, 6000f, capTopAGL));
+            wind = new NukeWind(NukeFXManager.Instance.WindHeading, s.windSpeed, shear, windSeed,
                 Mathf.Max(life, NukeFallout.Lifetime(s, W) + 60f));
+            // the rising fireball's own updraft holds it against the wind at first: it only picks up the wind's
+            // speed over about half its rise
+            windLag = 0.45f * riseTime;
             PlanAftermath();
             Build();
+            PlanCrater();
             SpawnAftermath();
             NukeFXManager.Instance.Register(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
@@ -270,6 +292,19 @@ namespace BDNukes
             scorchFx = s.scorchMarks && !overOcean && hb < 1.2f * R;
             firesFx = s.lingeringFires && !overOcean && airFx && body.atmosphereContainsOxygen && hb < 8f * R;
             groundEffects = scorchFx || firesFx;
+        }
+
+        /// <summary>
+        /// Surface and near-surface bursts on land dig a crater into the terrain. It's added before the scorch decal
+        /// samples the ground, so the decal drapes into it; the visible terrain is rebuilt just after the flash.
+        /// </summary>
+        void PlanCrater()
+        {
+            if (overOcean || underwater) return;
+            var crater = NukeCraters.Plan(body, lat, lon, W, R, hb);
+            if (crater == null) return;
+            try { NukeCraters.Add(crater, delay + 0.15f); }
+            catch (System.Exception e) { Debug.LogError("[BDNukes]: Couldn't add a crater: " + e); }
         }
 
         void SpawnAftermath()
@@ -421,6 +456,10 @@ namespace BDNukes
             crackSrc = MakeSource(audioGo, NukeAssets.Crack);
             rumbleSrc = MakeSource(audioGo, NukeAssets.Rumble);
             boomSrc = MakeSource(audioGo, NukeAssets.StockBoom);
+            roarSrc = MakeSource(audioGo, NukeAssets.Roar);
+            // bigger bursts sound deeper and longer: a lower-pitched, stretched crack and rumble
+            float pitch = Mathf.Clamp(1.15f - 0.1f * Mathf.Log10(W), 0.65f, 1.35f);
+            crackSrc.pitch = rumbleSrc.pitch = roarSrc.pitch = pitch;
             lowPass = audioGo.AddComponent<AudioLowPassFilter>();
             lowPass.cutoffFrequency = 22000f;
         }
@@ -550,7 +589,11 @@ namespace BDNukes
         float FlashIntensity(float time)
         {
             if (time < 0f) return 0f;
-            float air = Mathf.Exp(-time / 0.12f) + 0.3f * Mathf.Exp(-time / 0.9f);
+            // the double flash: a millisecond first pulse (a blink of a frame or two), cut off as the shock front
+            // turns opaque, then the long thermal pulse peaking at tMax; ~80% of its energy is out by ~10 tMax
+            float x = time / tMax;
+            float x2 = x * x;
+            float air = Mathf.Exp(-time / 0.025f) + 0.9f * (2f * x2 / (1f + x2 * x2));
             float vac = Mathf.Exp(-time / 0.05f) + 0.15f * Mathf.Exp(-time / 0.6f); // X-ray pulse: no air to trap it
             return flashK * Mathf.Lerp(air, vac, vacW);
         }
@@ -599,7 +642,8 @@ namespace BDNukes
             daylight = Mathf.Clamp01(sunL.y * 3f + 0.3f);
 
             // the whole cloud drifts with the wind aloft; the stem leans from the slower air near the ground
-            capDrift = airFx ? wind.Hi(t) : Vector3.zero;
+            // first-order lag behind the wind: displacement U * (t - tau * (1 - e^-t/tau))
+            capDrift = airFx ? wind.Hi(t - windLag * (1f - Mathf.Exp(-t / Mathf.Max(1f, windLag)))) : Vector3.zero;
             if (airFx) capPosL = new Vector3(0f, CapHeight(t), 0f) + capDrift;
             else if (hiFx) capPosL = new Vector3(0f, HiRise(t), 0f);
             else if (underwater) capPosL = new Vector3(0f, groundY, 0f);
@@ -622,6 +666,7 @@ namespace BDNukes
                 camDist = 1e6f;
                 camDirL = Vector3.up;
             }
+            UpdateAtmosphere(cam);
             // silver lining: strongest when the camera looks towards the sun past the cloud
             rimK = prof.rimLight * daylight * Mathf.Pow(Mathf.Max(0f, -Vector3.Dot(camDirL, sunL)), 1.5f);
 
@@ -640,6 +685,7 @@ namespace BDNukes
                 UpdateHiFireball();
                 UpdateAirglow();
             }
+            sunVis = sunVisCap;
             if (airFx)
             {
                 UpdateCapShape();
@@ -649,6 +695,7 @@ namespace BDNukes
                 if (capUpper != null) UpdateCapUpper();
                 UpdateCapGlow();
                 if (ringLayers != null) for (int k = 0; k < ringLayers.Length; k++) UpdateRing(k);
+                sunVis = sunVisLow; // skirt, surge and stem live under any low cloud deck
                 if (skirt != null) UpdateSkirt();
                 if (surge != null) UpdateSurge();
                 if (stem != null) UpdateStem();
@@ -656,6 +703,7 @@ namespace BDNukes
                 if (sparks != null) UpdateSparks();
                 if (lightningFx) UpdateLightning();
             }
+            sunVis = sunVisLow;
             if (shock != null) UpdateShock();
             if (wilson != null) UpdateWilson();
             if (waterColumn != null)
@@ -732,19 +780,79 @@ namespace BDNukes
         /// <summary>Debris speed along the field: full speed in vacuum, slowed by the thin air at high altitude.</summary>
         float StreamerSpeed => vDebris * Mathf.Lerp(0.2f, 1f, vacW / Mathf.Max(1e-3f, vacW + hiW));
 
+        /// <summary>
+        /// Per frame: the haze between the camera and the cloud, the overcast above it (EVE clouds, sampled once a
+        /// second) and, far off, softer and slightly merged smoke puffs so the cloud reads as one mass, not balls.
+        /// </summary>
+        void UpdateAtmosphere(Camera cam)
+        {
+            if (Time.time >= nextWeatherSample)
+            {
+                nextWeatherSample = Time.time + 1f;
+                if (s.weatherLighting && body.atmosphere) NukeWeather.Sample(body, lat, lon, decks);
+                else decks.Clear();
+            }
+            float groundASL = (float)(alt + groundY);
+            float capASL = (float)alt + capPosL.y;
+            double camAltD = cam != null ? body.GetAltitude(cam.transform.position) : alt;
+            float camAlt = (float)camAltD;
+            sunVisCap = NukeWeather.SunVisibility(decks, capASL);
+            sunVisLow = NukeWeather.SunVisibility(decks, Mathf.Lerp(groundASL, capASL, 0.25f));
+            sunVisCam = NukeWeather.SunVisibility(decks, camAlt);
+
+            haze = 0f;
+            if (s.atmosphericHaze && body.atmosphere && cam != null)
+            {
+                // optical depth ~ distance through air of the average density along the line of sight
+                float H = Mathf.Max(1000f, (float)body.atmosphereDepth / 12f); // scale height (~5.8 km on Kerbin)
+                float meanAlt = Mathf.Max(0f, 0.5f * (camAlt + Mathf.Lerp(groundASL, capASL, 0.5f)));
+                float tau = camDist / s.hazeVisibility * Mathf.Exp(-meanAlt / H);
+                // under a deck the air is murkier too
+                tau *= 1f + 0.6f * (1f - sunVisCam);
+                haze = Mathf.Min(0.88f, 1f - Mathf.Exp(-tau));
+                float overcast = Mathf.Clamp01((1f - sunVisCam) / NukeWeather.DeckOpacity);
+                Color clear = Color.Lerp(new Color(0.60f, 0.68f, 0.78f), new Color(0.80f, 0.62f, 0.48f), Mathf.Clamp01(1f - 2f * Mathf.Abs(daylight - 0.45f)) * 0.5f);
+                hazeCol = Color.Lerp(clear, new Color(0.56f, 0.58f, 0.61f), overcast)
+                          * (Mathf.Lerp(0.05f, 1f, daylight) * Mathf.Lerp(1f, 0.72f, overcast));
+            }
+
+            // far off, each billow is only a few pixels: let neighbours overlap and thin out so the edges blur
+            float far = SS(25f, 160f, camDist / Mathf.Max(1f, R));
+            for (int i = 0; i < layers.Count; i++)
+            {
+                var l = layers[i];
+                if (l == null) continue;
+                if (l.soft)
+                {
+                    l.sizeMul = 1f + 0.4f * far;
+                    l.alphaMul = 1f - 0.3f * far;
+                }
+                else l.alphaMul = 1f - 0.75f * haze; // glows dim through the haze rather than turning grey
+            }
+        }
+
         /// <summary>Fake volumetric lighting: sun diffuse + ambient + warm light from the fireball + backlit rim.</summary>
         Color Shade(Color baseCol, Vector3 nL, float fire, Vector3 toFireL)
         {
             // the billow texture already carries per-lump shading, so the macro term is gentler
-            float diff = Mathf.Max(0f, Vector3.Dot(nL, sunL)) * daylight;
-            float amb = 0.42f + 0.22f * daylight;
+            // under an overcast deck the direct sun is gone: flat, dimmer, greyer skylight from all around
+            float shade = 1f - sunVis;
+            float diff = Mathf.Max(0f, Vector3.Dot(nL, sunL)) * daylight * sunVis;
+            float amb = (0.42f + 0.22f * daylight) * (1f - 0.22f * shade) + 0.12f * daylight * shade;
             Color col = baseCol * (amb + 0.55f * diff);
+            if (shade > 0.01f)
+            {
+                float grey = 0.33f * (col.r + col.g + col.b);
+                col = Color.Lerp(col, new Color(grey * 0.97f, grey, grey * 1.04f), 0.4f * shade);
+            }
             if (fire > 0f) col += Ember * fire * (0.35f + 0.65f * Mathf.Max(0f, Vector3.Dot(nL, toFireL)));
-            if (rimK > 0.001f)
+            if (rimK > 0.001f && sunVis > 0.05f)
             {
                 float edge = 1f - Mathf.Abs(Vector3.Dot(nL, camDirL));
-                col += RimCol * (rimK * edge * edge * edge);
+                col += RimCol * (rimK * sunVis * edge * edge * edge);
             }
+            // aerial perspective: the air between here and the camera washes the cloud toward the sky colour
+            if (haze > 0.002f) col = Color.Lerp(col, hazeCol, haze);
             col.a = 1f;
             return col;
         }
@@ -809,10 +917,10 @@ namespace BDNukes
             float fi = FlashIntensity(t);
             // the wide halo sprites belong to the first instants: they shrink after ~1 s, so the flash's slow tail
             // doesn't leave a huge white halo hanging over a megaton seen from far away
-            float scale = (1f + 2f * vacW + hiW) * Mathf.Lerp(1f, 0.3f, SS(0.3f, 1.5f, t));
+            float scale = (1f + 2f * vacW + hiW) * Mathf.Lerp(1f, 0.3f, SS(0.3f + tMax, 1.5f + 3f * tMax, t));
             for (int i = 0; i < n; i++)
             {
-                float a = Mathf.Clamp01(fi * (i == 2 ? 1f : 0.7f * (1f - SS(0.5f, 2f, t))));
+                float a = Mathf.Clamp01(fi * (i == 2 ? 1f : 0.7f * (1f - SS(0.5f + tMax, 2f + 3f * tMax, t))));
                 flash.Set(i, capPosL, R * FlashSizes[i % 3] * scale, new Color(0.92f, 0.95f, 1f, a), 0f);
             }
             flash.End(n);
@@ -1677,9 +1785,14 @@ namespace BDNukes
             // a salvo arriving together plays one crack/rumble, not a stack of identical ones
             if (NukeFXManager.Instance.TryClaimBlastSound())
             {
-                if (crackSrc.clip != null) { crackSrc.volume = vol; crackSrc.Play(); }
+                // the sharp crack carries badly: far off it's mostly the low rolling rumble that arrives
+                float sharp = Mathf.Lerp(1f, 0.35f, SS(10f * R, 60f * R, camDist));
+                if (crackSrc.clip != null) { crackSrc.volume = vol * sharp; crackSrc.Play(); }
                 if (rumbleSrc.clip != null) { rumbleSrc.volume = vol * 0.9f; rumbleSrc.Play(); }
-                if (boomSrc.clip != null) { boomSrc.volume = vol * 0.8f; boomSrc.Play(); }
+                if (boomSrc.clip != null) { boomSrc.volume = vol * 0.8f * sharp; boomSrc.Play(); }
+                // inside the strong-overpressure zone the shock is followed by a roaring blast wind and afterwind
+                float windK = 1f - SS(3f * R, 12f * R, camDist);
+                if (roarSrc.clip != null && windK > 0.02f) { roarSrc.volume = vol * windK; roarSrc.Play(); }
             }
 
             NukeFXManager.Instance.AddShake(closeness * airSound, 1.5f + 3f * closeness);
@@ -1703,7 +1816,10 @@ namespace BDNukes
 
             // In vacuum nothing scatters or absorbs the X-ray/optical pulse, so it blinds from much further away.
             float reach = 10f * R * airW + 25f * R * hiW + 60f * R * vacW;
-            flashAmount = FlashIntensity(t) * Mathf.Clamp01(Mathf.Pow(reach / (d + 1f), Mathf.Lerp(1.2f, 0.8f, vacW))) * vis;
+            // the eye (or camera) stops down after the first instants, so a megaton's seconds-long thermal pulse
+            // reads as a blinding glare rather than seconds of solid white screen
+            float adapt = Mathf.Lerp(1f, 0.4f, SS(0.3f, 4f, t));
+            flashAmount = FlashIntensity(t) * adapt * Mathf.Clamp01(Mathf.Pow(reach / (d + 1f), Mathf.Lerp(1.2f, 0.8f, vacW))) * vis;
             if (airFx) tintAmount = 0.35f * airW * Mathf.Pow(Glow(t), 0.8f) * Mathf.Clamp01(15f * R / (d + 1f)) * vis;
             if (hiFx) tintAmount = Mathf.Max(tintAmount, 0.2f * hiW * HiGlow(t) * Mathf.Clamp01(15f * Rh / (d + 1f)) * vis);
         }
@@ -1720,11 +1836,16 @@ namespace BDNukes
             readonly Vector3[] sphereDirs;
             readonly Vector3 streakVel;
             bool spawned;
+            /// <summary>A billowy smoke layer (vs. a glow): gets the far-distance softening.</summary>
+            public readonly bool soft;
+            /// <summary>Per-frame multipliers the owner sets for distance and haze.</summary>
+            public float sizeMul = 1f, alphaMul = 1f;
 
             /// <param name="stretch">If above 0, particles are drawn as vertical streaks this many sizes long (rain-out).</param>
             public Layer(Transform parent, string name, Material mat, int n, int seed, bool hierarchyScale, float stretch = 0f)
             {
                 count = n;
+                soft = mat == NukeAssets.Smoke;
                 var go = new GameObject(name);
                 go.transform.SetParent(parent, false);
                 ps = go.AddComponent<ParticleSystem>();
@@ -1825,7 +1946,8 @@ namespace BDNukes
             {
                 buf[i].position = pos;
                 buf[i].velocity = streakVel;
-                buf[i].startSize = Mathf.Max(0f, size);
+                buf[i].startSize = Mathf.Max(0f, size * sizeMul);
+                col.a *= alphaMul;
                 buf[i].startColor = col;
                 buf[i].rotation = rotDeg;
                 buf[i].remainingLifetime = 100000f;

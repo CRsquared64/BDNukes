@@ -15,6 +15,7 @@ namespace BDNukes
         public static AudioClip Crack;    // shock arrival: crack + thump
         public static AudioClip Rumble;   // long rolling rumble
         public static AudioClip StockBoom;
+        public static AudioClip Roar;     // blast wind and afterwind close to ground zero
         public static Material Bolt;      // additive soft line for lightning (LineRenderer)
         public static AudioClip Geiger;   // one Geiger-counter click
 
@@ -41,6 +42,7 @@ namespace BDNukes
 
             Crack = MakeCrack();
             Rumble = MakeRumble();
+            Roar = MakeRoar();
             Geiger = MakeGeigerClick();
             StockBoom = GameDatabase.Instance != null ? GameDatabase.Instance.GetAudioClip("BDArmory/Models/explosion/nuke/nukeBoom") : null;
         }
@@ -378,7 +380,9 @@ namespace BDNukes
                 lp1 += (white - lp1) * 0.08f;
                 lp2 += (lp1 - lp2) * 0.08f;
 
-                float crack = white * Mathf.Exp(-t / 0.02f);
+                // the blast wave arrives as an N-wave: an instant jump to peak overpressure, a linear fall through
+                // the negative phase and a snap back; the ground-reflected wave follows a few ms behind
+                float crack = 1.6f * (NWave(t, 0.028f) + 0.55f * NWave(t - 0.011f, 0.024f)) + 0.35f * white * Mathf.Exp(-t / 0.015f);
                 float body = lp2 * 6f * Mathf.Exp(-t / 0.45f);
                 float freq = Mathf.Lerp(22f, 55f, Mathf.Exp(-t / 0.35f));
                 phase += 2f * Mathf.PI * freq / SampleRate;
@@ -387,6 +391,47 @@ namespace BDNukes
             }
             Normalize(data, 0.95f);
             var clip = AudioClip.Create("bdnukesCrack", n, 1, SampleRate, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        static float NWave(float t, float T) => t < 0f || t > T ? 0f : 1f - 2f * t / T;
+
+        /// <summary>
+        /// Blast wind: a gusting roar of broadband noise (air and debris) that hits with the shock and dies over a few
+        /// seconds, then the weaker afterwind swelling back the other way as air rushes in under the rising fireball.
+        /// </summary>
+        static AudioClip MakeRoar()
+        {
+            float length = 12f;
+            int n = (int)(SampleRate * length);
+            var data = new float[n];
+            var rng = new System.Random(9876);
+            float lp1 = 0f, lp2 = 0f, hp = 0f, prev = 0f;
+            float gust = 0.7f, gustTarget = 0.7f;
+            int gustCounter = 0;
+            float lpCoef = 1f - Mathf.Exp(-2f * Mathf.PI * 1400f / SampleRate);
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)SampleRate;
+                float white = (float)rng.NextDouble() * 2f - 1f;
+                lp1 += (white - lp1) * lpCoef;
+                lp2 += (lp1 - lp2) * lpCoef;
+                hp = 0.995f * (hp + lp2 - prev); // take out the DC and the deepest lows, the rumble has those
+                prev = lp2;
+                if (--gustCounter <= 0)
+                {
+                    gustCounter = (int)(SampleRate * (0.08f + (float)rng.NextDouble() * 0.3f));
+                    gustTarget = 0.4f + (float)rng.NextDouble() * 0.6f;
+                }
+                gust += (gustTarget - gust) * 0.0006f;
+                float blast = Mathf.Clamp01(t / 0.03f) * Mathf.Exp(-t / 1.6f);
+                float after = 0.35f * Mathf.Exp(-Mathf.Pow((t - 5.5f) / 2.2f, 2f));
+                float tail = Mathf.Clamp01((length - t) / 2f);
+                data[i] = hp * gust * (blast + after) * tail;
+            }
+            Normalize(data, 0.85f);
+            var clip = AudioClip.Create("bdnukesRoar", n, 1, SampleRate, false);
             clip.SetData(data, 0);
             return clip;
         }

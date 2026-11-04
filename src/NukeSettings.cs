@@ -136,6 +136,17 @@ namespace BDNukes
         public float fireDuration = 240f;          // s the lingering fires burn (yield-scaled)
         public float lightningMinYield = 1000f;    // kt; bigger bursts get lightning in the cloud (more in humid air)
 
+        // atmosphere and weather
+        public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)
+        public float hazeVisibility = 40000f;      // m of sea-level air that hides ~63% of the cloud's own colour
+        public bool weatherLighting = true;        // EVE volumetric overcast blocks the sun on the cloud (if EVE is installed)
+
+        // terrain craters
+        public bool craters = true;                // surface bursts on land leave a persistent crater in the terrain
+        public float craterScale = 1f;             // multiplies crater radius and depth
+        public int maxCraters = 100;               // per body; the oldest is filled in beyond this
+        public bool craterPartialRebuild = true;   // rebuild only the quads near the crater; off = RebuildSphere (multi-second freeze)
+
         static NukeSettings current;
 
         public static NukeSettings Current
@@ -257,6 +268,13 @@ namespace BDNukes
             n.TryGetValue("groundAfterglow", ref groundAfterglow);
             n.TryGetValue("fireDuration", ref fireDuration);
             n.TryGetValue("lightningMinYield", ref lightningMinYield);
+            n.TryGetValue("atmosphericHaze", ref atmosphericHaze);
+            n.TryGetValue("hazeVisibility", ref hazeVisibility);
+            n.TryGetValue("weatherLighting", ref weatherLighting);
+            n.TryGetValue("craters", ref craters);
+            n.TryGetValue("craterScale", ref craterScale);
+            n.TryGetValue("maxCraters", ref maxCraters);
+            n.TryGetValue("craterPartialRebuild", ref craterPartialRebuild);
         }
 
         /// <summary>Clamps everything to sane ranges. Also called by the settings window after every change.</summary>
@@ -288,6 +306,9 @@ namespace BDNukes
             scorchLifetime = Mathf.Clamp(scorchLifetime, 10f, 36000f);
             fireDuration = Mathf.Clamp(fireDuration, 10f, 3600f);
             lightningMinYield = Mathf.Max(1f, lightningMinYield);
+            hazeVisibility = Mathf.Clamp(hazeVisibility, 2000f, 500000f);
+            craterScale = Mathf.Clamp(craterScale, 0.1f, 5f);
+            maxCraters = Mathf.Clamp(maxCraters, 1, 1000);
         }
 
         static void ValidateQuality(NukeQualityValues q)
@@ -378,6 +399,12 @@ namespace BDNukes
                 n.AddValue("scorchLifetime", F(scorchLifetime));
                 n.AddValue("groundAfterglow", B(groundAfterglow));
                 n.AddValue("fireDuration", F(fireDuration));
+                n.AddValue("atmosphericHaze", B(atmosphericHaze));
+                n.AddValue("hazeVisibility", F(hazeVisibility));
+                n.AddValue("weatherLighting", B(weatherLighting));
+                n.AddValue("craters", B(craters));
+                n.AddValue("craterScale", F(craterScale));
+                n.AddValue("craterPartialRebuild", B(craterPartialRebuild));
                 root.Save(path, "BDNukes user settings, written by the in-game settings window. Overrides GameData/BDNukes/Settings.cfg; delete this file to go back to the defaults.");
                 Debug.Log("[BDNukes]: Settings saved to " + path);
                 return true;

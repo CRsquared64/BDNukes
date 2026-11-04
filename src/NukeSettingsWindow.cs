@@ -152,6 +152,20 @@ namespace BDNukes
             s.volume = Slider("Volume", s.volume, 0f, 2f, "0.00");
 
             GUILayout.Space(6f);
+            GUILayout.Label("Atmosphere and weather");
+            s.atmosphericHaze = Toggle("Distance haze on the cloud", s.atmosphericHaze);
+            s.hazeVisibility = Slider("Haze visibility (m)", s.hazeVisibility, 5000f, 200000f, "0");
+            s.weatherLighting = Toggle("Overcast dims the cloud (EVE clouds)", s.weatherLighting);
+
+            GUILayout.Space(6f);
+            GUILayout.Label("Terrain craters");
+            s.craters = Toggle("Persistent craters from surface bursts", s.craters);
+            s.craterScale = Slider("Crater size scale", s.craterScale, 0.25f, 3f, "0.00");
+            s.craterPartialRebuild = Toggle("Fast partial terrain rebuild (off: full rebuild, freezes)", s.craterPartialRebuild);
+            GUILayout.Label(NukeCraters.Status());
+            if (GUILayout.Button("Fill in all craters")) NukeCraters.ClearAll();
+
+            GUILayout.Space(6f);
             GUILayout.Label("Fallout radiation");
             s.falloutRadiation = Toggle("Radiation hazard (kills kerbals)", s.falloutRadiation);
             s.geigerCounter = Toggle("Geiger counter sound", s.geigerCounter);
