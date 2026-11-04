@@ -141,6 +141,7 @@ namespace BDNukes
             s.burstLOD = Toggle("Burst LOD (many detonations)", s.burstLOD);
             s.groundAfterglow = Toggle("Ground afterglow", s.groundAfterglow);
             s.debrisTrails = Toggle("Debris smoke trails", s.debrisTrails);
+            s.craftScorch = Toggle("Flash scorches nearby craft", s.craftScorch);
             s.sizeScale = Slider("Size scale", s.sizeScale, 0.25f, 3f, "0.00");
             s.cloudHeightScale = Slider("Cloud height scale", s.cloudHeightScale, 0.2f, 2f, "0.00");
             s.cloudRiseTime = Slider("Cloud rise time (s)", s.cloudRiseTime, 10f, 600f, "0");

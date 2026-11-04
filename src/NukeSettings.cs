@@ -172,6 +172,8 @@ namespace BDNukes
         public bool craterPartialRebuild = true;   // rebuild only the quads near the crater; off = RebuildSphere (multi-second freeze)
         // photo mode (Alt+F7 cycles normal / slow motion / frozen)
         public float photoModeSlowRate = 0.25f;    // effects speed in slow motion (1 = normal)
+        // thermal scorch on craft
+        public bool craftScorch = true;            // the flash chars the side of loaded vessels facing the fireball
 
         static NukeSettings current;
 
@@ -304,6 +306,7 @@ namespace BDNukes
             n.TryGetValue("groundFire", ref groundFire);
             n.TryGetValue("persistentClouds", ref persistentClouds);
             n.TryGetValue("photoModeSlowRate", ref photoModeSlowRate);
+            n.TryGetValue("craftScorch", ref craftScorch);
             n.TryGetValue("volumetricResolution", ref volumetricResolution);
             n.TryGetValue("cloudShadows", ref cloudShadows);
             n.TryGetValue("shockDistortion", ref shockDistortion);
@@ -510,6 +513,9 @@ namespace BDNukes
                 n.AddValue("targetFrameRate", F(targetFrameRate));
 
                 n.AddValue("photoModeSlowRate", F(photoModeSlowRate));
+
+                // thermal scorch on craft
+                n.AddValue("craftScorch", B(craftScorch));
                 root.Save(path, "BDNukes user settings, written by the in-game settings window. Overrides GameData/BDNukes/Settings.cfg; delete this file to go back to the defaults.");
                 Debug.Log("[BDNukes]: Settings saved to " + path);
                 return true;

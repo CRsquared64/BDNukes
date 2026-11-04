@@ -313,6 +313,7 @@ namespace BDNukes
             // speed over about half its rise
             windLag = 0.45f * riseTime;
             PlanAftermath();
+            if (s.craftScorch && !underwater && !restored) NukeScorch.Flash(pos, W, R, delay); // thermal flash chars nearby craft
             Build();
             if (!restored) PlanCrater();
             // the blast blows a hole in EVE's cloud decks within reach of the shock
