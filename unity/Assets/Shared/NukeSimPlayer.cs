@@ -51,15 +51,19 @@ namespace BDNukes
         /// <summary>How long (s) the mushroom bake plays: most of the climb.</summary>
         public static float MushroomDuration(float riseTime) => Mathf.Max(12f, 0.5f * riseTime);
 
+        /// <summary>How much of the mushroom bake to play: past this its thermal has diffused into haze.</summary>
+        public const float MushroomPlayFraction = 0.55f;
+
         public static void Fill(NukeSimData d, ref NukeVolumeState v, float t, float simDuration, float floorY,
-            Vector3 capCenter, float capTopAboveFloor, float capRadius, float fade, float fire)
+            Vector3 capCenter, float capTopAboveFloor, float capRadius, float fade, float fire, float playFraction = 1f)
         {
             v.simMix = 0f;
             if (d == null || !d.Valid || simDuration <= 0f) return;
             var m = d.meta;
             int last = m.times.Length - 1;
             // the bake covers the fireball stage (burning, rolling up); the procedural cap carries on from there
-            float st = Mathf.Max(0f, t) / simDuration * m.times[last];
+            // playFraction: only the part of the bake that still holds its shape (later frames diffuse into haze)
+            float st = Mathf.Min(Mathf.Max(0f, t) / simDuration, 1f) * m.times[last] * Mathf.Clamp01(playFraction);
             int i = 0;
             while (i < last - 1 && m.times[i + 1] <= st) i++;
             float b = Mathf.Clamp01((st - m.times[i]) / Mathf.Max(1e-4f, m.times[i + 1] - m.times[i]));

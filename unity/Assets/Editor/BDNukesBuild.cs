@@ -336,7 +336,7 @@ public static class BDNukesBuild
             }
             float floorY = shot.air ? 0f : v.groundY;
             NukeSimPlayer.Fill(simUse, ref v, shot.t, simDur, floorY, v.capCenter,
-                v.capCenter.y + Mathf.Max(v.dome, v.tube * v.squash) * v.capScale - floorY, v.capScale * (v.ringR + v.tube) * v.xzSpread, 1f, 3f);
+                v.capCenter.y + Mathf.Max(v.dome, v.tube * v.squash) * v.capScale - floorY, v.capScale * (v.ringR + v.tube) * v.xzSpread, 1f, 3f, simUse == simMushroom ? NukeSimPlayer.MushroomPlayFraction : 1f);
             v.fire *= 1f - v.simMix;
             v.ember *= 1f - 0.7f * v.simMix;
 

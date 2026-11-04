@@ -1129,7 +1129,7 @@ namespace BDNukes
                 float floorY = sim == NukeVolumetric.SimAir ? 0f : groundY;
                 NukeSimPlayer.Fill(sim, ref vs, t, simDur, floorY, capPosL,
                     capPosL.y + Mathf.Max(vs.dome, vs.tube * vs.squash) * vs.capScale - floorY, vs.capScale * (vs.ringR + vs.tube) * vs.xzSpread,
-                    FadeOut, 3f * flashK);
+                    FadeOut, 3f * flashK, sim == NukeVolumetric.SimMushroom ? NukeSimPlayer.MushroomPlayFraction : 1f);
                 vs.fire *= 1f - vs.simMix;
                 vs.ember *= 1f - 0.7f * vs.simMix;
             }
