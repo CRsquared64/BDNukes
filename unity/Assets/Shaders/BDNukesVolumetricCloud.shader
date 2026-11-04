@@ -167,6 +167,8 @@ Shader "BDNukes/VolumetricCloud"
                         float3 fv = p - _CapCenter.xyz;
                         float fd2 = dot(fv, fv) / max(_Glow.a * _Glow.a, 1.0);
                         lit += alb * _Glow.rgb / (1.0 + 3.0 * fd2);
+                        // the vapour above catches the fire's light from far further: the glowing underside of the veil
+                        lit += alb * _Glow.rgb * sm.cond * 1.6 / (1.0 + 0.12 * fd2);
 
                         // the burning ring: a band of fire inside the cap's vortex core that outlives the fireball,
                         // glimpsed through gaps in the smoke and lighting the cap from inside

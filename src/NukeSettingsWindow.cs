@@ -155,6 +155,7 @@ namespace BDNukes
             GUILayout.Label("Volumetric clouds");
             s.volumetricClouds = Toggle("Raymarched cloud and fireball", s.volumetricClouds);
             s.fluidSim = Toggle("Simulated fireball (baked fluid sim)", s.fluidSim);
+            s.velum = Toggle("Condensation veil in humid air", s.velum);
             s.cloudShadows = Toggle("Cloud shadow on the ground", s.cloudShadows);
             s.shockDistortion = Slider("Shock wave light bending", s.shockDistortion, 0f, 3f, "0.00");
             s.volumetricResolution = Mathf.RoundToInt(Slider("Cloud resolution (1 full, 2 half, 3 third)", s.volumetricResolution, 1f, 3f, "0"));

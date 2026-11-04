@@ -36,7 +36,8 @@ float4 _StemMid;     // xyz bend control point of the stem (quadratic Bezier bet
 float4 _Age;         // x dissipation 0..1 (thinning, fraying), y unused
 float4 _Ember;       // x glow of the burning ring inside the cap's vortex, y its temperature, z core width (x tube)
 float4 _Planet;      // xyz planet centre (local), w radius below which nothing is drawn (the planet hides it)
-float4 _Pileus;      // x height above the cap surface (m), y thickness (m), z density, w unused
+float4 _Pileus;
+float4 _Velum;       // x radius (m), y thickness at the centre (m), z density, w height of its centre above the cap centre (m)      // x height above the cap surface (m), y thickness (m), z density, w unused
 
 // --- appearance ---
 float4 _Density;     // x cap density, y extinction per m at density 1, z erosion, w noise scale (1/m)
@@ -186,6 +187,7 @@ struct Sample
     float skip;      // conservative distance to the nearest possible cloud (0 inside or unknown)
     float capY;      // height relative to the cap centre, in cap scales (negative = underside)
     float simHeat;   // baked fireball heat at this point (0 outside the sim)
+    float cond;      // fraction of the density that is condensation (white vapour)
 };
 
 // lobeMode: 0 = sample the lobe noise, 1 = most inflated (a cheap bound), 2 = average (cheap occluder)
@@ -257,7 +259,7 @@ Sample Cloud(float3 p, bool detail)
 {
     Sample s;
     s.density = 0.0; s.albedo = _CapAlbedo.rgb; s.cap = 0.0; s.core = 1.0; s.fireN = 0.5; s.hf = 0.0;
-    s.skip = 0.0; s.capY = 0.0; s.simHeat = 0.0;
+    s.skip = 0.0; s.capY = 0.0; s.simHeat = 0.0; s.cond = 0.0;
     float ns = _Density.w;
     float per = _Anim.w;
 
@@ -403,7 +405,7 @@ Sample Cloud(float3 p, bool detail)
 
     // ---- condensation (wispy, white) ----
     float condDen = 0.0;
-    if (_Wilson.z + _Pileus.z + _Rings[0].w + _Rings[1].w + _Rings[2].w + _CollarPos[0].w + _CollarPos[1].w + _CollarPos[2].w + _CollarPos[3].w + _CollarPos[4].w > 0.001)
+    if (_Wilson.z + _Pileus.z + _Velum.z + _Rings[0].w + _Rings[1].w + _Rings[2].w + _CollarPos[0].w + _CollarPos[1].w + _CollarPos[2].w + _CollarPos[3].w + _CollarPos[4].w > 0.001)
     {
         skip = 0.0; // thin condensation shells: no skipping while they're about
         float wisp = FlowNoise(p, float3(0.0, 2.0, 0.0), ns * 3.5, per, float3(0.5, 0.5, 0.5), 1);
@@ -418,6 +420,24 @@ Sample Cloud(float3 p, bool detail)
             float top = smoothstep(-0.1, 0.35, pq.y / max(_CapCenter.w, 1.0));
             condDen = max(condDen, exp(-x * x * 2.0) * top * _Pileus.z * (1.0 - _Sim.y) * smoothstep(0.2, 0.7, wisp));
         }
+        // velum: a vast, smooth lens of condensation spread over the rising fireball in humid air (the great
+        // white veil over the biggest tests), thickest in the middle and fraying at its rim
+        if (_Velum.z > 0.001)
+        {
+            float3 vq = p - _CapCenter.xyz - float3(0.0, _Velum.w, 0.0);
+            float vr = length(vq.xz) / max(_Velum.x, 1.0);
+            if (vr < 1.15)
+            {
+                float lens = max(1.0 - vr * vr, 0.0) + 0.04;
+                // an umbrella rather than a plate: the veil curves down toward its rim
+                float droop = 0.22 * _Velum.x * vr * vr;
+                float vy = (vq.y + droop) / (max(_Velum.y, 1.0) * lens);
+                // a slow, smooth flow: big soft billows rolling outward, no grain
+                float vn = FlowNoise(vq, float3(vq.x, 0.0, vq.z) * 0.02, ns * 0.9, per * 1.6, float3(0.33, 0.66, 0.11), 0);
+                float rim = 1.0 - smoothstep(0.7 + 0.25 * vn, 1.1, vr);
+                condDen = max(condDen, exp(-vy * vy * 2.5) * rim * _Velum.z * lerp(0.55, 1.0, vn));
+            }
+        }
     }
 
     s.skip = max(skip, 0.0);
@@ -428,6 +448,7 @@ Sample Cloud(float3 p, bool detail)
         float inv = 1.0 / total;
         s.albedo = (capDen * _CapAlbedo.rgb + stemDen * _StemAlbedo.rgb + dustDen * _DustAlbedo.rgb + condDen * _CondAlbedo.rgb) * inv;
         s.cap = capDen * inv;
+        s.cond = condDen * inv;
     }
     return s;
 }

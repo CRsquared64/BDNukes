@@ -113,6 +113,7 @@ namespace BDNukes
         // the refracting shock shell
         GameObject shockDome;
         Material shockMat;
+        float shapeBulb;    // 0 = wide rolling cap .. 1 = tight, tall, bulbous head (picked per detonation)
         Layer fireCore, capSmoke, capDetail, capUpper, capGlow, flash, shock, wilson, skirt, surge, stem, collars, sparks;
         Layer[] ringLayers;
         Layer hiFire, airglow;
@@ -266,6 +267,9 @@ namespace BDNukes
             life = Mathf.Max(Mathf.Max(airFx ? lifeAir : 0f, vacFx ? lifeVac : 0f), Mathf.Max(hiFx ? Mathf.Max(lifeHi, auroraFootL != null ? lifeVac : 0f) : 0f, waterFx ? lifeWater : 0f));
 
             int windSeed = Random.Range(0, 100000);
+            // every mushroom is a little different: somewhere between a wide rolling cap and a tight bulbous head,
+            // small yields leaning bulbous
+            shapeBulb = Mathf.Clamp01(Mathf.Pow(Random.value, 0.9f) * 0.85f + 0.35f * prof.lowYield + 0.15f * (1f - SS(1f, 3f, Mathf.Log10(Mathf.Max(W, 0.01f)))));
             // windShear is the wind at a big cloud's cap (~6 km+); a small cloud tops out in the slower air lower down
             float capTopAGL = hb + riseDelta;
             float shear = Mathf.Lerp(1f, s.windShear, SS(300f, 6000f, capTopAGL));
@@ -876,11 +880,7 @@ namespace BDNukes
             vs.capCenter = capPosL;
             vs.capScale = Mathf.Max(1f, capScale * Mathf.Lerp(Mathf.Max(0.05f, grow), 1f, m));
             // a rolling torus wider than it is tall, its outer edge curling down into hanging lobes
-            vs.ringR = Mathf.Lerp(0.05f, 0.62f * Mathf.Lerp(1f, 0.62f, pkT), m);
-            // a pancaking cap spreads, but stays a rounded, billowing anvil rather than a flat loaf
-            vs.tube = Mathf.Lerp(0.3f, 0.48f * (1f + 0.45f * pkT), m);
-            vs.dome = Mathf.Lerp(0.85f, 0.4f, m);
-            vs.squash = Mathf.Lerp(1f, Mathf.Clamp(0.5f * capYS, 0.62f, 0.9f), m);
+            NukeVolumeShapes.Cap(m, pkT, 0.64f * capYS, shapeBulb, out vs.ringR, out vs.tube, out vs.dome, out vs.squash);
             vs.xzSpread = Mathf.Lerp(1f, Mathf.Min(capXZS, 1.7f), m);
             vs.overhang = Mathf.Max(prof.overhang, 0.45f) * m * (1f - 0.6f * pkT);
             vs.capDensity = FadeOut;
@@ -916,8 +916,8 @@ namespace BDNukes
                 vs.stemTop = new Vector3(0f, groundY + yTop, 0f) + Lean(1f);
                 // the low stem stands nearly upright in the weak low wind and bends over higher up
                 vs.stemMid = new Vector3(Mathf.Lerp(vs.stemBase.x, vs.stemTop.x, 0.1f), groundY + 0.5f * yTop, Mathf.Lerp(vs.stemBase.z, vs.stemTop.z, 0.1f));
-                vs.stemBaseR = StemRadius(0.35f);
-                vs.stemTopR = StemRadius(0.95f);
+                vs.stemBaseR = StemRadius(0.35f) * Mathf.Lerp(1f, 0.72f, shapeBulb);
+                vs.stemTopR = StemRadius(0.95f) * Mathf.Lerp(1f, 0.72f, shapeBulb);
                 vs.stemFlare = 1.2f * prof.stemTaper;
                 vs.stemDustTop = groundY + dustFront;
                 vs.stemTrailBottom = groundY + yTop - trailLen;
@@ -986,6 +986,16 @@ namespace BDNukes
                 vs.pileusOffset = 0.12f * vs.capScale;
                 vs.pileusThick = 0.08f * vs.capScale;
                 vs.pileusDensity = 0.9f * prof.humidity * airW * SS(0.4f * tauG, 1.2f * tauG, t) * (1f - SS(0.25f * riseTime, 0.55f * riseTime, t));
+            }
+
+            // ---- velum: the vast condensation veil over the rising fireball in humid air ----
+            vs.velumDensity = 0f;
+            if (body.atmosphere && airFx && s.velum)
+            {
+                float oc = Mathf.Clamp01((1f - sunVisCam) / NukeWeather.DeckOpacity);
+                NukeVolumeShapes.Velum(W, t, tauG, riseTime, prof.humidity, oc, vs.capScale, (vs.ringR + vs.tube) * vs.xzSpread,
+                    out vs.velumRadius, out vs.velumThick, out vs.velumDensity, out vs.velumHeight);
+                vs.velumDensity *= airW * FadeOut;
             }
 
             // ---- stem collars: bells of mist forming in turn as the column climbs ----

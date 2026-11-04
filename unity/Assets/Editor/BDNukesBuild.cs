@@ -186,6 +186,8 @@ public static class BDNukesBuild
         public bool debug;
         public int div;          // 2 or 3: render through the reduced-resolution compositor
         public bool air;         // a free air burst 2 km up (air sim, no stem, skirt or surge)
+        public float bulb;       // mushroom shape: 0 wide rolling cap .. 1 tight bulbous head
+        public float humidity;   // 0 = use the default (0.7)
     }
 
     static NukeSimData simGround, simAir;
@@ -268,6 +270,19 @@ public static class BDNukesBuild
         Sheet(shader, noise, Path.Combine(outDir, "10_airburst.png"), 3, Array.ConvertAll(airT, t => new Shot
         { W = 20f, t = t, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 2600f, -3200f), lookFrac = 0.93f, fov = 38f, air = true }));
 
+        // mushroom shapes: wide rolling cap .. tight bulbous head
+        Sheet(shader, noise, Path.Combine(outDir, "11_shapes.png"), 3, new[]
+        {
+            new Shot { W = 20f, t = 45f, sunVis = 1f, haze = 0.03f, cam = new Vector3(0f, 250f, -7000f), lookFrac = 0.5f, fov = 38f, bulb = 0f, humidity = 0.1f },
+            new Shot { W = 20f, t = 45f, sunVis = 1f, haze = 0.03f, cam = new Vector3(0f, 250f, -7000f), lookFrac = 0.5f, fov = 38f, bulb = 0.5f, humidity = 0.1f },
+            new Shot { W = 20f, t = 45f, sunVis = 1f, haze = 0.03f, cam = new Vector3(0f, 250f, -7000f), lookFrac = 0.5f, fov = 38f, bulb = 1f, humidity = 0.1f },
+        });
+
+        // the velum over a humid megaton, rising
+        var velT = new[] { 8f, 20f, 40f };
+        Sheet(shader, noise, Path.Combine(outDir, "12_velum_1Mt.png"), 3, Array.ConvertAll(velT, t => new Shot
+        { W = 1000f, t = t, sunVis = 1f, haze = 0.08f, cam = new Vector3(0f, 400f, -35000f), lookFrac = 0.55f, fov = 42f, humidity = 0.9f }));
+
         // a megaton
         var mt = new[] { 3f, 15f, 45f, 120f };
         Sheet(shader, noise, Path.Combine(outDir, "5_life_1Mt.png"), 2, Array.ConvertAll(mt, t => new Shot
@@ -298,7 +313,7 @@ public static class BDNukesBuild
         var root = new GameObject("TestRoot");
         try
         {
-            var v = NukeVolumeTestTimeline.At(shot.W, shot.t, shot.sunVis, shot.haze);
+            var v = NukeVolumeTestTimeline.At(shot.W, shot.t, shot.sunVis, shot.haze, shot.bulb, shot.humidity > 0f ? shot.humidity : 0.7f);
             float tauG = 2.5f + 2.2f * Mathf.Pow(shot.W, 0.3f);
             if (shot.air)
             {

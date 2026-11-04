@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **Velum:** in humid air a vast, translucent umbrella of condensation spreads over the rising fireball, like the great white veil in film of the biggest tests.
+  - It is two to three and a half cap widths across, wider for big yields, and curves down at its fraying rim.
+  - Its underside catches the fire's light. It is stronger under an EVE overcast.
+  - New setting: "Condensation veil in humid air".
+- **Varied mushroom shapes:** each detonation picks a cap between the wide rolling torus and a tight, tall, bulbous head on a slimmer stem. Small yields lean bulbous.
 - **Air bursts get their own simulated fireball:** a free ball in open air rolling up into a ring, with a clearer shock shell around it. Ground bursts keep the ground simulation.
 - **Smoother, more saturated fire:** both bakes are at higher resolution (112) and cover just the fireball stage. The importer smooths each frame, and flame-scale folds and stronger orange-yellow colour are added in the shader. The procedural cap is smoother too.
 - **Reduced-resolution rendering** (default ½): the cloud is raymarched at ½ or ⅓ resolution and composited over the scene with a depth-aware upsample, so edges in front of it stay sharp. That's 4–9× fewer raymarched pixels, with no visible loss in the test renders. New setting: "Cloud resolution".

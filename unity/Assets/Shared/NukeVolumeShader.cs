@@ -47,6 +47,7 @@ namespace BDNukes
         // condensation
         public float wilsonR, wilsonThick, wilsonDensity; public bool wilsonHemisphere;
         public float pileusOffset, pileusThick, pileusDensity;   // ice-cap veil over the rising cap
+        public float velumRadius, velumThick, velumDensity, velumHeight;   // the vast condensation veil (humid air)
         public Vector4 ring0, ring1, ring2;   // y, radius, tube, density
         public Vector3 ringOffset;
         public Vector4 collar0, collar1, collar2, collar3, collar4;          // xyz centre, w density
@@ -108,6 +109,13 @@ namespace BDNukes
                     min = Vector3.Min(min, v.ringOffset + new Vector3(-r, rg.x - rg.z * 2f, -r));
                     max = Vector3.Max(max, v.ringOffset + new Vector3(r, rg.x + rg.z * 2f, r));
                 }
+            if (v.velumDensity > 0.001f)
+            {
+                Vector3 vc = v.capCenter + new Vector3(0f, v.velumHeight, 0f);
+                Vector3 ve = new Vector3(v.velumRadius * 1.2f, v.velumThick * 2.5f, v.velumRadius * 1.2f);
+                min = Vector3.Min(min, vc - ve - new Vector3(0f, 0.3f * v.velumRadius, 0f));   // the drooping rim
+                max = Vector3.Max(max, vc + ve);
+            }
             if (v.simMix > 0.001f && v.simA != null)
             {
                 min = Vector3.Min(min, v.simOrigin);
@@ -188,6 +196,7 @@ namespace BDNukes
             mat.SetVector("_SimOrigin", v.simOrigin);
             mat.SetVector("_SimSize", v.simSize);
             mat.SetVector("_Pileus", new Vector4(v.pileusOffset, v.pileusThick, v.pileusDensity, 0f));
+            mat.SetVector("_Velum", new Vector4(v.velumRadius, v.velumThick, v.velumDensity, v.velumHeight));
             mat.SetVector("_Density", new Vector4(v.capDensity, v.extinction, 0.3f, v.noiseScale));
             mat.SetVector("_Anim", new Vector4(v.time, v.rollRate, v.updraft, Mathf.Max(0.5f, v.flowPeriod)));
             mat.SetVector("_Fire", new Vector4(v.fire, v.fireTemp, v.flicker, v.soot));
@@ -208,7 +217,7 @@ namespace BDNukes
         /// <summary>Anything left to draw in this state.</summary>
         public static bool Visible(ref NukeVolumeState v) =>
             v.simMix > 0.003f || v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
-            v.wilsonDensity > 0.003f || v.pileusDensity > 0.003f || v.ring0.w + v.ring1.w + v.ring2.w > 0.003f ||
+            v.wilsonDensity > 0.003f || v.pileusDensity > 0.003f || v.velumDensity > 0.003f || v.ring0.w + v.ring1.w + v.ring2.w > 0.003f ||
             v.collar0.w + v.collar1.w + v.collar2.w + v.collar3.w + v.collar4.w > 0.003f;
     }
 
@@ -225,7 +234,7 @@ namespace BDNukes
             return k * k * (3f - 2f * k);
         }
 
-        public static NukeVolumeState At(float W, float t, float sunVis, float haze)
+        public static NukeVolumeState At(float W, float t, float sunVis, float haze, float bulb = 0f, float humidity = 0.7f)
         {
             float R = 70f * Mathf.Pow(W, 0.4f);
             float tauG = 2.5f + 2.2f * Mathf.Pow(W, 0.3f);
@@ -258,10 +267,7 @@ namespace BDNukes
             v.dissipation = SS(2f * riseTime, 5f * riseTime, t);
             v.capCenter = new Vector3(0f, R * 0.9f + riseDelta * rise, 0f) + drift;
             v.capScale = capScale;
-            v.ringR = Mathf.Lerp(0.05f, 0.62f, morph);
-            v.tube = Mathf.Lerp(0.3f, 0.48f, morph);
-            v.dome = Mathf.Lerp(0.85f, 0.4f, morph);
-            v.squash = Mathf.Lerp(1f, 0.78f, morph);
+            NukeVolumeShapes.Cap(morph, 0f, 1f, bulb, out v.ringR, out v.tube, out v.dome, out v.squash);
             v.xzSpread = 1f;
             v.overhang = 0.45f * morph;
             v.roughness = SS(0.05f * tauG, 0.6f * tauG, t);
@@ -282,7 +288,7 @@ namespace BDNukes
                 v.stemTop = new Vector3(0f, yTop, 0f) + drift;
                 // the low stem stands nearly upright in the weak low wind and bends over higher up
                 v.stemMid = new Vector3(Mathf.Lerp(v.stemBase.x, v.stemTop.x, 0.1f), 0.5f * yTop, 0f);
-                float stemR = 0.17f * capScale;
+                float stemR = 0.17f * capScale * Mathf.Lerp(1f, 0.72f, bulb);
                 v.stemBaseR = stemR * 1.1f;
                 v.stemTopR = stemR;
                 v.stemFlare = 1.2f;
@@ -324,6 +330,7 @@ namespace BDNukes
             v.ring0 = Ring(0); v.ring1 = Ring(1); v.ring2 = Ring(2);
             v.pileusOffset = 0.12f * capScale;
             v.pileusThick = 0.08f * capScale;
+            NukeVolumeShapes.Velum(W, t, tauG, riseTime, humidity, 0f, capScale, v.ringR + v.tube, out v.velumRadius, out v.velumThick, out v.velumDensity, out v.velumHeight);
             v.pileusDensity = 0.9f * SS(0.4f * tauG, 1.2f * tauG, t) * (1f - SS(0.25f * riseTime, 0.55f * riseTime, t));
             v.ringOffset = drift * 0.8f;
 
@@ -389,6 +396,46 @@ namespace BDNukes
                 if (it.mesh != null && it.material != null) cb.DrawMesh(it.mesh, it.matrix, it.material, 0, 0);
             cb.Blit(LowRes, BuiltinRenderTextureType.CameraTarget, composite);
             cb.ReleaseTemporaryRT(LowRes);
+        }
+    }
+
+    /// <summary>Mushroom shapes and the condensation veil, shared by the plugin and the test timeline.</summary>
+    public static class NukeVolumeShapes
+    {
+        static float SS(float a, float b, float x)
+        {
+            float k = Mathf.Clamp01((x - a) / (b - a));
+            return k * k * (3f - 2f * k);
+        }
+
+        /// <summary>
+        /// Cap shape at ball-to-torus morph m. bulb 0 = the wide rolling torus, 1 = a tight, tall, bulbous head (a
+        /// smaller ring, a fatter tube and dome, taller). pancake/aspect: the profile's tropopause spreading and
+        /// cap aspect (1 = none).
+        /// </summary>
+        public static void Cap(float m, float pancake, float aspect, float bulb, out float ringR, out float tube, out float dome, out float squash)
+        {
+            ringR = Mathf.Lerp(0.05f, Mathf.Lerp(0.62f, 0.34f, bulb) * Mathf.Lerp(1f, 0.62f, pancake), m);
+            tube = Mathf.Lerp(0.3f, Mathf.Lerp(0.48f, 0.56f, bulb) * (1f + 0.45f * pancake), m);
+            dome = Mathf.Lerp(0.85f, Mathf.Lerp(0.4f, 0.66f, bulb), m);
+            float sq = Mathf.Clamp(0.78f * aspect * Mathf.Lerp(1f, 1.4f, bulb), 0.62f, Mathf.Lerp(0.9f, 1.15f, bulb));
+            squash = Mathf.Lerp(1f, sq, m);
+        }
+
+        /// <summary>
+        /// The velum: a vast lens of condensation over the rising fireball where the air is humid (more of it under
+        /// an overcast), several cap widths across for big yields, forming as the fireball rises and evaporating.
+        /// </summary>
+        public static void Velum(float W, float t, float tauG, float riseTime, float humidity, float overcast,
+            float capScale, float capWidth, out float radius, out float thick, out float density, out float height)
+        {
+            float humid = SS(0.2f, 0.65f, humidity) * (0.7f + 0.6f * overcast);
+            float big = SS(1f, 3f, Mathf.Log10(Mathf.Max(W, 0.01f)));     // 10 kt .. 1 Mt
+            float life = SS(0.3f * tauG, 1.0f * tauG, t) * (1f - SS(0.45f * riseTime, 1.0f * riseTime, t));
+            radius = capScale * capWidth * Mathf.Lerp(2.0f, 3.6f, big) * (0.75f + 0.25f * SS(0.3f * tauG, 3f * tauG, t));
+            thick = 0.2f * capScale;
+            height = (0.75f + 0.2f * (1f - life)) * capScale;
+            density = 0.22f * humid * life * Mathf.Lerp(0.45f, 1f, big);   // translucent: a veil, not a plate
         }
     }
 }
