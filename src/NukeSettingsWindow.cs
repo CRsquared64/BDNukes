@@ -157,10 +157,27 @@ namespace BDNukes
             s.volumetricClouds = Toggle("Raymarched cloud and fireball", s.volumetricClouds);
             s.fluidSim = Toggle("Simulated fireball (baked fluid sim)", s.fluidSim);
             s.velum = Toggle("Condensation veil in humid air", s.velum);
-            s.cloudShadows = Toggle("Cloud shadow on the ground", s.cloudShadows);
             s.shockDistortion = Slider("Shock wave light bending", s.shockDistortion, 0f, 3f, "0.00");
-            s.volumetricResolution = Mathf.RoundToInt(Slider("Cloud resolution (1 full, 2 half, 3 third)", s.volumetricResolution, 1f, 3f, "0"));
-            s.volumetricSteps = Mathf.RoundToInt(Slider("Raymarch steps (quality)", s.volumetricSteps, 16f, 128f, "0"));
+            GUILayout.Label("Cloud quality");
+            int vq = GUILayout.Toolbar((int)s.volumetricQuality, Qualities);
+            if (vq != (int)s.volumetricQuality)
+            {
+                // Custom keeps the values as they are now; a preset overwrites them
+                s.volumetricQuality = (NukeQuality)vq;
+                s.ApplyVolumetricQuality();
+            }
+            // the preset-driven values: editing one by hand switches to Custom
+            bool cloudShadows = Toggle("Cloud shadow on the ground", s.cloudShadows);
+            int volRes = Mathf.RoundToInt(Slider("Cloud resolution (1 full, 2 half, 3 third)", s.volumetricResolution, 1f, 3f, "0"));
+            int volSteps = Mathf.RoundToInt(Slider("Raymarch steps (quality)", s.volumetricSteps, 16f, 128f, "0"));
+            if (cloudShadows != s.cloudShadows || volRes != s.volumetricResolution || volSteps != s.volumetricSteps)
+            {
+                s.cloudShadows = cloudShadows; s.volumetricResolution = volRes; s.volumetricSteps = volSteps;
+                s.volumetricQuality = NukeQuality.Custom;
+            }
+            s.adaptivePerformance = Toggle("Adaptive quality (hold the frame rate)", s.adaptivePerformance);
+            s.targetFrameRate = Mathf.Round(Slider("Target frame rate (fps)", s.targetFrameRate, 20f, 144f, "0"));
+            GUILayout.Label(NukeFXManager.AdaptiveStatus());
 
             GUILayout.Space(6f);
             GUILayout.Label("Atmosphere and weather");

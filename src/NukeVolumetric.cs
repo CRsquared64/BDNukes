@@ -107,7 +107,10 @@ namespace BDNukes
         static UnityEngine.Rendering.CommandBuffer lowResBuffer;
         static Material compositeMat;
 
-        static int Divisor => compositeShader != null && compositeShader.isSupported ? Mathf.Clamp(NukeSettings.Current.volumetricResolution, 1, 3) : 1;
+        static int Divisor => compositeShader != null && compositeShader.isSupported ? Mathf.Clamp(NukeSettings.Current.volumetricResolution + NukeFXManager.ExtraDivisor, 1, 3) : 1;
+
+        /// <summary>Volumetric clouds queued to draw this frame (read by the adaptive quality before the compositor runs).</summary>
+        public static int QueuedClouds => lowResItems.Count;
 
         /// <summary>Per frame, after every detonation has updated (NukeFXManager.LateUpdate): rebuilds the low-res pass.</summary>
         public static void UpdateCompositor()

@@ -1153,6 +1153,7 @@ namespace BDNukes
             if (s.volumetricResolution >= 2) steps *= s.volumetricResolution >= 3 ? 1.8f : 1.4f;
             int active = NukeFXManager.Existing != null ? NukeFXManager.Existing.ActiveCount : 1;
             steps *= Mathf.Clamp(1f / Mathf.Sqrt(Mathf.Max(1, active)), 0.35f, 1f);
+            steps *= NukeFXManager.StepScale; // adaptive performance
             volume.Update(ref vs, Mathf.Clamp(Mathf.RoundToInt(steps), 16, 128));
         }
 

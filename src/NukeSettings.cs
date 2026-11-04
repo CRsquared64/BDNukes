@@ -152,6 +152,11 @@ namespace BDNukes
         public float cloudShadowStrength = 0.6f;
         public int volumetricResolution = 2;       // 1 = full, 2 = half, 3 = third resolution (composited back with a depth-aware upsample)               // the fireball plays a baked fluid simulation (in the shader bundle)           // raymarch samples per pixel: quality vs GPU cost
 
+        // volumetric quality preset and adaptive performance
+        public NukeQuality volumetricQuality = NukeQuality.High; // sets volumetricSteps, volumetricResolution and cloudShadows; Custom keeps them as set
+        public bool adaptivePerformance = true;    // while a cloud is drawn and the frame rate stays under target, drop steps, then resolution
+        public float targetFrameRate = 50f;        // fps the adaptive quality tries to hold (unscaled frame time)
+
         // atmosphere and weather
         public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)
         public float hazeVisibility = 40000f;      // m of sea-level air that hides ~63% of the cloud's own colour
@@ -216,6 +221,7 @@ namespace BDNukes
 
             s.Validate();
             s.ApplyQuality();
+            s.ApplyVolumetricQuality();
             Debug.Log("[BDNukes]: Settings loaded (quality " + s.quality + ").");
             return s;
         }
@@ -309,6 +315,40 @@ namespace BDNukes
             n.TryGetValue("craterScale", ref craterScale);
             n.TryGetValue("maxCraters", ref maxCraters);
             n.TryGetValue("craterPartialRebuild", ref craterPartialRebuild);
+
+            string vq = n.GetValue("volumetricQuality");
+            if (!string.IsNullOrEmpty(vq))
+            {
+                try { volumetricQuality = (NukeQuality)Enum.Parse(typeof(NukeQuality), vq.Trim(), true); }
+                catch (Exception) { Debug.LogWarning("[BDNukes]: Unknown volumetricQuality '" + vq + "', using " + volumetricQuality); }
+            }
+            // a file that sets the values by hand but names no preset (older user settings) keeps them
+            else if (n.HasValue("volumetricSteps") || n.HasValue("volumetricResolution") || n.HasValue("cloudShadows"))
+                volumetricQuality = NukeQuality.Custom;
+            n.TryGetValue("adaptivePerformance", ref adaptivePerformance);
+            n.TryGetValue("targetFrameRate", ref targetFrameRate);
+        }
+
+        /// <summary>The volumetric preset's steps, resolution divisor and shadows. False for Custom.</summary>
+        public static bool VolumetricPreset(NukeQuality q, out int steps, out int resolution, out bool shadows)
+        {
+            switch (q)
+            {
+                case NukeQuality.Low: steps = 32; resolution = 3; shadows = false; return true;
+                case NukeQuality.Medium: steps = 48; resolution = 2; shadows = true; return true;
+                case NukeQuality.High: steps = 64; resolution = 2; shadows = true; return true;
+                case NukeQuality.Ultra: steps = 96; resolution = 1; shadows = true; return true;
+                default: steps = 64; resolution = 2; shadows = true; return false;
+            }
+        }
+
+        /// <summary>Copies the volumetric preset (unless Custom) into volumetricSteps, volumetricResolution and cloudShadows.</summary>
+        public void ApplyVolumetricQuality()
+        {
+            if (!VolumetricPreset(volumetricQuality, out int st, out int res, out bool sh)) return;
+            volumetricSteps = st;
+            volumetricResolution = res;
+            cloudShadows = sh;
         }
 
         /// <summary>Clamps everything to sane ranges. Also called by the settings window after every change.</summary>
@@ -349,6 +389,7 @@ namespace BDNukes
             shockDistortion = Mathf.Clamp(shockDistortion, 0f, 3f);
             craterScale = Mathf.Clamp(craterScale, 0.1f, 5f);
             maxCraters = Mathf.Clamp(maxCraters, 1, 1000);
+            targetFrameRate = Mathf.Clamp(targetFrameRate, 15f, 240f);
         }
 
         static void ValidateQuality(NukeQualityValues q)
@@ -460,6 +501,9 @@ namespace BDNukes
                 n.AddValue("craters", B(craters));
                 n.AddValue("craterScale", F(craterScale));
                 n.AddValue("craterPartialRebuild", B(craterPartialRebuild));
+                n.AddValue("volumetricQuality", volumetricQuality.ToString());
+                n.AddValue("adaptivePerformance", B(adaptivePerformance));
+                n.AddValue("targetFrameRate", F(targetFrameRate));
                 root.Save(path, "BDNukes user settings, written by the in-game settings window. Overrides GameData/BDNukes/Settings.cfg; delete this file to go back to the defaults.");
                 Debug.Log("[BDNukes]: Settings saved to " + path);
                 return true;
