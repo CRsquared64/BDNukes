@@ -39,26 +39,29 @@ namespace BDNukes
         /// cloud has at that moment (capTopAGL above the ground, capRadius across): the hand-over from the sim to
         /// the procedural cloud then lines up instead of jumping.
         /// </summary>
-        public static void Fill(NukeSimData d, ref NukeVolumeState v, float t, float simDuration, float groundY,
-            Vector3 capCenter, float capTopAGL, float capRadius, float fade, float fire)
+        /// <param name="floorY">local height of the bake's origin: the ground for a ground burst, the burst point for an air burst</param>
+        /// <param name="capTopAboveFloor">how high above floorY the procedural cap's top is right now</param>
+        public static void Fill(NukeSimData d, ref NukeVolumeState v, float t, float simDuration, float floorY,
+            Vector3 capCenter, float capTopAboveFloor, float capRadius, float fade, float fire)
         {
             v.simMix = 0f;
             if (d == null || !d.Valid || simDuration <= 0f) return;
             var m = d.meta;
             int last = m.times.Length - 1;
-            // the fireball stage is the bake's first part (burning, rolling up); the procedural cap carries on from there
-            float st = Mathf.Max(0f, t) / simDuration * m.times[last] * 0.55f;
+            // the bake covers the fireball stage (burning, rolling up); the procedural cap carries on from there
+            float st = Mathf.Max(0f, t) / simDuration * m.times[last];
             int i = 0;
             while (i < last - 1 && m.times[i + 1] <= st) i++;
             float b = Mathf.Clamp01((st - m.times[i]) / Mathf.Max(1e-4f, m.times[i + 1] - m.times[i]));
-            float top = Mathf.Max(0.2f, Mathf.Lerp(m.top[i], m.top[i + 1], b));
+            // plume top above the bake's origin (the domain floor sits below it for an air burst)
+            float top = Mathf.Max(0.2f, Mathf.Lerp(m.top[i], m.top[i + 1], b) + m.boundsMin[1]);
             float rad = Mathf.Max(0.2f, Mathf.Lerp(m.radius[i], m.radius[i + 1], b));
-            float sy = Mathf.Max(1f, capTopAGL) / top;
+            float sy = Mathf.Max(1f, capTopAboveFloor) / top;
             // keep the baked proportions within reason: stretching a plume too far turns it into a pencil
             float sxz = Mathf.Clamp(Mathf.Max(1f, capRadius) / rad, 0.8f * sy, 1.35f * sy);
             var bmin = new Vector3(m.boundsMin[0], m.boundsMin[1], m.boundsMin[2]);
             var bmax = new Vector3(m.boundsMax[0], m.boundsMax[1], m.boundsMax[2]);
-            v.simOrigin = new Vector3(capCenter.x + bmin.x * sxz, groundY + bmin.y * sy, capCenter.z + bmin.z * sxz);
+            v.simOrigin = new Vector3(capCenter.x + bmin.x * sxz, floorY + bmin.y * sy, capCenter.z + bmin.z * sxz);
             v.simSize = new Vector3((bmax.x - bmin.x) * sxz, (bmax.y - bmin.y) * sy, (bmax.z - bmin.z) * sxz);
             v.simA = d.frames[i];
             v.simB = d.frames[i + 1];

@@ -185,9 +185,10 @@ public static class BDNukesBuild
         public float fov;
         public bool debug;
         public int div;          // 2 or 3: render through the reduced-resolution compositor
+        public bool air;         // a free air burst 2 km up (air sim, no stem, skirt or surge)
     }
 
-    static NukeSimData simGround;
+    static NukeSimData simGround, simAir;
 
     static NukeSimData LoadSim(string variant)
     {
@@ -205,6 +206,7 @@ public static class BDNukesBuild
         BDNukesSimImport.ImportAll();
         AssetDatabase.Refresh();
         simGround = LoadSim("ground");
+        simAir = LoadSim("air");
         Debug.Log("[BDNukesBuild] fireball sim: " + (simGround != null ? simGround.frames.Length + " frames" : "none"));
         var noise = EnsureNoise();
         var shader = LoadShader();
@@ -261,6 +263,11 @@ public static class BDNukesBuild
             new Shot { W = 20f, t = 60f, sunVis = 0.2f, haze = 0f, cam = new Vector3(6000f, 9000f, -9000f), lookFrac = 0.15f, fov = 50f },
         });
 
+        // an air burst 2 km up: a free fireball rolling up into a ring
+        var airT = new[] { 0.3f, 1.5f, 4f, 8f, 14f, 30f };
+        Sheet(shader, noise, Path.Combine(outDir, "10_airburst.png"), 3, Array.ConvertAll(airT, t => new Shot
+        { W = 20f, t = t, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 2600f, -3200f), lookFrac = 0.93f, fov = 38f, air = true }));
+
         // a megaton
         var mt = new[] { 3f, 15f, 45f, 120f };
         Sheet(shader, noise, Path.Combine(outDir, "5_life_1Mt.png"), 2, Array.ConvertAll(mt, t => new Shot
@@ -293,8 +300,21 @@ public static class BDNukesBuild
         {
             var v = NukeVolumeTestTimeline.At(shot.W, shot.t, shot.sunVis, shot.haze);
             float tauG = 2.5f + 2.2f * Mathf.Pow(shot.W, 0.3f);
-            NukeSimPlayer.Fill(simGround, ref v, shot.t, Mathf.Max(6f, 2.5f * tauG), v.groundY, v.capCenter,
-                v.capCenter.y + 0.6f * v.capScale - v.groundY, v.capScale * (v.ringR + v.tube) * v.xzSpread, 1f, 3f);
+            if (shot.air)
+            {
+                // the timeline's cloud, lifted 2 km: a free fireball with no ground interaction
+                v.groundY = -2000f;
+                v.stemDensity = v.skirtDensity = v.surgeDensity = 0f;
+                v.wilsonHemisphere = false;
+                v.capCenter.y -= 0.9f * (70f * Mathf.Pow(shot.W, 0.4f));
+            }
+            // the planet (Kerbin-sized) under the test ground: rays stop at the ground sphere, as in KSP
+            v.planetCenter = new Vector3(0f, (shot.air ? -2000f : 0f) - 600000f, 0f);
+            v.planetRadius = 600000f - 8f;
+            var simUse = shot.air && simAir != null ? simAir : simGround;
+            float floorY = shot.air ? 0f : v.groundY;
+            NukeSimPlayer.Fill(simUse, ref v, shot.t, Mathf.Max(6f, 2.5f * tauG), floorY, v.capCenter,
+                v.capCenter.y + Mathf.Max(v.dome, v.tube * v.squash) * v.capScale - floorY, v.capScale * (v.ringR + v.tube) * v.xzSpread, 1f, 3f);
             v.fire *= 1f - v.simMix;
             v.ember *= 1f - 0.7f * v.simMix;
 
@@ -302,7 +322,8 @@ public static class BDNukesBuild
             ground.transform.SetParent(root.transform);
             ground.transform.localScale = new Vector3(40000f, 1f, 40000f);
             // a lit ground that writes depth (it has a shadow-caster pass), like KSP's terrain
-            var gm = new Material(Shader.Find("Legacy Shaders/Diffuse"));
+            // the resolution sheet uses a ground that writes no depth (like Parallax's terrain): the ground sphere alone must hide the cloud
+            var gm = new Material(Shader.Find(shot.div > 0 ? "Unlit/Color" : "Legacy Shaders/Diffuse"));
             gm.color = Color.Lerp(new Color(0.24f, 0.33f, 0.22f) * Mathf.Lerp(0.6f, 1f, shot.sunVis), new Color(0.6f, 0.68f, 0.78f), shot.haze);
             ground.GetComponent<Renderer>().sharedMaterial = gm;
             var lightGo = new GameObject("Sun");
@@ -316,6 +337,7 @@ public static class BDNukesBuild
 
             var cloudRoot = new GameObject("Cloud");
             cloudRoot.transform.SetParent(root.transform);
+            if (shot.air) cloudRoot.transform.position = new Vector3(0f, 2000f, 0f);
             var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
             UnityEngine.Object.DestroyImmediate(box.GetComponent<Collider>());
             box.transform.SetParent(cloudRoot.transform);
@@ -351,7 +373,7 @@ public static class BDNukesBuild
             var camGo = new GameObject("Cam");
             camGo.transform.SetParent(root.transform);
             var cam = camGo.AddComponent<Camera>();
-            float capTop = v.capCenter.y + v.capScale * 0.6f;
+            float capTop = v.capCenter.y + v.capScale * 0.6f + (shot.air ? 2000f : 0f);
             // frame the whole cloud: back off as it grows (keeping the given direction and elevation)
             float need = capTop * 1.9f / Mathf.Tan(shot.fov * 0.5f * Mathf.Deg2Rad) * 0.5f;
             Vector3 camPos = shot.cam;

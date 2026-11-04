@@ -21,6 +21,29 @@ public static class BDNukesSimImport
         public float[] times;
     }
 
+    /// <summary>Separable [1 2 1]/4 blur along x, y and z, repeated `passes` times, on one grid (x fastest).</summary>
+    static void Smooth(float[] a, int off, int nx, int ny, int nz, int passes)
+    {
+        int n = nx * ny * nz;
+        var tmp = new float[n];
+        int[] stride = { 1, nx, nx * ny };
+        int[] len = { nx, ny, nz };
+        for (int pass = 0; pass < passes; pass++)
+            for (int axis = 0; axis < 3; axis++)
+            {
+                int st = stride[axis], l = len[axis];
+                for (int i = 0; i < n; i++)
+                {
+                    int coord = (i / st) % l;
+                    float c = a[off + i];
+                    float lo = coord > 0 ? a[off + i - st] : c;
+                    float hi = coord < l - 1 ? a[off + i + st] : c;
+                    tmp[i] = 0.25f * lo + 0.5f * c + 0.25f * hi;
+                }
+                Array.Copy(tmp, 0, a, off, n);
+            }
+    }
+
     static string RepoRoot => Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".."));
 
     public static string[] ImportAll()
@@ -51,6 +74,9 @@ public static class BDNukesSimImport
             var bytes = File.ReadAllBytes(Path.Combine(dir, string.Format("frame_{0:000}.raw", f)));
             var arr = new float[3 * n];
             Buffer.BlockCopy(bytes, 0, arr, 0, Math.Min(bytes.Length, arr.Length * 4));
+            // smooth away voxel-scale jaggedness (the solver's one-voxel flame tongues read as spikes); the shader's
+            // flame folds put the fine detail back, smoothly
+            for (int c = 0; c < 3; c++) Smooth(arr, c * n, bx, by, bz, c == 0 ? 1 : 2);
             for (int i = 0; i < n; i++)
             {
                 maxD = Mathf.Max(maxD, arr[i]);

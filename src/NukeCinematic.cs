@@ -837,7 +837,8 @@ namespace BDNukes
             shockMat.SetFloat("_Strength", 0.018f * s.shockDistortion * k * Mathf.Pow(R / Mathf.Max(R, rs), 0.35f));
             // ground height in the sphere's own units (radius 0.5): a dome for surface bursts
             float gy = groundFx ? Mathf.Clamp(groundY / (2f * rs), -0.5f, 0.5f) : -1f;
-            shockMat.SetVector("_ShockParams", new Vector4(gy, 0.35f * k * daylight, 1f, 0f));
+            // a free air burst shows the shell as a clear bubble around the fireball
+            shockMat.SetVector("_ShockParams", new Vector4(gy, (groundFx ? 0.35f : 0.7f) * k * Mathf.Max(daylight, 0.3f), 1f, 0f));
         }
 
         /// <summary>
@@ -1036,15 +1037,21 @@ namespace BDNukes
             // the baked fluid simulation is the fireball while it burns and rolls up, then hands over to the cap
             if (s.fluidSim)
             {
-                NukeSimPlayer.Fill(NukeVolumetric.SimGround, ref vs, t, Mathf.Max(6f, 2.5f * tauG), groundY, capPosL,
-                    capPosL.y + 0.6f * vs.capScale - groundY, vs.capScale * (vs.ringR + vs.tube) * vs.xzSpread,
+                // a ground burst sits on the ground; an air burst is a free ball (it only meets the ground as dust later)
+                bool onGround = groundFx && hb < 0.5f * R;
+                var sim = onGround || NukeVolumetric.SimAir == null ? NukeVolumetric.SimGround : NukeVolumetric.SimAir;
+                float floorY = sim == NukeVolumetric.SimGround ? groundY : 0f;
+                NukeSimPlayer.Fill(sim, ref vs, t, Mathf.Max(6f, 2.5f * tauG), floorY, capPosL,
+                    capPosL.y + Mathf.Max(vs.dome, vs.tube * vs.squash) * vs.capScale - floorY, vs.capScale * (vs.ringR + vs.tube) * vs.xzSpread,
                     FadeOut, 3f * flashK);
                 vs.fire *= 1f - vs.simMix;
                 vs.ember *= 1f - 0.7f * vs.simMix;
             }
             else vs.simMix = 0f;
             vs.planetCenter = transform.InverseTransformPoint(body.position);
-            vs.planetRadius = (float)(body.Radius + System.Math.Min(0d, alt + groundY)) - 150f;
+            // the ground at ground zero as a sphere: rays stop at it, so the ground in front of the cloud hides it
+            // even where the terrain shader leaves no depth (Parallax), and the planet hides it from orbit
+            vs.planetRadius = (float)(body.Radius + System.Math.Max(0d, alt + groundY)) - 8f;
 
             // quality where it shows: a cloud that's a speck on screen, or one of a salvo, gets fewer steps
             Camera cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
@@ -1053,6 +1060,8 @@ namespace BDNukes
             // jitter hides it), so getting close doesn't tank the frame rate
             float screenFrac = 2f * Mathf.Max(vs.capScale, R) / Mathf.Max(1f, camDist * 2f * Mathf.Tan(0.5f * fov * Mathf.Deg2Rad));
             float steps = s.volumetricSteps * Mathf.Clamp(0.35f / Mathf.Max(screenFrac, 0.01f), 0.3f, 1f);
+            // a reduced-resolution cloud can afford more samples per pixel
+            if (s.volumetricResolution >= 2) steps *= s.volumetricResolution >= 3 ? 1.8f : 1.4f;
             int active = NukeFXManager.Existing != null ? NukeFXManager.Existing.ActiveCount : 1;
             steps *= Mathf.Clamp(1f / Mathf.Sqrt(Mathf.Max(1, active)), 0.35f, 1f);
             volume.Update(ref vs, Mathf.Clamp(Mathf.RoundToInt(steps), 16, 128));

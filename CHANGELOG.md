@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- **Air bursts get their own simulated fireball:** a free ball in open air rolling up into a ring, with a clearer shock shell around it. Ground bursts keep the ground simulation.
+- **Smoother, more saturated fire:** both bakes are at higher resolution (112) and cover just the fireball stage. The importer smooths each frame, and flame-scale folds and stronger orange-yellow colour are added in the shader. The procedural cap is smoother too.
 - **Reduced-resolution rendering** (default ½): the cloud is raymarched at ½ or ⅓ resolution and composited over the scene with a depth-aware upsample, so edges in front of it stay sharp. That's 4–9× fewer raymarched pixels, with no visible loss in the test renders. New setting: "Cloud resolution".
 - **Cloud shadow on the ground:** the volumetric cloud darkens the ground and craft beneath it along the sun direction. It fades out under overcast. New settings: on/off and strength.
 - **Light-bending shockwave:** the shock front is a refracting shell (a dome for ground bursts) that bends the scene behind it, strongest at its silhouette, and fades as it spreads. New setting: strength (0 = off).
@@ -46,6 +48,8 @@
 - New settings for craters (on/off, size scale, rebuild mode, fill in all craters) and for haze and weather.
 
 ### Fixed
+- The volumetric cloud showed through terrain in front of it where the terrain shader writes no depth (Parallax). Rays now also stop at the ground's sphere at ground zero.
+- Reduced-resolution clouds looked blocky and speckled. The upsample is now a 3×3 depth-aware filter that averages away the raymarch jitter, and the cloud takes more steps at reduced resolution.
 - Blasts never cleared EVE clouds: EVE's `GetEquirectangularUV` is a private static method, and the lookup only searched instance methods. The log now names any EVE member that can't be found.
 
 ### Changed

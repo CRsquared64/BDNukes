@@ -209,7 +209,7 @@ float CapSDF(float3 p, float n, float lobeMode, out float3 q)
     float lobe = lobeMode < 0.5 ? tex3Dlod(_Noise, float4(q * (_Density.w * 0.3) + float3(0.71, 0.29, 0.53), 0)).r
                                 : (lobeMode < 1.5 ? 0.9 : 0.62);
     float lobes = (0.62 - lobe) * 0.8 * cs * rough;
-    return SMin(torus, dome, 0.25) * cs + lobes + (0.5 - n) * (0.75 + 0.45 * _Age.x) * cs * rough;
+    return SMin(torus, dome, 0.25) * cs + lobes + (0.5 - n) * (0.62 + 0.45 * _Age.x) * cs * rough;
 }
 
 float Cond(float3 p, float nWisp)
@@ -285,17 +285,17 @@ Sample Cloud(float3 p, bool detail)
         float big = FlowNoise(qw, vel, ns, per, float3(0.0, 0.0, 0.0), 0);
         // the mid billows ride the flow a little faster than the big ones: they boil against each other
         float mid = FlowNoise(qw, vel * 1.35, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
-        float n = smoothstep(0.4, 0.8, 0.8 * big + 0.2 * mid);
+        float n = smoothstep(0.38, 0.82, 0.9 * big + 0.1 * mid);
         float sdf = CapSDF(p, n, 0.0, q);
-        float soft = 0.16 * _CapCenter.w * (1.0 + 2.0 * _Age.x);
+        float soft = 0.22 * _CapCenter.w * (1.0 + 2.0 * _Age.x);
         // the downwind end is older, sheared-off cloud: thinner and more ragged
         float along = dot(q.xz, _Wind.xz) / (_CapCenter.w * (1.0 + _WindFlow.z));
         float tail = lerp(1.0, 0.3, saturate(along * 0.8) * saturate(_WindFlow.z));
         capDen = saturate(-sdf / soft + 0.1) * _Density.x * (1.0 - 0.75 * _Age.x) * tail;
         if (detail && capDen > 0.0)
         {
-            float fine = FlowNoise(qw, vel * 1.7, ns * 4.2, per * 0.5, float3(0.7, 0.2, 0.4), 1);
-            capDen = saturate(capDen - (1.0 - fine) * 0.03 * lerp(0.3, 1.0, _CapXZ.z));
+            
+            // (no fine-grain erosion: the cap stays smooth, rounded billows)
             // fast convective flicker for the fire, rising through the ball
             if (_Fire.x + _Ember.x > 0.001 || _March.w > 0.5) s.fireN = FlowNoise(q, vel * 1.8 + float3(0.0, 0.25 * _CapCenter.w * _CapXZ.w + 20.0, 0.0), ns * 3.1, per * 0.35, float3(0.11, 0.83, 0.29), 0);
         }
@@ -323,12 +323,18 @@ Sample Cloud(float3 p, bool detail)
             simDen = sv.r * sv.r;
             if (detail && simDen > 0.003)
             {
-                // sub-voxel detail riding the rising gas, so the sim's soft voxels break into flame folds
-                float dn = FlowNoise(p - _SimOrigin.xyz, float3(0.0, 0.06 * _SimSize.y, 0.0), ns * 3.2, per * 0.4, float3(0.27, 0.61, 0.19), 1);
-                simDen = saturate(simDen * 1.5 - (1.0 - dn) * 0.18 - 0.01);
+                // sub-voxel detail riding the rising gas, at the sim's own scale: cauliflower folds a few voxels
+                // across and finer flame wisps, so the soft voxels read as sharp, folded fire
+                float sf = 1.0 / max(_SimSize.y, 1.0);
+                float3 sp = p - _SimOrigin.xyz;
+                float fold = FlowNoise(sp, float3(0.0, 0.05 * _SimSize.y, 0.0), sf * 9.0, per * 0.4, float3(0.27, 0.61, 0.19), 0);
+                float wisp = FlowNoise(sp, float3(0.0, 0.09 * _SimSize.y, 0.0), sf * 26.0, per * 0.3, float3(0.71, 0.13, 0.47), 1);
+                simDen = saturate(simDen * 1.7 - (1.0 - smoothstep(0.35, 0.8, fold)) * 0.32 - (1.0 - wisp) * 0.1 - 0.01);
             }
             simDen *= _Sim.w;
-            s.simHeat = max(sv.g, 0.65 * sv.b) * _Sim.y;
+            // heat from the smooth temperature field, the flame field only adding to it: the flame's thin outer
+            // tongues would otherwise glow as hard as the core and read as spikes
+            s.simHeat = max(0.6 * sv.g, 0.85 * sv.b) * _Sim.y * saturate(simDen * 4.0);
         }
         capDen = lerp(capDen, simDen, _Sim.y);
         if (simDen > 0.0) s.core = lerp(s.core, 1.0 - sqrt(saturate(s.simHeat)), _Sim.y);
@@ -352,7 +358,7 @@ Sample Cloud(float3 p, bool detail)
             float st = sin(tw), ct = cos(tw);
             float3 sq = float3(ct * r.x - st * r.z, (p.y - _GroundY.x) * 0.35, st * r.x + ct * r.z);
             float3 sv = float3(0.0, 0.35 * _Anim.z, 0.0) + float3(_Wind.x, 0.0, _Wind.z) * (0.3 * lerp(_WindFlow.x, _WindFlow.y, u));
-            float n = FlowNoise(sq, sv, ns * 2.0, per, float3(0.43, 0.61, 0.07), 0);
+            float n = FlowNoise(sq, sv, ns * 1.4, per, float3(0.43, 0.61, 0.07), 0);
             n = smoothstep(0.38, 0.8, n);
             float sdf = d0 - (flare - 1.0) * _StemBase.w + (0.5 - n) * 1.35 * localR;
             float soft = 0.3 * localR;

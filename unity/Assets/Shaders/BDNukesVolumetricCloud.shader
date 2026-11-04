@@ -185,9 +185,14 @@ Shader "BDNukes/VolumetricCloud"
                         // orange to dull red, with soot darkening the cooled smoke
                         if (sm.simHeat > 0.002)
                         {
-                            float sh = saturate(sm.simHeat * 1.1);
-                            lit = lerp(lit, lit * 0.35, saturate(sh * 2.0));
-                            lit += Blackbody(sh) * _Sim.z;
+                            // saturated fire: the mid temperatures (orange, yellow) carry most of the surface, white only
+                            // in the hottest cores; the cooler smoke between the flames goes dark with soot
+                            float sh = saturate(pow(saturate(sm.simHeat * 1.15), 0.8));
+                            lit = lerp(lit, lit * 0.25, saturate(sh * 2.5));
+                            float3 fc = Blackbody(sh);
+                            float lum = dot(fc, float3(0.3, 0.59, 0.11));
+                            fc = lerp(float3(lum, lum, lum), fc, 1.25);       // a touch more saturation
+                            lit += max(fc, 0.0) * _Sim.z;
                         }
 
                         // incandescence

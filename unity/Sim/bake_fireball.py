@@ -14,12 +14,12 @@ argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 VARIANT = argv[0] if argv else "ground"
 OUT = argv[1] if len(argv) > 1 else os.path.join(os.path.dirname(__file__), "out", VARIANT)
 os.makedirs(OUT, exist_ok=True)
-CACHE = os.path.join(OUT, "cache_v4")
+CACHE = os.path.join(OUT, "cache_v5")
 
 ground = VARIANT == "ground"
-RES = 96                 # voxels along the longest (vertical) axis
-FRAMES = 168             # simulated frames at 24 fps (7 s of sim time)
-EXPORT_EVERY = 6         # -> 28 exported frames
+RES = 112                 # voxels along the longest (vertical) axis
+FRAMES = 96              # simulated frames at 24 fps (4 s: the burning fireball stage)
+EXPORT_EVERY = 4         # -> 24 exported frames
 HALF = 3.0               # domain half width (R): room for the vortex ring to spread
 HEIGHT = 8.5             # domain height (R)
 
@@ -39,7 +39,7 @@ def cube(name, size, loc):
     return o
 
 # ---- domain ----
-zmin = 0.0 if ground else -1.2
+zmin = 0.0 if ground else -2.0
 dom = cube("Domain", (2 * HALF, 2 * HALF, HEIGHT), (0, 0, zmin + HEIGHT / 2))
 mod = dom.modifiers.new("Fluid", type='FLUID')
 mod.fluid_type = 'DOMAIN'
