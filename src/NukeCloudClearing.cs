@@ -136,7 +136,7 @@ namespace BDNukes
                     {
                         uv = uv,
                         radiusUV = r / (Mathf.PI * (float)(body.Radius + deckAlt)),
-                        start = Time.time,
+                        start = NukeFXManager.FxTime,
                         grow = Mathf.Max(0.5f, Mathf.Sqrt(r * r + dz * dz) / Mathf.Max(50f, shockSpeed)),
                         hold = 0.4f * healTime,
                         heal = healTime,
@@ -157,7 +157,7 @@ namespace BDNukes
         public static void Update()
         {
             if (layers.Count == 0) return;
-            float now = Time.time;
+            float now = NukeFXManager.FxTime;
             // keep our maps bound every frame, but only redraw them a few times a second (a full-planet blit each)
             if (now < nextRedraw)
             {

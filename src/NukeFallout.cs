@@ -183,7 +183,7 @@ namespace BDNukes
             transform.rotation = Quaternion.LookRotation(north.normalized, up);
         }
 
-        float Now => Time.time - p.spawnTime - p.delay;
+        float Now => NukeFXManager.FxTime - p.spawnTime - p.delay;
 
         // ----------------------------------------------------------------------------------------
         // Radiation field

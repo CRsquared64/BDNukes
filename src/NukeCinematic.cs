@@ -200,7 +200,7 @@ namespace BDNukes
             body = b;
             W = yield;
             delay = detonationDelay;
-            spawnTime = Time.time;
+            spawnTime = NukeFXManager.FxTime;
             lod = lodScale;
 
             lat = body.GetLatitude(pos);
@@ -211,7 +211,7 @@ namespace BDNukes
                 lat = record.lat; lon = record.lon; alt = record.alt;
                 // pick up where it was: Time.time-based ages continue from the universal time since detonation
                 double age = NukePersistence.Now - record.ut;
-                if (age >= 0d) spawnTime = Time.time - (float)age;
+                if (age >= 0d) spawnTime = NukeFXManager.FxTime - (float)age;
                 else delay = (float)-age;
                 soundPlayed = nearShakeDone = true;
             }
@@ -705,7 +705,8 @@ namespace BDNukes
             }
 
             UpdateAnchor();
-            t = Time.time - spawnTime - delay;
+            UpdateFxRateAudio();
+            t = NukeFXManager.FxTime - spawnTime - delay;
             if (t < 0f) return;
             if (t > life)
             {
@@ -2201,6 +2202,31 @@ namespace BDNukes
             if (hiFx) tintAmount = Mathf.Max(tintAmount, 0.2f * hiW * HiGlow(t) * Mathf.Clamp01(15f * Rh / (d + 1f)) * vis);
         }
 
+        /// <summary>Photo mode: blast sounds play at the effects rate and pause while the effects are frozen.</summary>
+        void UpdateFxRateAudio()
+        {
+            float rate = NukeFXManager.FxRate;
+            if (rate == audioRate) return;
+            bool freeze = rate <= 0f, wasFrozen = audioRate <= 0f;
+            audioRate = rate;
+            FxRateAudio(crackSrc, rate, freeze, wasFrozen);
+            FxRateAudio(rumbleSrc, rate, freeze, wasFrozen);
+            FxRateAudio(boomSrc, rate, freeze, wasFrozen);
+        }
+
+        float audioRate = 1f;
+
+        static void FxRateAudio(AudioSource a, float rate, bool freeze, bool wasFrozen)
+        {
+            if (a == null) return;
+            if (freeze) { if (a.isPlaying) a.Pause(); }
+            else
+            {
+                a.pitch = rate;
+                if (wasFrozen) a.UnPause();
+            }
+        }
+
         // ----------------------------------------------------------------------------------------
 
         /// <summary>A ParticleSystem used as a pure renderer for analytically driven particles.</summary>
@@ -2217,6 +2243,7 @@ namespace BDNukes
             public readonly bool soft;
             /// <summary>Per-frame multipliers the owner sets for distance and haze.</summary>
             public float sizeMul = 1f, alphaMul = 1f;
+            float simRate = 1f;
 
             /// <param name="stretch">If above 0, particles are drawn as vertical streaks this many sizes long (rain-out).</param>
             public Layer(Transform parent, string name, Material mat, int n, int seed, bool hierarchyScale, float stretch = 0f)
@@ -2302,6 +2329,9 @@ namespace BDNukes
 
             public int Begin()
             {
+                // photo mode: the particles are placed analytically, but keep Unity's own clock in step too
+                float rate = NukeFXManager.FxRate;
+                if (rate != simRate) { simRate = rate; var main = ps.main; main.simulationSpeed = rate; }
                 if (!spawned)
                 {
                     spawned = true;

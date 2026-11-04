@@ -170,6 +170,8 @@ namespace BDNukes
         public float craterScale = 1f;             // multiplies crater radius and depth
         public int maxCraters = 100;               // per body; the oldest is filled in beyond this
         public bool craterPartialRebuild = true;   // rebuild only the quads near the crater; off = RebuildSphere (multi-second freeze)
+        // photo mode (Alt+F7 cycles normal / slow motion / frozen)
+        public float photoModeSlowRate = 0.25f;    // effects speed in slow motion (1 = normal)
 
         static NukeSettings current;
 
@@ -301,6 +303,7 @@ namespace BDNukes
             n.TryGetValue("precursorDust", ref precursorDust);
             n.TryGetValue("groundFire", ref groundFire);
             n.TryGetValue("persistentClouds", ref persistentClouds);
+            n.TryGetValue("photoModeSlowRate", ref photoModeSlowRate);
             n.TryGetValue("volumetricResolution", ref volumetricResolution);
             n.TryGetValue("cloudShadows", ref cloudShadows);
             n.TryGetValue("shockDistortion", ref shockDistortion);
@@ -390,6 +393,7 @@ namespace BDNukes
             craterScale = Mathf.Clamp(craterScale, 0.1f, 5f);
             maxCraters = Mathf.Clamp(maxCraters, 1, 1000);
             targetFrameRate = Mathf.Clamp(targetFrameRate, 15f, 240f);
+            photoModeSlowRate = Mathf.Clamp(photoModeSlowRate, 0.01f, 1f);
         }
 
         static void ValidateQuality(NukeQualityValues q)
@@ -504,6 +508,8 @@ namespace BDNukes
                 n.AddValue("volumetricQuality", volumetricQuality.ToString());
                 n.AddValue("adaptivePerformance", B(adaptivePerformance));
                 n.AddValue("targetFrameRate", F(targetFrameRate));
+
+                n.AddValue("photoModeSlowRate", F(photoModeSlowRate));
                 root.Save(path, "BDNukes user settings, written by the in-game settings window. Overrides GameData/BDNukes/Settings.cfg; delete this file to go back to the defaults.");
                 Debug.Log("[BDNukes]: Settings saved to " + path);
                 return true;

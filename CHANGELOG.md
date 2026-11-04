@@ -97,6 +97,7 @@
   - Close to ground zero, a roaring blast wind and afterwind follow the shock.
 - **Wind on small clouds:** a cloud only feels the wind at the height it actually reaches, and the rising fireball picks up the wind gradually. Low-yield clouds such as the Davy Crockett's now stand up instead of smearing sideways.
 - Far away, the smoke puffs merge into one mass instead of reading as separate balls.
+- **Photo mode:** Alt+F7 cycles the nuclear effects between normal speed, slow motion (`photoModeSlowRate`, default 0.25x) and frozen, without pausing the game, so you can line up screenshots. Blast sounds slow down and pause with them.
 
 ## 1.0.1
 

@@ -125,6 +125,20 @@ namespace BDNukes
                 underTime = 0f;
             }
         }
+        // --- photo mode: an effects clock that can run slow or stop while the game keeps going ---
+        enum PhotoMode { Normal, Slow, Frozen }
+        static PhotoMode photoMode = PhotoMode.Normal;
+
+        /// <summary>
+        /// Effects clock (seconds). Advances with game time scaled by FxRate, so detonation ages measured
+        /// against it slow down or freeze in photo mode. Use it instead of Time.time for effect ages only.
+        /// </summary>
+        public static float FxTime { get; private set; }
+
+        /// <summary>Effects speed: 1 normally, photoModeSlowRate in slow motion, 0 when frozen.</summary>
+        public static float FxRate =>
+            photoMode == PhotoMode.Frozen ? 0f :
+            photoMode == PhotoMode.Slow ? NukeSettings.Current.photoModeSlowRate : 1f;
 
         public void Register(NukeCinematic c) { if (!active.Contains(c)) active.Add(c); }
         public void Unregister(NukeCinematic c) { active.Remove(c); }
@@ -170,6 +184,7 @@ namespace BDNukes
 
         void Awake()
         {
+            photoMode = PhotoMode.Normal; // a new flight scene never starts frozen
             noiseSeed = Random.value * 100f;
             WindHeading = Random.Range(0f, 360f);
             white = Texture2D.whiteTexture;
@@ -225,6 +240,23 @@ namespace BDNukes
             foreach (var kv in savedRotation) if (kv.Key != null) kv.Key.transform.rotation = kv.Value;
             savedRotation.Clear();
             shake = Quaternion.identity;
+        }
+
+        void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.F7) && (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)))
+                CyclePhotoMode();
+            FxTime += Time.deltaTime * FxRate;
+        }
+
+        static void CyclePhotoMode()
+        {
+            photoMode = photoMode == PhotoMode.Normal ? PhotoMode.Slow
+                : photoMode == PhotoMode.Slow ? PhotoMode.Frozen : PhotoMode.Normal;
+            string msg = photoMode == PhotoMode.Slow ? "BDNukes photo mode: slow motion"
+                : photoMode == PhotoMode.Frozen ? "BDNukes photo mode: frozen"
+                : "BDNukes photo mode: off";
+            ScreenMessages.PostScreenMessage(msg, 2f, ScreenMessageStyle.UPPER_CENTER);
         }
 
         void LateUpdate()
