@@ -160,7 +160,9 @@ public static class BDNukesBuild
         LoadShader();
         string outDir = Path.Combine(RepoRoot, "unity", "Build");
         Directory.CreateDirectory(outDir);
-        var build = new AssetBundleBuild { assetBundleName = BundleName, assetNames = new[] { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", NoisePath } };
+        var names = new System.Collections.Generic.List<string> { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", NoisePath };
+        names.AddRange(BDNukesSimImport.ImportAll());
+        var build = new AssetBundleBuild { assetBundleName = BundleName, assetNames = names.ToArray() };
         var manifest = BuildPipeline.BuildAssetBundles(outDir, new[] { build },
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle,
             BuildTarget.StandaloneWindows64);
@@ -184,8 +186,25 @@ public static class BDNukesBuild
         public bool debug;
     }
 
+    static NukeSimData simGround;
+
+    static NukeSimData LoadSim(string variant)
+    {
+        var metaAsset = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Sim/" + variant + "/" + variant + "_meta.json");
+        if (metaAsset == null) return null;
+        var d = new NukeSimData { meta = JsonUtility.FromJson<NukeSimMeta>(metaAsset.text) };
+        d.frames = new Texture[d.meta.times.Length];
+        for (int i = 0; i < d.frames.Length; i++)
+            d.frames[i] = AssetDatabase.LoadAssetAtPath<Texture3D>("Assets/Sim/" + variant + "/f" + i.ToString("00") + ".asset");
+        return d.Valid ? d : null;
+    }
+
     public static void RenderTests()
     {
+        BDNukesSimImport.ImportAll();
+        AssetDatabase.Refresh();
+        simGround = LoadSim("ground");
+        Debug.Log("[BDNukesBuild] fireball sim: " + (simGround != null ? simGround.frames.Length + " frames" : "none"));
         var noise = EnsureNoise();
         var shader = LoadShader();
         string outDir = Path.Combine(RepoRoot, "unity", "Build", "tests");
@@ -257,6 +276,11 @@ public static class BDNukesBuild
         try
         {
             var v = NukeVolumeTestTimeline.At(shot.W, shot.t, shot.sunVis, shot.haze);
+            float tauG = 2.5f + 2.2f * Mathf.Pow(shot.W, 0.3f);
+            NukeSimPlayer.Fill(simGround, ref v, shot.t, Mathf.Max(6f, 2.5f * tauG), v.groundY, v.capCenter,
+                v.capCenter.y + 0.6f * v.capScale - v.groundY, v.capScale * (v.ringR + v.tube) * v.xzSpread, 1f, 3f);
+            v.fire *= 1f - v.simMix;
+            v.ember *= 1f - 0.7f * v.simMix;
 
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.transform.SetParent(root.transform);

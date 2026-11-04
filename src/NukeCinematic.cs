@@ -993,6 +993,16 @@ namespace BDNukes
             vs.condAlbedo = CondWhite;
             vs.hazeCol = hazeCol;
             vs.haze = haze;
+            // the baked fluid simulation is the fireball while it burns and rolls up, then hands over to the cap
+            if (s.fluidSim)
+            {
+                NukeSimPlayer.Fill(NukeVolumetric.SimGround, ref vs, t, Mathf.Max(6f, 2.5f * tauG), groundY, capPosL,
+                    capPosL.y + 0.6f * vs.capScale - groundY, vs.capScale * (vs.ringR + vs.tube) * vs.xzSpread,
+                    FadeOut, 3f * flashK);
+                vs.fire *= 1f - vs.simMix;
+                vs.ember *= 1f - 0.7f * vs.simMix;
+            }
+            else vs.simMix = 0f;
             vs.planetCenter = transform.InverseTransformPoint(body.position);
             vs.planetRadius = (float)(body.Radius + System.Math.Min(0d, alt + groundY)) - 150f;
 

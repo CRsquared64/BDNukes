@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- **Simulated fireball:** the fireball plays back a fluid simulation baked in Blender with its built-in Mantaflow solver: a full-size hot hemisphere on the ground that burns, rolls and lifts off, with real swirling flame and soot. The volume blends between baked frames and adds sub-voxel detail. The box is fitted to the procedural cap each frame, and it hands over to the procedural cloud once the fire has burned down.
+  - `unity/Sim/bake_fireball.py` bakes it, and the bundle build imports it (about 6 MB more in the bundle).
+  - New setting: "Simulated fireball".
 - **Volumetric mushroom clouds:** the cap, stem and dust skirt are raymarched through a 3D billow-noise volume instead of drawn as sprites. They get cauliflower billows, self-shadowing from the sun, sky and ground light, haze and overcast lighting.
 - **Fluid fireballs:** the fireball is part of the same volume. It is a white-hot ball whose turbulent incandescent filaments cool through yellow, orange and dull red, and its shell rolls into the toroidal cap with the cap's poloidal circulation.
   - Needs the shader bundle in `GameData/BDNukes/Shaders` (Windows / DirectX 11). Without it, the sprite cloud is used.

@@ -24,6 +24,8 @@ Shader "BDNukes/VolumetricCloud"
     Properties
     {
         _Noise ("Billow noise (3D)", 3D) = "white" {}
+        _SimA ("Fireball sim frame A (3D)", 3D) = "black" {}
+        _SimB ("Fireball sim frame B (3D)", 3D) = "black" {}
     }
     SubShader
     {
@@ -42,6 +44,10 @@ Shader "BDNukes/VolumetricCloud"
             #include "UnityCG.cginc"
 
             sampler3D _Noise;
+            sampler3D _SimA, _SimB;   // baked fluid simulation: R smoke (sqrt), G flame, B temperature
+            float4 _Sim;              // x blend A->B, y mix (1 = the sim is the fireball), z fire strength, w density scale
+            float4 _SimOrigin;        // xyz local min corner of the sim box
+            float4 _SimSize;          // xyz local size of the sim box
             UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
 
             float4x4 _WorldToCloud;   // world -> detonation-local (rotation + translation)
@@ -237,6 +243,7 @@ Shader "BDNukes/VolumetricCloud"
                 float hf;        // height up the cloud 0..1
                 float skip;      // conservative distance to the nearest possible cloud (0 inside or unknown)
                 float capY;      // height relative to the cap centre, in cap scales (negative = underside)
+                float simHeat;   // baked fireball heat at this point (0 outside the sim)
             };
 
             // lobeMode: 0 = sample the lobe noise, 1 = most inflated (a cheap bound), 2 = average (cheap occluder)
@@ -308,7 +315,7 @@ Shader "BDNukes/VolumetricCloud"
             {
                 Sample s;
                 s.density = 0.0; s.albedo = _CapAlbedo.rgb; s.cap = 0.0; s.core = 1.0; s.fireN = 0.5; s.hf = 0.0;
-                s.skip = 0.0; s.capY = 0.0;
+                s.skip = 0.0; s.capY = 0.0; s.simHeat = 0.0;
                 float ns = _Density.w;
                 float per = _Anim.w;
 
@@ -359,6 +366,30 @@ Shader "BDNukes/VolumetricCloud"
                         float ring = exp(-(core * core) / (cw * cw));
                         capDen *= lerp(1.0, 0.3, ring * saturate(_Ember.x));
                     }
+                }
+
+                // ---- baked fluid simulation: the fireball itself while it burns and rolls up ----
+                if (_Sim.y > 0.001)
+                {
+                    float3 su = (p - _SimOrigin.xyz) / max(_SimSize.xyz, 1.0);
+                    float3 bd = max(max(-su, su - 1.0), 0.0) * _SimSize.xyz;
+                    skip = min(skip, length(bd) * 0.9);
+                    float simDen = 0.0;
+                    if (all(su > 0.0) && all(su < 1.0))
+                    {
+                        float4 sv = lerp(tex3Dlod(_SimA, float4(su, 0)), tex3Dlod(_SimB, float4(su, 0)), _Sim.x);
+                        simDen = sv.r * sv.r;
+                        if (detail && simDen > 0.003)
+                        {
+                            // sub-voxel detail riding the rising gas, so the sim's soft voxels break into flame folds
+                            float dn = FlowNoise(p - _SimOrigin.xyz, float3(0.0, 0.06 * _SimSize.y, 0.0), ns * 3.2, per * 0.4, float3(0.27, 0.61, 0.19), 1);
+                            simDen = saturate(simDen * 1.5 - (1.0 - dn) * 0.18 - 0.01);
+                        }
+                        simDen *= _Sim.w;
+                        s.simHeat = max(sv.g, 0.65 * sv.b) * _Sim.y;
+                    }
+                    capDen = lerp(capDen, simDen, _Sim.y);
+                    if (simDen > 0.0) s.core = lerp(s.core, 1.0 - sqrt(saturate(s.simHeat)), _Sim.y);
                 }
 
                 // ---- stem: updraft with a slow twist, billows stretched along it ----
@@ -431,13 +462,13 @@ Shader "BDNukes/VolumetricCloud"
                     condDen = Cond(p, wisp);
                     // pileus: a smooth veil of condensation draped over the top of the rising cap, where it
                     // lifts moist air through its condensation level
-                    if (_Pileus.z > 0.001)
+                    if (_Pileus.z * (1.0 - _Sim.y) > 0.001)
                     {
                         float3 pq;
                         float sd = CapSDF(p, 0.55, 2.0, pq);
                         float x = (sd - _Pileus.x) / max(_Pileus.y, 1.0);
                         float top = smoothstep(-0.1, 0.35, pq.y / max(_CapCenter.w, 1.0));
-                        condDen = max(condDen, exp(-x * x * 2.0) * top * _Pileus.z * smoothstep(0.2, 0.7, wisp));
+                        condDen = max(condDen, exp(-x * x * 2.0) * top * _Pileus.z * (1.0 - _Sim.y) * smoothstep(0.2, 0.7, wisp));
                     }
                 }
 
@@ -467,6 +498,16 @@ Shader "BDNukes/VolumetricCloud"
                     float flare = 1.0 + _StemVis.w * pow(1.0 - u, 6.0);
                     float localR = lerp(_StemBase.w, _StemTop.w, u) * flare;
                     stem = saturate(-(d0 - (flare - 1.0) * _StemBase.w) / max(0.3 * localR, 1.0)) * _StemVis.z;
+                }
+                if (_Sim.y > 0.001)
+                {
+                    float3 su = (p - _SimOrigin.xyz) / max(_SimSize.xyz, 1.0);
+                    if (all(su > 0.0) && all(su < 1.0))
+                    {
+                        float r = tex3Dlod(_SimA, float4(su, 0)).r;
+                        cap = lerp(cap, r * r * _Sim.w, _Sim.y);
+                    }
+                    else cap *= 1.0 - _Sim.y;
                 }
                 return max(cap, stem);
             }
@@ -588,6 +629,15 @@ Shader "BDNukes/VolumetricCloud"
                             float flick = smoothstep(0.25, 0.85, sm.fireN);
                             float eh = _Ember.y * ring * lerp(0.4, 1.2, flick);
                             lit += Blackbody(eh) * (_Ember.x * sm.cap * ring * under * lerp(0.3, 1.0, flick));
+                        }
+
+                        // the simulated fireball's own flame: white-hot where it burns hardest, through yellow and
+                        // orange to dull red, with soot darkening the cooled smoke
+                        if (sm.simHeat > 0.002)
+                        {
+                            float sh = saturate(sm.simHeat * 1.1);
+                            lit = lerp(lit, lit * 0.35, saturate(sh * 2.0));
+                            lit += Blackbody(sh) * _Sim.z;
                         }
 
                         // incandescence

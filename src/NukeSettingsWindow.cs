@@ -154,6 +154,7 @@ namespace BDNukes
             GUILayout.Space(6f);
             GUILayout.Label("Volumetric clouds");
             s.volumetricClouds = Toggle("Raymarched cloud and fireball", s.volumetricClouds);
+            s.fluidSim = Toggle("Simulated fireball (baked fluid sim)", s.fluidSim);
             s.volumetricSteps = Mathf.RoundToInt(Slider("Raymarch steps (quality)", s.volumetricSteps, 16f, 128f, "0"));
 
             GUILayout.Space(6f);

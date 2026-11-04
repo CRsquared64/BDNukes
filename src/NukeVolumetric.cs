@@ -16,6 +16,8 @@ namespace BDNukes
         static Shader shader, holeShader;
         static Texture3D noise;
         static Mesh cube;
+        /// <summary>The baked ground-burst fireball (null without it in the bundle).</summary>
+        public static NukeSimData SimGround;
 
         public static bool Available
         {
@@ -42,7 +44,24 @@ namespace BDNukes
                     if (sh.name == "BDNukes/VolumetricCloud") shader = sh;
                     else if (sh.name == "BDNukes/CoverageHole") holeShader = sh;
                 }
-                foreach (var tx in bundle.LoadAllAssets<Texture3D>()) noise = tx;
+                var simFrames = new System.Collections.Generic.Dictionary<string, Texture>();
+                foreach (var tx in bundle.LoadAllAssets<Texture3D>())
+                {
+                    if (tx.name == "BDNukesBillows") noise = tx;
+                    else simFrames[tx.name] = tx;
+                }
+                foreach (var ta in bundle.LoadAllAssets<TextAsset>())
+                {
+                    if (!ta.name.EndsWith("_meta")) continue;
+                    var meta = JsonUtility.FromJson<NukeSimMeta>(ta.text);
+                    if (meta == null || meta.times == null) continue;
+                    var d = new NukeSimData { meta = meta, frames = new Texture[meta.times.Length] };
+                    for (int i = 0; i < d.frames.Length; i++)
+                        simFrames.TryGetValue(meta.variant + "_" + i.ToString("00"), out d.frames[i]);
+                    if (d.Valid && meta.variant == "ground") SimGround = d;
+                }
+                if (noise == null) foreach (var tx in bundle.LoadAllAssets<Texture3D>()) { noise = tx; break; }
+                Debug.Log("[BDNukes]: Fireball simulation " + (SimGround != null ? "loaded (" + SimGround.frames.Length + " frames)." : "not in the bundle."));
                 if (shader != null && !shader.isSupported)
                 {
                     Debug.LogWarning("[BDNukes]: Volumetric cloud shader isn't supported on this GPU; using the sprite cloud.");

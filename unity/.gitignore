@@ -8,3 +8,6 @@ Build/
 *.sln
 Assets/Noise/
 Assets/Noise.meta
+Sim/out/
+Assets/Sim/
+Assets/Sim.meta

@@ -39,6 +39,7 @@
   <ItemGroup>
     <!-- shared with the Unity shader project, so its test renders use exactly the uniforms the plugin sends -->
     <Compile Include="..\unity\Assets\Shared\NukeVolumeShader.cs" Link="Shared\NukeVolumeShader.cs" />
+    <Compile Include="..\unity\Assets\Shared\NukeSimPlayer.cs" Link="Shared\NukeSimPlayer.cs" />
   </ItemGroup>
 
   <Target Name="StageAndInstall" AfterTargets="Build">

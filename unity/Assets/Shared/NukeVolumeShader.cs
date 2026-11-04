@@ -29,6 +29,11 @@ namespace BDNukes
         public float capStretch, dustStretch;   // downwind elongation (0 = round)
         public float dissipation;   // 0 fresh .. 1 frayed and thinning
 
+        // baked fluid simulation of the fireball
+        public Texture simA, simB;
+        public float simBlend, simMix, simFire, simDensity;
+        public Vector3 simOrigin, simSize;
+
         // the planet, which hides the cloud from orbit (scaled-space views leave no depth buffer)
         public Vector3 planetCenter; public float planetRadius;
 
@@ -101,6 +106,11 @@ namespace BDNukes
                     min = Vector3.Min(min, v.ringOffset + new Vector3(-r, rg.x - rg.z * 2f, -r));
                     max = Vector3.Max(max, v.ringOffset + new Vector3(r, rg.x + rg.z * 2f, r));
                 }
+            if (v.simMix > 0.001f && v.simA != null)
+            {
+                min = Vector3.Min(min, v.simOrigin);
+                max = Vector3.Max(max, v.simOrigin + v.simSize);
+            }
             // the downwind stretch reaches beyond the round shapes
             Vector3 down = new Vector3(v.windDir.x, 0f, v.windDir.z);
             float capReach = capHalfW * (v.capStretch + v.shear * 1.5f);
@@ -154,6 +164,11 @@ namespace BDNukes
             mat.SetVector("_Age", new Vector4(v.dissipation, 0f, 0f, 0f));
             mat.SetVector("_Ember", new Vector4(v.ember, v.emberTemp, v.emberWidth, 0f));
             mat.SetVector("_Planet", new Vector4(v.planetCenter.x, v.planetCenter.y, v.planetCenter.z, v.planetRadius));
+            bool sim = v.simMix > 0.001f && v.simA != null && v.simB != null;
+            if (sim) { mat.SetTexture("_SimA", v.simA); mat.SetTexture("_SimB", v.simB); }
+            mat.SetVector("_Sim", new Vector4(v.simBlend, sim ? v.simMix : 0f, v.simFire, v.simDensity));
+            mat.SetVector("_SimOrigin", v.simOrigin);
+            mat.SetVector("_SimSize", v.simSize);
             mat.SetVector("_Pileus", new Vector4(v.pileusOffset, v.pileusThick, v.pileusDensity, 0f));
             mat.SetVector("_Density", new Vector4(v.capDensity, v.extinction, 0.3f, v.noiseScale));
             mat.SetVector("_Anim", new Vector4(v.time, v.rollRate, v.updraft, Mathf.Max(0.5f, v.flowPeriod)));
@@ -174,7 +189,7 @@ namespace BDNukes
 
         /// <summary>Anything left to draw in this state.</summary>
         public static bool Visible(ref NukeVolumeState v) =>
-            v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
+            v.simMix > 0.003f || v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
             v.wilsonDensity > 0.003f || v.pileusDensity > 0.003f || v.ring0.w + v.ring1.w + v.ring2.w > 0.003f ||
             v.collar0.w + v.collar1.w + v.collar2.w + v.collar3.w + v.collar4.w > 0.003f;
     }

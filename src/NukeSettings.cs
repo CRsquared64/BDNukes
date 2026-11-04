@@ -138,7 +138,8 @@ namespace BDNukes
 
         // volumetric clouds
         public bool volumetricClouds = true;       // raymarched cloud and fluid fireball (needs the shader bundle, Windows)
-        public int volumetricSteps = 64;           // raymarch samples per pixel: quality vs GPU cost
+        public int volumetricSteps = 64;
+        public bool fluidSim = true;               // the fireball plays a baked fluid simulation (in the shader bundle)           // raymarch samples per pixel: quality vs GPU cost
 
         // atmosphere and weather
         public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)
@@ -276,6 +277,7 @@ namespace BDNukes
             n.TryGetValue("lightningMinYield", ref lightningMinYield);
             n.TryGetValue("volumetricClouds", ref volumetricClouds);
             n.TryGetValue("volumetricSteps", ref volumetricSteps);
+            n.TryGetValue("fluidSim", ref fluidSim);
             n.TryGetValue("atmosphericHaze", ref atmosphericHaze);
             n.TryGetValue("hazeVisibility", ref hazeVisibility);
             n.TryGetValue("weatherLighting", ref weatherLighting);
@@ -413,6 +415,7 @@ namespace BDNukes
                 n.AddValue("fireDuration", F(fireDuration));
                 n.AddValue("volumetricClouds", B(volumetricClouds));
                 n.AddValue("volumetricSteps", volumetricSteps.ToString(CultureInfo.InvariantCulture));
+                n.AddValue("fluidSim", B(fluidSim));
                 n.AddValue("atmosphericHaze", B(atmosphericHaze));
                 n.AddValue("hazeVisibility", F(hazeVisibility));
                 n.AddValue("weatherLighting", B(weatherLighting));
