@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 ### Added
 - **Photo mode:** Alt+F7 cycles the nuclear effects between normal speed, slow motion (`photoModeSlowRate`, default 0.25x) and frozen, without pausing the game, so you can line up screenshots. Blast sounds slow down and pause with them.

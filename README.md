@@ -5,6 +5,19 @@ Cinematic, physically grounded nuclear weapons for [BDArmory Plus (BDA+)](https:
 BDNukes adds 15 real-world nuclear weapons, from the 20-ton Davy Crockett to the 50-megaton Tsar Bomba. It replaces BDArmory's nuclear visuals and sound with a full effect whose size *and* character follow yield and burst environment, and it fixes several BDArmory nuclear bugs.
 BDArmory's blast and thermal damage model is kept; BDNukes corrects its vacuum timing and EMP.
 
+![Volumetric mushroom clouds](docs/screenshots/11-volumetric-fire.jpg)
+
+| | |
+|---|---|
+| ![Salvo off an island](docs/screenshots/12-island-salvo.jpg) | ![Tsar Bomba from altitude](docs/screenshots/16-tsar-bomba.jpg) |
+| ![Burst over the Space Center](docs/screenshots/17-ksc-burst.jpg) | ![Fireball over the launch stand](docs/screenshots/18-launch-stand-fireball.jpg) |
+| ![Water burst and base surge](docs/screenshots/14-water-burst-surge.jpg) | ![Salvo seen from altitude](docs/screenshots/13-salvo-from-altitude.jpg) |
+| ![Ocean mushroom](docs/screenshots/15-ocean-mushroom.jpg) | ![MIRV reentry](docs/screenshots/19-mirv-reentry.jpg) |
+| ![A kerbal watching a salvo from orbit](docs/screenshots/20-kerbal-watching-from-orbit.jpg) | ![Orbital missile station over the salvo](docs/screenshots/21-orbital-missile-station.jpg) |
+| ![Orbital missile platform](docs/screenshots/22-orbital-missile-platform.jpg) | |
+
+<details><summary>1.0 sprite clouds (still used without the volumetric shaders)</summary>
+
 ![Ground burst over the Space Center](docs/screenshots/01-ground-burst-mushroom.jpg)
 
 | | |
@@ -12,6 +25,8 @@ BDArmory's blast and thermal damage model is kept; BDNukes corrects its vacuum t
 | ![Fireball and base surge](docs/screenshots/02-ground-burst-fireball-surge.jpg) | ![Megaton cap](docs/screenshots/03-megaton-cap.jpg) |
 | ![Megaton pancake cap](docs/screenshots/04-megaton-pancake.jpg) | ![Burst on another world](docs/screenshots/05-other-worlds.jpg) |
 | ![Desert burst](docs/screenshots/06-desert-burst.jpg) | ![Vacuum burst](docs/screenshots/08-vacuum-burst.jpg) |
+
+</details>
 
 ## Weapons
 All weapons are on their own **BDNukes** page in the VAB/SPH part list, sorted into Bombs, Missiles, ICBMs & Reentry Vehicles, Nuclear Artillery and Warheads. The page also collects BDArmory's own nuclear parts.
@@ -34,6 +49,10 @@ All weapons are on their own **BDNukes** page in the VAB/SPH part list, sorted i
 Real dimensions, masses and burn times. Minimum launch ranges keep AI launchers outside their own blast. Ballistic missiles cut their motors once the trajectory reaches the target.
 
 ## Effects
+- **Volumetric clouds (Windows / DirectX 11):** the fireball, cap, stem, skirt, surge and condensation are one raymarched volume of self-shadowing billows that flow, roll and drift with the wind. Ground bursts up to 150 kt play a baked Mantaflow simulation of the cloud forming. The fireball lights terrain and craft, the cloud casts its shadow, and the shock front bends the light behind it.
+- **Craters:** surface and low bursts dig a persistent crater into the terrain (works with Parallax), leaving the space centre and other built-up sites alone. With EVE, blasts punch healing holes in the cloud decks.
+- **Persistent clouds:** switch vessels, visit the space centre or reload, and a cloud carries on from the age it reached.
+- **Photo mode:** Alt+F7 slows or freezes the effects without pausing the game.
 - **Yield-scaled:** fireball radius ~70 m·W^0.4 and cloud top ~5.8 km·W^0.26 (Glasstone & Dolan), with wider caps and longer timelines for megatons.
 - **Cloud character, not just size:** styles (auto, desert, oceanic, tower, tropical megaton, Tsar, high altitude) shape the cap, stem, collars and colour. *Auto* reads the burst: ground or air, sea or land, biome, humidity, and whether the cap reaches the tropopause and flattens into a pancake.
 - **Atmosphere:** flash, incandescent fireball, condensation rings and Wilson cloud, a visible shock front, a rolling toroidal cap of sun-lit cauliflower billows, a flowing dust stem, a fire-lit skirt and a base surge. Sound and camera shake arrive with the shock, muffled with distance.
@@ -58,6 +77,7 @@ Open the in-game window from the **BDNukes** toolbar button in flight. Pick a qu
 - Harmony (`000_Harmony`)
 - Module Manager
 - BDArmory Extended (optional; needed for the Small Nuclear Warhead fix)
+- EVE and Parallax are optional; BDNukes works with them. The volumetric cloud needs Windows (DirectX 11); elsewhere the sprite cloud is used.
 
 ## Install
 Copy `GameData/BDNukes` into your KSP `GameData` folder.
