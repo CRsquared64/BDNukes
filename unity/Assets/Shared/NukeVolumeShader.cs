@@ -1,0 +1,266 @@
+// Shared by the BDNukes plugin and the Unity test harness (unity/Assets/Editor/BDNukesBuild.cs), so the test
+// renders use exactly the uniforms KSP sends. UnityEngine only: no KSP types in here.
+using UnityEngine;
+
+namespace BDNukes
+{
+    /// <summary>One frame of the volumetric cloud, in the detonation's local frame (y up, burst point at the origin).</summary>
+    public struct NukeVolumeState
+    {
+        public float groundY;
+
+        // cap / fireball
+        public Vector3 capCenter;
+        public float capScale, ringR, tube, dome, squash, xzSpread, overhang;
+        public float roughness;     // 0 smooth young fireball .. 1 fully turbulent cap
+        public float growthRate;    // d(ln capScale)/dt, carries billows outward as the cap expands
+        public float capDensity;
+        public float extinction;    // 1/m at density 1: fixed per detonation (~2.5 / fireball radius)
+
+        // stem
+        public Vector3 stemBase, stemTop;
+        public float stemBaseR, stemTopR, stemDustTop, stemTrailBottom, stemDensity, stemFlare, updraft;
+
+        // skirt and base surge
+        public Vector3 skirtCenter;
+        public float skirtR, skirtH, skirtDensity, skirtThin, outflow;
+        public float surgeR, surgeH, surgeWidth, surgeDensity;
+
+        // condensation
+        public float wilsonR, wilsonThick, wilsonDensity; public bool wilsonHemisphere;
+        public Vector4 ring0, ring1, ring2;   // y, radius, tube, density
+        public Vector3 ringOffset;
+        public Vector4 collar0, collar1, collar2, collar3, collar4;          // xyz centre, w density
+        public Vector4 collarS0, collarS1, collarS2, collarS3, collarS4;     // radius, thickness, droop
+
+        // motion
+        public float time, rollRate, flowPeriod, noiseScale;
+
+        // fire
+        public float fire, fireTemp, flicker, soot;
+        public Color glow; public float glowRadius;
+
+        // light and air
+        public Vector3 sunDir; public float daylight;
+        public Color sunCol; public float sunVisCap, sunVisLow;
+        public Color ambient, groundCol;
+        public Color capAlbedo, stemAlbedo, dustAlbedo, condAlbedo;
+        public Color hazeCol; public float haze;
+    }
+
+    public static class NukeVolumeShader
+    {
+        static readonly Vector4[] rings = new Vector4[3];
+        static readonly Vector4[] collarPos = new Vector4[5];
+        static readonly Vector4[] collarShape = new Vector4[5];
+
+        /// <summary>Box (local) that holds everything with density in this state.</summary>
+        public static void Bounds(ref NukeVolumeState v, out Vector3 min, out Vector3 max)
+        {
+            float cs = Mathf.Max(1f, v.capScale);
+            float capHalfW = (v.ringR + v.tube + 0.45f) * v.xzSpread * cs * 1.15f;
+            float capHalfH = (Mathf.Max(v.tube, v.dome) * v.squash + 0.6f) * cs;
+            min = v.capCenter - new Vector3(capHalfW, capHalfH, capHalfW);
+            max = v.capCenter + new Vector3(capHalfW, capHalfH + 0.2f * cs, capHalfW);
+            if (v.stemDensity > 0.001f)
+            {
+                float r = Mathf.Max(v.stemBaseR * (1f + v.stemFlare), v.stemTopR) * 1.5f;
+                min = Vector3.Min(min, Vector3.Min(v.stemBase, v.stemTop) - new Vector3(r, 0f, r));
+                max = Vector3.Max(max, Vector3.Max(v.stemBase, v.stemTop) + new Vector3(r, 0f, r));
+            }
+            if (v.skirtDensity > 0.001f || v.surgeDensity > 0.001f)
+            {
+                float r = Mathf.Max(v.skirtR * 1.4f, v.surgeR + v.surgeWidth * 1.5f);
+                float h = Mathf.Max(v.skirtH * 1.7f, v.surgeH * 1.5f);
+                min = Vector3.Min(min, v.skirtCenter - new Vector3(r, 0f, r));
+                max = Vector3.Max(max, v.skirtCenter + new Vector3(r, h, r));
+            }
+            if (v.wilsonDensity > 0.001f)
+            {
+                float r = v.wilsonR + v.wilsonThick;
+                min = Vector3.Min(min, new Vector3(-r, v.wilsonHemisphere ? v.groundY : -r, -r));
+                max = Vector3.Max(max, new Vector3(r, r, r));
+            }
+            foreach (var rg in new[] { v.ring0, v.ring1, v.ring2 })
+                if (rg.w > 0.001f)
+                {
+                    float r = rg.y + rg.z * 1.5f;
+                    min = Vector3.Min(min, v.ringOffset + new Vector3(-r, rg.x - rg.z * 2f, -r));
+                    max = Vector3.Max(max, v.ringOffset + new Vector3(r, rg.x + rg.z * 2f, r));
+                }
+            min.y = Mathf.Min(min.y, v.groundY - 30f);
+        }
+
+        public static void Apply(Material mat, ref NukeVolumeState v, Matrix4x4 worldToCloud, Vector3 min, Vector3 max, int steps, bool debugNoise = false)
+        {
+            float cs = Mathf.Max(1f, v.capScale);
+            mat.SetMatrix("_WorldToCloud", worldToCloud);
+            mat.SetVector("_BoxMin", min);
+            mat.SetVector("_BoxMax", max);
+            mat.SetVector("_CapCenter", new Vector4(v.capCenter.x, v.capCenter.y, v.capCenter.z, cs));
+            mat.SetVector("_CapShape", new Vector4(v.ringR, v.tube, v.dome, v.squash));
+            mat.SetVector("_CapXZ", new Vector4(v.xzSpread, v.overhang, v.roughness, v.growthRate));
+            mat.SetVector("_StemBase", new Vector4(v.stemBase.x, v.stemBase.y, v.stemBase.z, v.stemBaseR));
+            mat.SetVector("_StemTop", new Vector4(v.stemTop.x, v.stemTop.y, v.stemTop.z, v.stemTopR));
+            mat.SetVector("_StemVis", new Vector4(v.stemDustTop, v.stemTrailBottom, v.stemDensity, v.stemFlare));
+            mat.SetVector("_SkirtCenter", new Vector4(v.skirtCenter.x, v.skirtCenter.y, v.skirtCenter.z, v.skirtR));
+            mat.SetVector("_Skirt", new Vector4(v.skirtH, v.skirtDensity, v.skirtThin, v.outflow));
+            mat.SetVector("_Surge", new Vector4(v.surgeR, v.surgeH, v.surgeDensity, v.surgeWidth));
+            mat.SetVector("_Wilson", new Vector4(v.wilsonR, v.wilsonThick, v.wilsonDensity, v.wilsonHemisphere ? 1f : 0f));
+            rings[0] = v.ring0; rings[1] = v.ring1; rings[2] = v.ring2;
+            mat.SetVectorArray("_Rings", rings);
+            mat.SetVector("_RingOffset", v.ringOffset);
+            collarPos[0] = v.collar0; collarPos[1] = v.collar1; collarPos[2] = v.collar2; collarPos[3] = v.collar3; collarPos[4] = v.collar4;
+            collarShape[0] = v.collarS0; collarShape[1] = v.collarS1; collarShape[2] = v.collarS2; collarShape[3] = v.collarS3; collarShape[4] = v.collarS4;
+            mat.SetVectorArray("_CollarPos", collarPos);
+            mat.SetVectorArray("_CollarShape", collarShape);
+            mat.SetVector("_GroundY", new Vector4(v.groundY, 0f, 0f, 0f));
+            mat.SetVector("_Density", new Vector4(v.capDensity, v.extinction, 0.3f, v.noiseScale));
+            mat.SetVector("_Anim", new Vector4(v.time, v.rollRate, v.updraft, Mathf.Max(0.5f, v.flowPeriod)));
+            mat.SetVector("_Fire", new Vector4(v.fire, v.fireTemp, v.flicker, v.soot));
+            mat.SetVector("_Glow", new Vector4(v.glow.r, v.glow.g, v.glow.b, v.glowRadius));
+            mat.SetVector("_SunDir", new Vector4(v.sunDir.x, v.sunDir.y, v.sunDir.z, v.daylight));
+            mat.SetVector("_SunCol", new Vector4(v.sunCol.r, v.sunCol.g, v.sunCol.b, v.sunVisCap));
+            mat.SetVector("_SunLow", new Vector4(v.sunVisLow, 0f, 0f, 0f));
+            mat.SetVector("_Ambient", v.ambient);
+            mat.SetVector("_GroundCol", v.groundCol);
+            mat.SetVector("_CapAlbedo", v.capAlbedo);
+            mat.SetVector("_StemAlbedo", v.stemAlbedo);
+            mat.SetVector("_DustAlbedo", v.dustAlbedo);
+            mat.SetVector("_CondAlbedo", v.condAlbedo);
+            mat.SetVector("_HazeCol", new Vector4(v.hazeCol.r, v.hazeCol.g, v.hazeCol.b, v.haze));
+            mat.SetVector("_March", new Vector4(steps, 6f, 1f, debugNoise ? 1f : 0f));
+        }
+
+        /// <summary>Anything left to draw in this state.</summary>
+        public static bool Visible(ref NukeVolumeState v) =>
+            v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
+            v.wilsonDensity > 0.003f || v.ring0.w + v.ring1.w + v.ring2.w > 0.003f ||
+            v.collar0.w + v.collar1.w + v.collar2.w + v.collar3.w + v.collar4.w > 0.003f;
+    }
+
+    /// <summary>
+    /// A standalone timeline of a surface burst, used by the test renders (KSP drives the state from
+    /// NukeCinematic instead). Mirrors the cinematic's main curves: fireball growth and cooling, the rise,
+    /// the ball-to-torus morph, the stem, skirt, surge, Wilson cloud and condensation rings.
+    /// </summary>
+    public static class NukeVolumeTestTimeline
+    {
+        static float SS(float a, float b, float x)
+        {
+            float k = Mathf.Clamp01((x - a) / (b - a));
+            return k * k * (3f - 2f * k);
+        }
+
+        public static NukeVolumeState At(float W, float t, float sunVis, float haze)
+        {
+            float R = 70f * Mathf.Pow(W, 0.4f);
+            float tauG = 2.5f + 2.2f * Mathf.Pow(W, 0.3f);
+            float riseTime = 90f;
+            float tauRise = riseTime / 2.3f;
+            float t0 = 0.4f * tauG;
+            float H = 5800f * Mathf.Pow(W, 0.26f) * 0.6f;
+            float riseDelta = Mathf.Max(2f * R, H * 0.85f);
+            float capRadius = Mathf.Max(1.6f * R, 0.28f * H);
+            float rise = 1f - Mathf.Exp(-Mathf.Max(0f, t - t0) / tauRise);
+            float morph = SS(0.15f * tauG, 2f * tauG + 4f, t);
+            float grow = 1f - Mathf.Exp(-t / 0.15f);
+            float x = t / tauG;
+            float c = 420f;
+            var v = new NukeVolumeState();
+            v.groundY = 0f;
+            v.time = t;
+            float capScale = R * (1f + (capRadius / R - 1f) * rise) * Mathf.Lerp(Mathf.Max(0.05f, grow), 1f, morph);
+            Vector3 drift = new Vector3(4f * Mathf.Max(0f, t - 20f), 0f, 0f);
+            v.capCenter = new Vector3(0f, R * 0.9f + riseDelta * rise, 0f) + drift;
+            v.capScale = capScale;
+            v.ringR = Mathf.Lerp(0.05f, 0.62f, morph);
+            v.tube = Mathf.Lerp(0.3f, 0.45f, morph);
+            v.dome = Mathf.Lerp(0.85f, 0.45f, morph);
+            v.squash = Mathf.Lerp(1f, 0.72f, morph);
+            v.xzSpread = 1f;
+            v.overhang = 0.3f * morph;
+            v.roughness = SS(0.05f * tauG, 0.6f * tauG, t);
+            v.growthRate = Mathf.Clamp((capRadius / R - 1f) * Mathf.Exp(-Mathf.Max(0f, t - t0) / tauRise) / tauRise / Mathf.Max(1f, capScale / R), 0f, 0.5f) + (t < 1f ? 1f : 0f);
+            v.capDensity = 1f;
+            v.extinction = 2f / R;
+            v.rollRate = 0.35f * Mathf.Exp(-t / tauRise) + 0.03f;
+            v.flowPeriod = 6f;
+            v.noiseScale = 1f / (3f * R);
+
+            float start = 0.25f * tauG;
+            if (t > start)
+            {
+                float yTop = Mathf.Max(R, v.capCenter.y - 0.35f * capScale);
+                float trailLen = yTop * (0.25f + 0.45f * SS(start, start + 10f, t));
+                float dustFront = yTop * Mathf.Lerp(0.3f, 1.05f, SS(start, start + 0.08f * riseTime + 4f, t));
+                v.stemBase = new Vector3(0f, 0f, 0f) + drift * 0.15f;
+                v.stemTop = new Vector3(0f, yTop, 0f) + drift;
+                float stemR = 0.17f * capScale;
+                v.stemBaseR = stemR * 1.1f;
+                v.stemTopR = stemR;
+                v.stemFlare = 2.5f;
+                v.stemDustTop = dustFront;
+                v.stemTrailBottom = yTop - trailLen;
+                v.stemDensity = 0.9f * SS(start, start + 2f, t);
+                v.updraft = 60f * Mathf.Exp(-t / riseTime) + 10f;
+            }
+            float tt = t;
+            v.skirtCenter = drift * 0.1f;
+            v.skirtR = R * (0.8f + 1.3f * (1f - Mathf.Exp(-tt / 8f)));
+            v.skirtH = R * (0.35f + 0.55f * (1f - Mathf.Exp(-tt / 8f)));
+            v.skirtDensity = 0.75f * SS(0.2f, 1.2f, t);
+            v.skirtThin = 0.35f;
+            v.outflow = 30f * Mathf.Exp(-t / 20f) + 3f;
+            float rs = R + c * t;
+            float surgeMax = R * 6f;
+            v.surgeR = Mathf.Min(rs, surgeMax);
+            v.surgeH = 0.35f * R * (1f + 0.04f * t);
+            v.surgeWidth = 0.8f * R + 0.04f * v.surgeR;
+            float surgeEnd = surgeMax / c + 4f;
+            v.surgeDensity = 0.3f * SS(0.3f, 1f, t) * (1f - SS(surgeEnd, surgeEnd + 25f, t));
+
+            float tW = Mathf.Min(2.5f * R / c, 4f);
+            v.wilsonDensity = 0.07f * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.4f * tW, 1.1f * tW, t));
+            v.wilsonR = Mathf.Min(R * 1.2f + c * t * 0.9f, 3.6f * R);
+            v.wilsonThick = 0.3f * R;
+            v.wilsonHemisphere = true;
+
+            Vector4 Ring(int k)
+            {
+                float y0 = R * (1.25f + 0.75f * k);
+                float tk = y0 / c * 0.6f + 0.2f + 0.15f * k;
+                float hold = 3f + 0.5f * tauG;
+                float vis = SS(tk, tk + 0.6f, t) * (1f - SS(tk + hold, tk + hold + 4f + 0.5f * tauG, t));
+                float rk = R * (1.5f + 0.32f * k) * (1f + 0.015f * t) * (1f + 0.4f * rise);
+                return new Vector4(y0 + 0.4f * riseDelta * rise, rk, 0.3f * R, 0.12f * vis);
+            }
+            v.ring0 = Ring(0); v.ring1 = Ring(1); v.ring2 = Ring(2);
+            v.ringOffset = drift * 0.8f;
+
+            float heatK = (t < 0.5f ? 1.3f : 1f) * Mathf.Exp(-Mathf.Max(0f, x - 0.35f) / 0.85f);
+            v.fire = 4f * heatK;
+            v.fireTemp = Mathf.Clamp01(1.05f - 0.75f * x);
+            v.flicker = Mathf.Lerp(0.25f, 1f, v.roughness);
+            v.soot = 0.8f * SS(0.3f * tauG, 1.2f * tauG, t) * (1f - SS(3f * tauG, 6f * tauG, t));
+            float glow = Mathf.Exp(-t / tauG);
+            v.glow = new Color(1f, 0.52f, 0.16f) * (2.5f * glow);
+            v.glowRadius = 0.9f * capScale;
+
+            v.sunDir = new Vector3(-0.5f, 0.6f, 0.45f).normalized;
+            v.daylight = 1f;
+            v.sunCol = new Color(1.0f, 0.97f, 0.92f);
+            v.sunVisCap = sunVis; v.sunVisLow = sunVis;
+            v.ambient = Color.Lerp(new Color(0.46f, 0.55f, 0.7f), new Color(0.55f, 0.57f, 0.6f), 1f - sunVis);
+            v.groundCol = new Color(0.16f, 0.15f, 0.11f) * Mathf.Lerp(0.4f, 1f, sunVis);
+            float young = 1f - SS(0.5f * riseTime, 2f * riseTime, t);
+            v.capAlbedo = Color.Lerp(new Color(0.8f, 0.74f, 0.67f), new Color(0.66f, 0.45f, 0.32f), young);
+            v.stemAlbedo = new Color(0.46f, 0.4f, 0.34f);
+            v.dustAlbedo = new Color(0.44f, 0.37f, 0.29f);
+            v.condAlbedo = new Color(0.95f, 0.96f, 0.98f);
+            v.hazeCol = Color.Lerp(new Color(0.62f, 0.7f, 0.8f), new Color(0.56f, 0.58f, 0.61f), 1f - sunVis);
+            v.haze = haze;
+            return v;
+        }
+    }
+}

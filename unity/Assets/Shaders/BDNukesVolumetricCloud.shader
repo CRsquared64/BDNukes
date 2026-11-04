@@ -1,15 +1,24 @@
-// BDNukes volumetric mushroom cloud.
+// BDNukes volumetric nuclear cloud: fireball, cap, stem, dust skirt, base surge, Wilson cloud, condensation
+// rings and stem collars, all in one raymarched volume.
 //
-// Drawn on a box around the cloud. Each pixel raymarches a density field: a rolling torus and dome for the cap,
-// a bent round cone for the stem and a flattened ring of dust for the skirt, each a soft signed-distance shape
-// eroded by tiling 3D billow noise. Every sample is lit by the sun through a short shadow march (Beer-Lambert,
-// with a two-lobe phase function and the "powder" darkening of cloud edges), sky ambient from above and the
-// fireball's own glow. The parameters come from NukeCinematic each frame, in the detonation's local frame
-// (y up, origin at the burst point), so floating-origin shifts don't matter.
+// The cloud is drawn on a box around it. Each pixel marches a density field built from soft signed-distance
+// shapes (a torus-and-dome cap that starts as a ball, a bent round cone for the stem, a ring of dust on the
+// ground, thin shells and rings of condensation), displaced and eroded by tiling 3D billow noise.
 //
-// KSP renders the flight scene with more than one camera (near and far). The march is clipped to the current
-// camera's near/far range and to the scene depth, so each camera draws its own slice and terrain hides what's
-// behind it.
+// Motion: the noise is sampled in metres at a fixed physical scale (so billows don't "zoom" as the cap grows)
+// and moved by a flow field, the cap's poloidal roll and expansion, the stem's updraft and twist, the skirt's
+// outflow, using two phase-offset copies that crossfade (a flow map), so it churns forever without smearing.
+//
+// Fire: a temperature field hottest along the cap's ring core, flickering with faster convective noise, shown as
+// blackbody emission, with soot darkening the outer shell while it burns.
+//
+// Light: sun through a shadow march with a multiple-scattering approximation (several octaves of falling
+// extinction and phase anisotropy), sky light occluded by the cloud above, warm ground bounce from below, the
+// fireball's own light, the haze and the EVE overcast. A hue-preserving shoulder keeps the white-hot core from
+// clipping to flat white.
+//
+// KSP renders with more than one camera (near and far): the march is clipped to the current camera's range and to
+// the scene depth, so the cameras composite it and terrain hides what's behind it.
 Shader "BDNukes/VolumetricCloud"
 {
     Properties
@@ -29,37 +38,48 @@ Shader "BDNukes/VolumetricCloud"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #pragma target 4.0
+            #pragma target 5.0
             #include "UnityCG.cginc"
 
             sampler3D _Noise;
             UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
 
-            float4x4 _WorldToCloud;   // world -> detonation-local (rotation + translation only)
-            float4x4 _CloudToWorld;
+            float4x4 _WorldToCloud;   // world -> detonation-local (rotation + translation)
             float4 _BoxMin, _BoxMax;   // marching volume, local
 
+            // --- shapes ---
             float4 _CapCenter;   // xyz centre, w cap scale (m)
-            float4 _CapShape;    // x torus ring radius, y tube radius, z dome radius (all x cap scale), w vertical squash
-            float4 _CapXZ;       // x horizontal spread of the cap (pancaking), y overhang, z unused, w unused
+            float4 _CapShape;    // x ring radius, y tube radius, z dome radius (x cap scale), w vertical squash
+            float4 _CapXZ;       // x horizontal spread, y overhang, z roughness 0 (smooth young ball) .. 1, w cap growth rate (1/s)
             float4 _StemBase;    // xyz ground centre, w radius
             float4 _StemTop;     // xyz top centre, w radius
-            float4 _StemVis;     // x dust column top y, y trail bottom y, z density, w flare
+            float4 _StemVis;     // x dust column top y, y trail bottom y, z density, w base flare
             float4 _SkirtCenter; // xyz centre on the ground, w radius
-            float4 _Skirt;       // x height, y density, z inner hole fraction, w unused
+            float4 _Skirt;       // x height, y density, z inner thinning, w outflow speed (m/s)
+            float4 _Surge;       // x ring radius, y height, z density, w ring width
+            float4 _Wilson;      // x radius, y thickness, z density, w 1 = hemisphere above the ground
+            float4 _Rings[3];    // per ring: x height (local y), y radius, z tube, w density
+            float4 _RingOffset;  // xyz horizontal drift of the rings
+            float4 _CollarPos[5];   // per collar: xyz centre on the stem axis, w density
+            float4 _CollarShape[5]; // per collar: x outer radius, y thickness, z droop, w unused
+            float4 _GroundY;     // x ground height (local y)
+
+            // --- appearance ---
             float4 _Density;     // x cap density, y extinction per m at density 1, z erosion, w noise scale (1/m)
-            float4 _Anim;        // x boil time, y cap roll angle (rad, poloidal circulation), z unused, w unused
-            float4 _Fire;        // x incandescence (0 = cold smoke), y temperature 0..1 (white-hot .. dull red), z hot-core radius (x cap scale), w unused
+            float4 _Anim;        // x time (s), y roll rate (rad/s), z stem updraft (m/s), w flow period (s)
+            float4 _Fire;        // x incandescence, y temperature 0..1, z flicker, w soot
             float4 _SunDir;      // xyz local unit vector to the sun, w daylight 0..1
             float4 _SunCol;      // rgb sunlight, a direct-sun visibility at the cap
             float4 _SunLow;      // x direct-sun visibility near the ground
             float4 _Ambient;     // rgb skylight
-            float4 _Albedo;      // rgb lit dust colour
-            float4 _AlbedoDark;  // rgb shadowed/underside colour
-            float4 _Glow;        // rgb fireball glow (pre-multiplied by strength), a glow falloff radius (m)
-            float4 _GlowCenter;  // xyz fireball centre, w unused
+            float4 _GroundCol;   // rgb light bounced up from the ground
+            float4 _CapAlbedo;   // rgb cap colour (young brownish -> mature)
+            float4 _StemAlbedo;  // rgb stem colour
+            float4 _DustAlbedo;  // rgb skirt and surge colour
+            float4 _CondAlbedo;  // rgb condensation colour
+            float4 _Glow;        // rgb fireball light (x strength), a falloff radius (m)
             float4 _HazeCol;     // rgb haze colour, a haze amount
-            float4 _March;       // x steps, y shadow steps, z overall fade, w debug (1 = show billow noise)
+            float4 _March;       // x steps, y shadow steps, z overall fade, w debug (1 = show noise)
 
             struct v2f
             {
@@ -77,6 +97,10 @@ Shader "BDNukes/VolumetricCloud"
                 return o;
             }
 
+            // ------------------------------------------------------------------------------------------------
+            // helpers
+            // ------------------------------------------------------------------------------------------------
+
             float2 BoxHit(float3 ro, float3 rd)
             {
                 float3 inv = 1.0 / rd;
@@ -92,133 +116,264 @@ Shader "BDNukes/VolumetricCloud"
                 return lerp(b, a, h) - k * h * (1.0 - h);
             }
 
-            // signed distance to a round cone from a (radius ra) to b (radius rb)
             float RoundCone(float3 p, float3 a, float3 b, float ra, float rb, out float u)
             {
                 float3 ab = b - a;
                 u = saturate(dot(p - a, ab) / max(dot(ab, ab), 1e-3));
-                float3 c = a + ab * u;
-                return length(p - c) - lerp(ra, rb, u);
+                return length(p - (a + ab * u)) - lerp(ra, rb, u);
             }
 
-            float Hash(float2 p)
+            // stable per-pixel jitter (interleaved gradient noise): no frame-to-frame shimmer without TAA
+            float IGN(float2 pix)
             {
-                return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
-            }
-
-            // Where a point of the cap was before the poloidal roll: the smoke circulates up through the middle of the
-            // ring and down its outside, so the noise is sampled at the point rotated back around the tube's core.
-            // That's what makes the cap visibly churn instead of sliding a texture over it.
-            float3 RollBack(float3 p)
-            {
-                float cs = _CapCenter.w;
-                float3 q = p - _CapCenter.xyz;
-                float rxz = length(q.xz);
-                float2 dir = rxz > 1e-3 ? q.xz / rxz : float2(1.0, 0.0);
-                float ringR = _CapShape.x * cs;
-                float2 v = float2(rxz - ringR, q.y);                 // offset from the tube's core, in its plane
-                float k = exp(-dot(v, v) / (1.2 * cs * cs));         // full roll near the core, fading out
-                float a = -_Anim.y * k;
-                float sa = sin(a), ca = cos(a);
-                v = float2(ca * v.x - sa * v.y, sa * v.x + ca * v.y);
-                float r2 = ringR + v.x;
-                return _CapCenter.xyz + float3(dir.x * r2, v.y, dir.y * r2);
-            }
-
-            // billow noise: R = large billows, G = fine erosion detail
-            float Billows(float3 p, float detail)
-            {
-                float ns = _Density.w;
-                float t = _Anim.x;
-                float3 pr = RollBack(p);
-                float big = tex3Dlod(_Noise, float4(pr * ns + float3(0.0, -0.015 * t, 0.0), 0)).r;
-                float mid = tex3Dlod(_Noise, float4(pr * ns * 2.3 + float3(0.31, 0.17 - 0.03 * t, 0.53), 0)).r;
-                float fine = tex3Dlod(_Noise, float4(pr * ns * 6.1 + float3(0.011 * t, -0.06 * t, 0.0), 0)).g;
-                float n = 0.65 * big + 0.35 * mid;
-                n = smoothstep(0.42, 0.78, n);                        // stretch the contrast: deep gaps between lumps
-                return saturate(n - detail * (1.0 - fine) * 0.15);
-            }
-
-            // incandescent colour by temperature: white-hot, yellow, orange, cherry, dull red, black
-            float3 Blackbody(float x)
-            {
-                x = saturate(x);
-                float3 c = lerp(float3(0.0, 0.0, 0.0), float3(0.55, 0.06, 0.01), smoothstep(0.0, 0.2, x));
-                c = lerp(c, float3(1.0, 0.25, 0.04), smoothstep(0.15, 0.45, x));
-                c = lerp(c, float3(1.0, 0.62, 0.2), smoothstep(0.4, 0.7, x));
-                c = lerp(c, float3(1.0, 0.92, 0.75), smoothstep(0.65, 1.0, x));
-                return c * (0.3 + 2.7 * x * x);
-            }
-
-            // shape density 0..1 and how far up the cloud this point is (0 ground .. 1 cap top)
-            // n: billow noise 0..1 pushing the surface out (lumps) or in (gaps between them); 1 gives the most
-            // inflated shape, used as a cheap bound before any noise is fetched
-            float Shape(float3 p, float n, out float heightFrac, out float capness)
-            {
-                float cs = _CapCenter.w;
-                // cap: torus (rolling ring) blended into a dome on top
-                float3 q = (p - _CapCenter.xyz) / cs;
-                q.xz /= max(_CapXZ.x, 0.2);
-                // the outer underside curls down past the rim (overhanging cauliflower)
-                float rxz0 = length(q.xz);
-                q.y += _CapXZ.y * 0.35 * smoothstep(0.7, 1.25, rxz0) * (1.0 - smoothstep(-0.3, 0.25, q.y));
-                q.y /= _CapShape.w;
-                float2 tq = float2(length(q.xz) - _CapShape.x, q.y);
-                float torus = length(tq) - _CapShape.y;
-                float dome = length(q - float3(0.0, 0.18, 0.0)) - _CapShape.z;
-                float capD = SMin(torus, dome, 0.25) * cs + (0.5 - n) * 0.6 * cs;
-                float capDen = saturate(-capD / (0.18 * cs) + 0.15) * _Density.x;
-
-                // stem: bent round cone from the ground to under the cap, flared at the base
-                float u;
-                float3 mid = lerp(_StemBase.xyz, _StemTop.xyz, 0.5) + float3(0.0, 0.0, 0.0);
-                float stemD = RoundCone(p, _StemBase.xyz, _StemTop.xyz, _StemBase.w, _StemTop.w, u);
-                float flare = 1.0 + _StemVis.w * pow(1.0 - u, 6.0);
-                stemD -= (flare - 1.0) * _StemBase.w;
-                stemD += (0.5 - n) * 0.9 * lerp(_StemBase.w, _StemTop.w, u) * flare;
-                float stemSoft = 0.3 * lerp(_StemBase.w, _StemTop.w, u) * flare;
-                float stemMask = max(smoothstep(_StemVis.x, _StemVis.x - stemSoft * 2.0, p.y),
-                                     smoothstep(_StemVis.y, _StemVis.y + stemSoft * 2.0, p.y));
-                float stemDen = saturate(-stemD / max(stemSoft, 1.0)) * _StemVis.z * stemMask;
-
-                // skirt: a flattened ring of dust on the ground, thinning toward the middle
-                float3 s = p - _SkirtCenter.xyz;
-                float rr = length(s.xz) / max(_SkirtCenter.w, 1.0);
-                float hh = s.y / max(_Skirt.x, 1.0);
-                float skirtD = length(float2(rr * 1.0, hh)) - 1.0 + (0.5 - n) * 0.6;
-                float ring = smoothstep(_Skirt.z * 0.5, _Skirt.z, rr);
-                float skirtDen = saturate(-skirtD / 0.3) * _Skirt.y * lerp(0.35, 1.0, ring);
-
-                float topY = _CapCenter.y + _CapShape.y * cs * _CapShape.w;
-                heightFrac = saturate((p.y - _SkirtCenter.y) / max(topY - _SkirtCenter.y, 1.0));
-                capness = capDen / max(capDen + stemDen + skirtDen, 1e-4);
-                return max(capDen, max(stemDen, skirtDen));
-            }
-
-            float Density(float3 p, float detail, out float heightFrac, out float capness, out float n)
-            {
-                n = 0.0;
-                float hf0, c0;
-                if (Shape(p, 1.0, hf0, c0) <= 0.0) { heightFrac = hf0; capness = c0; return 0.0; }
-                // billows push the surface into cauliflower lumps, then a little erosion frays their edges
-                n = Billows(p, detail);
-                float base = Shape(p, n, heightFrac, capness);
-                if (base <= 0.0) return 0.0;
-                float er = _Density.z;
-                return saturate((base - er * (1.0 - n)) / max(1.0 - er, 0.05));
-            }
-
-            float DensityCheap(float3 p)
-            {
-                float h, c, n;
-                return Density(p, 0.0, h, c, n);
+                return frac(52.9829189 * frac(dot(pix, float2(0.06711056, 0.00583715))));
             }
 
             float HG(float c, float g)
             {
                 float g2 = g * g;
-                return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.0795775; // 1/(4 pi)
+                return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.0795775;
             }
+
+            float3 Blackbody(float x)
+            {
+                x = saturate(x);
+                float3 c = lerp(float3(0.0, 0.0, 0.0), float3(0.5, 0.05, 0.01), smoothstep(0.0, 0.18, x));
+                c = lerp(c, float3(1.0, 0.22, 0.03), smoothstep(0.12, 0.4, x));
+                c = lerp(c, float3(1.0, 0.55, 0.14), smoothstep(0.35, 0.62, x));
+                c = lerp(c, float3(1.0, 0.85, 0.55), smoothstep(0.58, 0.85, x));
+                c = lerp(c, float3(1.0, 0.97, 0.92), smoothstep(0.82, 1.0, x));
+                return c * (0.25 + 3.75 * x * x * x);
+            }
+
+            // ------------------------------------------------------------------------------------------------
+            // flow-mapped noise
+            // ------------------------------------------------------------------------------------------------
+
+            // Two copies of the noise carried along vel, half a period apart, crossfaded so each is replaced
+            // before it stretches; the blend is renormalised so the contrast doesn't pulse.
+            float FlowNoise(float3 p, float3 vel, float freq, float period, float3 seed, int ch)
+            {
+                float ph = _Anim.x / period;
+                float a = frac(ph), b = frac(ph + 0.5);
+                float wa = 1.0 - abs(2.0 * a - 1.0), wb = 1.0 - wa;
+                float3 pa = (p - vel * (a * period)) * freq + seed + float3(0.37, 0.71, 0.13) * floor(ph);
+                float3 pb = (p - vel * (b * period)) * freq + seed + float3(0.59, 0.23, 0.87) * floor(ph + 0.5) + 0.5;
+                float4 sa = tex3Dlod(_Noise, float4(pa, 0));
+                float4 sb = tex3Dlod(_Noise, float4(pb, 0));
+                float na = ch == 0 ? sa.r : sa.g, nb = ch == 0 ? sb.r : sb.g;
+                float n = wa * na + wb * nb;
+                return saturate(0.6 + (n - 0.6) / sqrt(wa * wa + wb * wb));
+            }
+
+            // cap flow: poloidal roll (up the middle, out over the top, down the outside, in underneath) plus
+            // expansion, in cap-relative metres
+            float3 CapFlow(float3 q, out float coreDist)
+            {
+                float cs = _CapCenter.w;
+                float rxz = length(q.xz);
+                float2 dir = rxz > 1e-3 ? q.xz / rxz : float2(1.0, 0.0);
+                float ringR = _CapShape.x * cs * _CapXZ.x;
+                float2 v = float2(rxz - ringR, q.y);           // offset from the tube core in its plane
+                coreDist = length(v) / max(max(_CapShape.y, _CapShape.z) * cs, 1.0);
+                float k = exp(-dot(v, v) / (1.5 * cs * cs));
+                float om = _Anim.y * k;
+                float3 rad = float3(dir.x, 0.0, dir.y);
+                return om * (rad * v.y - float3(0.0, 1.0, 0.0) * v.x) + q * _CapXZ.w;
+            }
+
+            // ------------------------------------------------------------------------------------------------
+            // the cloud
+            // ------------------------------------------------------------------------------------------------
+
+            struct Sample
+            {
+                float density;
+                float3 albedo;
+                float cap;       // fraction of the density that is cap (fire can only live there)
+                float core;      // distance from the cap's hot core, 0..1+
+                float fireN;     // convective flicker noise
+                float hf;        // height up the cloud 0..1
+            };
+
+            float CapSDF(float3 p, float n, out float3 q)
+            {
+                float cs = _CapCenter.w;
+                q = p - _CapCenter.xyz;
+                float3 c = q / cs;
+                c.xz /= max(_CapXZ.x, 0.2);
+                float rxz0 = length(c.xz);
+                c.y += _CapXZ.y * 0.35 * smoothstep(0.7, 1.25, rxz0) * (1.0 - smoothstep(-0.3, 0.25, c.y));
+                c.y /= _CapShape.w;
+                float torus = length(float2(length(c.xz) - _CapShape.x, c.y)) - _CapShape.y;
+                float dome = length(c - float3(0.0, 0.18, 0.0)) - _CapShape.z;
+                float rough = lerp(0.18, 1.0, _CapXZ.z);
+                return SMin(torus, dome, 0.25) * cs + (0.5 - n) * 0.75 * cs * rough;
+            }
+
+            float Cond(float3 p, float nWisp)
+            {
+                float d = 0.0;
+                // Wilson cloud: a thin shell just behind the shock
+                if (_Wilson.z > 0.001)
+                {
+                    float r = length(p);
+                    float x = (r - _Wilson.x) / max(_Wilson.y, 1.0);
+                    float shell = exp(-x * x * 2.0);
+                    if (_Wilson.w > 0.5) shell *= smoothstep(_GroundY.x, _GroundY.x + _Wilson.y, p.y);
+                    d = max(d, shell * _Wilson.z * smoothstep(0.3, 0.75, nWisp));
+                }
+                // condensation rings: thin horizontal tori around the column
+                [unroll] for (int i = 0; i < 3; i++)
+                {
+                    float4 rg = _Rings[i];
+                    if (rg.w > 0.001)
+                    {
+                        float3 q = p - _RingOffset.xyz - float3(0.0, rg.x, 0.0);
+                        float tor = length(float2(length(q.xz) - rg.y, q.y * 1.3)) / max(rg.z, 1.0);
+                        d = max(d, exp(-tor * tor * 1.5) * rg.w * smoothstep(0.25, 0.8, nWisp));
+                    }
+                }
+                // stem collars: drooping bells of mist wrapped around the stem
+                [unroll] for (int j = 0; j < 5; j++)
+                {
+                    float4 cp = _CollarPos[j];
+                    if (cp.w > 0.001)
+                    {
+                        float4 sh = _CollarShape[j];
+                        float3 q = p - cp.xyz;
+                        float rr = length(q.xz);
+                        float y = q.y + sh.z * rr;                   // bell: lower further out
+                        float band = 1.0 - saturate(abs(y) / max(sh.y, 1.0));
+                        float span = 1.0 - smoothstep(sh.x * 0.75, sh.x, rr);
+                        d = max(d, band * band * span * cp.w * smoothstep(0.25, 0.8, nWisp));
+                    }
+                }
+                return d;
+            }
+
+            Sample Cloud(float3 p, bool detail)
+            {
+                Sample s;
+                s.density = 0.0; s.albedo = _CapAlbedo.rgb; s.cap = 0.0; s.core = 1.0; s.fireN = 0.5; s.hf = 0.0;
+                float ns = _Density.w;
+                float per = _Anim.w;
+
+                float topY = _CapCenter.y + (_CapShape.y + 0.3) * _CapCenter.w * _CapShape.w;
+                s.hf = saturate((p.y - _GroundY.x) / max(topY - _GroundY.x, 1.0));
+
+                // ---- cap / fireball ----
+                float3 q;
+                float capBound = CapSDF(p, 1.0, q);
+                float capDen = 0.0;
+                if (capBound < 0.0)
+                {
+                    float core;
+                    float3 vel = CapFlow(q, core);
+                    float big = FlowNoise(q, vel, ns, per, float3(0.0, 0.0, 0.0), 0);
+                    float mid = FlowNoise(q, vel, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
+                    float n = smoothstep(0.42, 0.78, 0.65 * big + 0.35 * mid);
+                    float sdf = CapSDF(p, n, q);
+                    float soft = 0.12 * _CapCenter.w;
+                    capDen = saturate(-sdf / soft + 0.1) * _Density.x;
+                    if (detail && capDen > 0.0)
+                    {
+                        float fine = FlowNoise(q, vel, ns * 4.2, per * 0.5, float3(0.7, 0.2, 0.4), 1);
+                        capDen = saturate(capDen - (1.0 - fine) * 0.1 * lerp(0.3, 1.0, _CapXZ.z));
+                        // fast convective flicker for the fire, rising through the ball
+                        s.fireN = FlowNoise(q, vel * 1.8 + float3(0.0, 0.25 * _CapCenter.w * _CapXZ.w + 20.0, 0.0), ns * 3.1, per * 0.35, float3(0.11, 0.83, 0.29), 0);
+                    }
+                    s.core = core;
+                }
+
+                // ---- stem: updraft with a slow twist, billows stretched along it ----
+                float stemDen = 0.0;
+                if (_StemVis.z > 0.001)
+                {
+                    float u;
+                    float d0 = RoundCone(p, _StemBase.xyz, _StemTop.xyz, _StemBase.w, _StemTop.w, u);
+                    float flare = 1.0 + _StemVis.w * pow(1.0 - u, 6.0);
+                    float localR = lerp(_StemBase.w, _StemTop.w, u) * flare;
+                    if (d0 - (flare - 1.0) * _StemBase.w - 0.45 * localR < 0.0)
+                    {
+                        float3 axis = lerp(_StemBase.xyz, _StemTop.xyz, u);
+                        float3 r = p - axis;
+                        float tw = u * 2.5 + _Anim.x * 0.06;
+                        float st = sin(tw), ct = cos(tw);
+                        float3 sq = float3(ct * r.x - st * r.z, (p.y - _GroundY.x) * 0.35, st * r.x + ct * r.z);
+                        float n = FlowNoise(sq, float3(0.0, 0.35 * _Anim.z, 0.0), ns * 1.4, per, float3(0.43, 0.61, 0.07), 0);
+                        n = smoothstep(0.38, 0.8, n);
+                        float sdf = d0 - (flare - 1.0) * _StemBase.w + (0.5 - n) * 0.9 * localR;
+                        float soft = 0.3 * localR;
+                        float mask = max(smoothstep(_StemVis.x, _StemVis.x - soft * 2.0, p.y),
+                                         smoothstep(_StemVis.y, _StemVis.y + soft * 2.0, p.y));
+                        stemDen = saturate(-sdf / max(soft, 1.0)) * _StemVis.z * mask;
+                    }
+                }
+
+                // ---- dust skirt and base surge: rolling outward along the ground ----
+                float dustDen = 0.0;
+                float3 sp = p - _SkirtCenter.xyz;
+                float rxz = length(sp.xz);
+                float2 rdir = rxz > 1e-3 ? sp.xz / rxz : float2(1.0, 0.0);
+                if (_Skirt.y > 0.001 && rxz < _SkirtCenter.w * 1.5 && sp.y < _Skirt.x * 2.0)
+                {
+                    float3 vel = float3(rdir.x, 0.25, rdir.y) * _Skirt.w;
+                    float n = smoothstep(0.35, 0.8, FlowNoise(sp, vel, ns * 1.3, per, float3(0.2, 0.9, 0.5), 0));
+                    float rr = rxz / max(_SkirtCenter.w, 1.0);
+                    // a dome-topped mound: tallest around the stem's foot, sloping out to the rim
+                    float top = _Skirt.x * lerp(1.0, 0.35, rr * rr);
+                    float sd = max(rr - 1.0, (sp.y - top) / max(_Skirt.x, 1.0)) + (0.5 - n) * 0.9;
+                    dustDen = saturate(-sd / 0.18) * _Skirt.y;
+                }
+                if (_Surge.z > 0.001)
+                {
+                    float3 gp = p - float3(_SkirtCenter.x, _GroundY.x, _SkirtCenter.z);
+                    float gr = length(gp.xz);
+                    float2 gdir = gr > 1e-3 ? gp.xz / gr : float2(1.0, 0.0);
+                    float3 vel = float3(gdir.x, 0.05, gdir.y) * _Skirt.w * 2.0;
+                    float n = smoothstep(0.35, 0.8, FlowNoise(gp, vel, ns * 2.0, per * 0.8, float3(0.8, 0.4, 0.1), 0));
+                    float tor = length(float2((gr - _Surge.x) / max(_Surge.w, 1.0), gp.y / max(_Surge.y, 1.0))) - 1.0 + (0.5 - n) * 1.2;
+                    dustDen = max(dustDen, saturate(-tor / 0.2) * _Surge.z);
+                }
+
+                // ---- condensation (wispy, white) ----
+                float condDen = 0.0;
+                if (_Wilson.z + _Rings[0].w + _Rings[1].w + _Rings[2].w + _CollarPos[0].w + _CollarPos[1].w + _CollarPos[2].w + _CollarPos[3].w + _CollarPos[4].w > 0.001)
+                {
+                    float wisp = FlowNoise(p, float3(0.0, 2.0, 0.0), ns * 3.5, per, float3(0.5, 0.5, 0.5), 1);
+                    condDen = Cond(p, wisp);
+                }
+
+                float total = capDen + stemDen + dustDen + condDen;
+                s.density = max(max(capDen, stemDen), max(dustDen, condDen));
+                if (total > 1e-4)
+                {
+                    float inv = 1.0 / total;
+                    s.albedo = (capDen * _CapAlbedo.rgb + stemDen * _StemAlbedo.rgb + dustDen * _DustAlbedo.rgb + condDen * _CondAlbedo.rgb) * inv;
+                    s.cap = capDen * inv;
+                }
+                return s;
+            }
+
+            // cheap occluder for the shadow and sky-occlusion marches: shapes with mid-value noise
+            float CloudCheap(float3 p)
+            {
+                float3 q;
+                float cap = saturate(-CapSDF(p, 0.55, q) / (0.25 * _CapCenter.w) + 0.15) * _Density.x;
+                float stem = 0.0;
+                if (_StemVis.z > 0.001)
+                {
+                    float u;
+                    float d0 = RoundCone(p, _StemBase.xyz, _StemTop.xyz, _StemBase.w, _StemTop.w, u);
+                    float flare = 1.0 + _StemVis.w * pow(1.0 - u, 6.0);
+                    float localR = lerp(_StemBase.w, _StemTop.w, u) * flare;
+                    stem = saturate(-(d0 - (flare - 1.0) * _StemBase.w) / max(0.3 * localR, 1.0)) * _StemVis.z;
+                }
+                return max(cap, stem);
+            }
+
+            // ------------------------------------------------------------------------------------------------
 
             fixed4 frag(v2f i, float face : VFACE) : SV_Target
             {
@@ -230,101 +385,114 @@ Shader "BDNukes/VolumetricCloud"
                 float2 hit = BoxHit(ro, rd);
                 if (hit.y <= max(hit.x, 0.0)) discard;
 
-                // this camera's slice of depth, measured along the ray
                 float3 camFwd = -UNITY_MATRIX_V[2].xyz;
                 float cosA = max(dot(rdW, camFwd), 1e-3);
                 float nearT = _ProjectionParams.y / cosA;
                 float farT = _ProjectionParams.z / cosA;
-
-                // draw from the front face if it's in front of the near plane, otherwise from the back face
                 bool front = face > 0;
                 if (front != (hit.x >= nearT)) discard;
 
                 float2 uv = i.screenPos.xy / i.screenPos.w;
-                float sceneEye = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv));
-                float sceneT = sceneEye / cosA;
-
+                float sceneT = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv)) / cosA;
                 float t0 = max(hit.x, nearT);
                 float t1 = min(min(hit.y, farT), sceneT);
                 if (t1 <= t0) discard;
 
                 int steps = (int)_March.x;
-                float len = t1 - t0;
-                float dt = len / steps;
-                float jitter = Hash(uv * _ScreenParams.xy + frac(_Time.y * 7.13) * 91.7);
+                float dt = (t1 - t0) / steps;
+                float jitter = IGN(uv * _ScreenParams.xy);
                 float t = t0 + dt * jitter;
 
                 float sigmaK = _Density.y;
                 float3 sun = normalize(_SunDir.xyz);
                 float cosSun = dot(rd, sun);
-                float phase = lerp(HG(cosSun, 0.55), HG(cosSun, -0.25), 0.3) * 12.566; // ~1 on average
-                float shadowLen = 0.5 * _CapCenter.w;
+                float cs = _CapCenter.w;
+                float shadowLen = 0.45 * cs;
                 int sSteps = (int)_March.y;
 
                 float T = 1.0;
                 float3 col = 0.0;
                 [loop]
-                for (int k = 0; k < 128; k++)
+                for (int k = 0; k < 160; k++)
                 {
-                    if (k >= steps || T < 0.01) break;
+                    if (t >= t1 || T < 0.008) break;
                     float3 p = ro + rd * t;
-                    float hf, capness, nz;
-                    float d = Density(p, 1.0, hf, capness, nz);
-                    if (_March.w > 0.5 && d > 0.002) return fixed4(nz, nz, nz, 1.0);
+                    Sample sm = Cloud(p, true);
+                    float d = sm.density;
+                    if (_March.w > 0.5 && d > 0.002) return fixed4(sm.fireN, sm.fireN, sm.fireN, 1.0);
                     if (d > 0.002)
                     {
-                        // light reaching this sample from the sun, through the cloud
+                        // sunlight through the cloud
                         float od = 0.0;
                         float sl = shadowLen / sSteps;
-                        float3 sp = p;
+                        float3 spos = p + sun * sl * jitter;
                         [loop]
                         for (int j = 0; j < 8; j++)
                         {
                             if (j >= sSteps) break;
-                            sp += sun * sl;
-                            od += DensityCheap(sp) * sl;
-                            sl *= 1.6;
+                            spos += sun * sl;
+                            // near the sample the billows themselves cast the shadow (cauliflower relief),
+                            // further out the smooth shape is enough
+                            od += (j < 3 ? Cloud(spos, false).density : CloudCheap(spos)) * sl;
+                            sl *= 1.55;
                         }
-                        float sunT = exp(-sigmaK * od);
+                        // multiple scattering: octaves of weaker extinction, softer phase, less energy
+                        float3 ms = 0.0;
+                        float ea = 1.0, eb = 1.0, ec = 1.0;
+                        [unroll] for (int o = 0; o < 3; o++)
+                        {
+                            float ph = lerp(HG(cosSun, 0.6 * ec), HG(cosSun, -0.25 * ec), 0.3) * 12.566;
+                            ms += eb * exp(-sigmaK * od * ea) * ph;
+                            ea *= 0.45; eb *= 0.42; ec *= 0.5;
+                        }
                         float powder = 1.0 - exp(-2.0 * d * sigmaK * shadowLen * 0.25);
-                        float vis = lerp(_SunLow.x, _SunCol.a, hf);
-                        float3 direct = _SunCol.rgb * (_SunDir.w * vis * sunT * phase * lerp(0.6, 1.0, powder));
+                        float vis = lerp(_SunLow.x, _SunCol.a, sm.hf);
+                        float3 direct = _SunCol.rgb * (_SunDir.w * vis) * ms * lerp(0.55, 1.0, powder);
 
-                        // skylight: brighter on top, dimmer deep inside and underneath
-                        float3 amb = _Ambient.rgb * lerp(0.45, 1.0, saturate(0.5 + 0.5 * sunT)) * lerp(0.7, 1.05, hf);
-                        // deep in shadow the blue sky is mostly blocked: what's left is grey light bounced off the
-                        // ground and the rest of the cloud
-                        float ambGrey = dot(amb, float3(0.333, 0.333, 0.334));
-                        amb = lerp(float3(ambGrey * 1.02, ambGrey, ambGrey * 0.95), amb, saturate(sunT * 1.5 + 0.2));
+                        // sky from above, occluded by the cloud over this point; ground bounce from below
+                        float occ = CloudCheap(p + float3(0.0, 0.35 * cs, 0.0)) + CloudCheap(p + float3(0.0, 0.8 * cs, 0.0));
+                        float skyVis = exp(-sigmaK * occ * 0.3 * cs);
+                        float3 amb = _Ambient.rgb * lerp(0.55, 1.15, skyVis) + _GroundCol.rgb * (1.0 - sm.hf) * 0.6;
 
-                        float3 alb = lerp(_AlbedoDark.rgb, _Albedo.rgb, saturate(0.35 + 0.65 * hf + 0.3 * sunT));
+                        // soot on the burning shell (where the flicker noise is low), fresh debris colour elsewhere
+                        float fireMask = smoothstep(0.3, 0.8, sm.fireN);
+                        float3 alb = sm.albedo;
+                        alb = lerp(alb, float3(0.07, 0.06, 0.055), _Fire.w * sm.cap * saturate(0.4 + sm.core) * (1.0 - 0.7 * fireMask));
                         float3 lit = alb * (direct + amb);
 
-                        // the fireball's glow on its own smoke: strongest inside the cap
-                        float fd = length(p - _GlowCenter.xyz);
-                        lit += _Glow.rgb * exp(-fd / max(_Glow.a, 1.0)) * lerp(0.4, 1.0, capness);
+                        // the fireball lights its own smoke, the stem and the skirt
+                        float3 fv = p - _CapCenter.xyz;
+                        float fd2 = dot(fv, fv) / max(_Glow.a * _Glow.a, 1.0);
+                        lit += alb * _Glow.rgb / (1.0 + 3.0 * fd2);
 
-                        // incandescence: the fireball itself, hottest in its core and along the turbulent filaments
-                        // the roll drags through it, cooling into dark smoke at the edges
-                        if (_Fire.x > 0.001)
+                        // incandescence
+                        if (_Fire.x > 0.001 && sm.cap > 0.01)
                         {
-                            float core = saturate(1.0 - fd / max(_Fire.z * _CapCenter.w, 1.0));
-                            float heat = _Fire.y * (0.35 + 0.65 * core) * (0.55 + 0.6 * nz) * capness;
-                            lit = lerp(lit, lit * 0.25, saturate(_Fire.x * 0.8)) + Blackbody(heat) * _Fire.x * (0.4 + 0.6 * core);
+                            float heat = _Fire.y * saturate(1.0 - 0.5 * sm.core * sm.core);
+                            // tongues of flame through the soot: hot where the convective noise is high
+                            heat *= lerp(1.0, 0.15 + 1.05 * fireMask, _Fire.z);
+                            float3 em = Blackbody(heat) * _Fire.x * sm.cap;
+                            lit = lit * (1.0 - saturate(_Fire.x * 0.6) * sm.cap) + em;
                         }
 
                         float sigma = d * sigmaK;
                         float stepT = exp(-sigma * dt);
                         col += T * (1.0 - stepT) * lit;
                         T *= stepT;
+                        t += dt;
                     }
-                    t += dt;
+                    else
+                    {
+                        t += dt * 1.6; // skip empty space faster
+                    }
                 }
 
                 float a = (1.0 - T) * _March.z;
                 col *= _March.z;
-                // aerial perspective over the whole column of cloud
                 col = lerp(col, _HazeCol.rgb * a, _HazeCol.a);
+                // hue-preserving shoulder: the white-hot core keeps its gradient instead of clipping
+                float m = max(max(col.r, col.g), col.b);
+                if (m > 0.85) col *= (0.85 + (1.0 - exp(-(m - 0.85) * 1.6)) * 0.6) / m;
                 return fixed4(col, a);
             }
             ENDCG

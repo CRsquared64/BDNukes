@@ -449,8 +449,9 @@ namespace BDNukes
             if (airFx && !underwater && s.volumetricClouds && NukeVolumetric.Available)
             {
                 volume = new NukeVolumetric(transform);
-                foreach (var l in new[] { capSmoke, capDetail, capUpper, fireCore, capGlow, skirt, stem })
+                foreach (var l in new[] { capSmoke, capDetail, capUpper, fireCore, capGlow, skirt, stem, surge, collars, wilson })
                     if (l != null) l.SetVisible(false);
+                if (ringLayers != null) foreach (var l in ringLayers) if (l != null) l.SetVisible(false);
             }
 
             var lightGo = new GameObject("NukeLight");
@@ -709,18 +710,18 @@ namespace BDNukes
                     if (capUpper != null) UpdateCapUpper();
                     UpdateCapGlow();
                 }
-                if (ringLayers != null) for (int k = 0; k < ringLayers.Length; k++) UpdateRing(k);
+                if (ringLayers != null && volume == null) for (int k = 0; k < ringLayers.Length; k++) UpdateRing(k);
                 sunVis = sunVisLow; // skirt, surge and stem live under any low cloud deck
                 if (skirt != null && volume == null) UpdateSkirt();
-                if (surge != null) UpdateSurge();
+                if (surge != null && volume == null) UpdateSurge();
                 if (stem != null && volume == null) UpdateStem();
-                if (collars != null) UpdateCollars();
+                if (collars != null && volume == null) UpdateCollars();
                 if (sparks != null) UpdateSparks();
                 if (lightningFx) UpdateLightning();
             }
             sunVis = sunVisLow;
             if (shock != null) UpdateShock();
-            if (wilson != null) UpdateWilson();
+            if (wilson != null && volume == null) UpdateWilson();
             if (waterColumn != null)
             {
                 UpdateWaterColumn();
@@ -804,30 +805,42 @@ namespace BDNukes
         {
             float m = Morph;
             float x = t / tauGlow;
-            float intensity = (t < 0.5f ? 1.3f : 1f) * Mathf.Exp(-Mathf.Max(0f, x - 0.35f) / 0.85f);
             float glow = Glow(t);
             float grow = 1f - Mathf.Exp(-t / 0.15f);
+            float prevScale = vs.capScale;
 
             vs.groundY = groundY;
+            vs.time = t;
+            vs.extinction = 2f / R;
+            vs.noiseScale = 1f / (3f * R);
+            vs.flowPeriod = 6f;
+
+            // ---- fireball and cap: a ball that rolls up into the toroidal cap ----
             vs.capCenter = capPosL;
             vs.capScale = Mathf.Max(1f, capScale * Mathf.Lerp(Mathf.Max(0.05f, grow), 1f, m));
-            vs.ringR = Mathf.Lerp(0.05f, 0.55f * Mathf.Lerp(1f, 0.62f, pkT), m);
-            vs.tube = Mathf.Lerp(0.3f, 0.5f * (1f + 0.9f * pkT), m);
-            vs.dome = Mathf.Lerp(0.85f, 0.6f, m);
-            vs.squash = Mathf.Clamp(Mathf.Lerp(1f, 0.85f * capYS, m), 0.35f, 1.6f);
+            vs.ringR = Mathf.Lerp(0.05f, 0.62f * Mathf.Lerp(1f, 0.62f, pkT), m);
+            vs.tube = Mathf.Lerp(0.3f, 0.45f * (1f + 0.9f * pkT), m);
+            vs.dome = Mathf.Lerp(0.85f, 0.45f, m);
+            vs.squash = Mathf.Clamp(Mathf.Lerp(1f, 0.6f * capYS, m), 0.35f, 1.6f);
             vs.xzSpread = Mathf.Lerp(1f, capXZS, m);
             vs.overhang = prof.overhang * m;
             vs.capDensity = FadeOut;
-            vs.time = t;
-            vs.roll = (0.55f * tauRise * (1f - Mathf.Exp(-t / tauRise)) + 0.03f * t) * prof.rollSpeed;
+            // smooth at first, turbulent within a second or two (Rayleigh-Taylor), the cap fully churning
+            vs.roughness = SS(0.05f * tauG, 0.6f * tauG, t) * Mathf.Lerp(0.85f, 1f, prof.turbulence);
+            float dt = Mathf.Max(1e-3f, Time.deltaTime);
+            vs.growthRate = prevScale > 1f ? Mathf.Clamp((vs.capScale - prevScale) / dt / vs.capScale, 0f, 1f) : 0f;
+            vs.rollRate = (0.35f * Mathf.Exp(-t / tauRise) + 0.03f) * prof.rollSpeed;
 
-            // incandescence: white-hot at first, cooling to a dull red glow deep in the cap
-            vs.fire = 3f * intensity * FadeOut * flashK;
+            // ---- fire: white-hot, cooling through yellow and orange, burning through soot ----
+            float heatK = (t < 0.5f ? 1.3f : 1f) * Mathf.Exp(-Mathf.Max(0f, x - 0.35f) / 0.85f);
+            vs.fire = 4f * heatK * FadeOut * flashK;
             vs.fireTemp = Mathf.Clamp01(1.05f - 0.75f * x);
-            vs.glow = Ember * (2f * glow * FadeOut);
-            vs.glowRadius = 0.8f * vs.capScale;
+            vs.flicker = Mathf.Lerp(0.25f, 1f, vs.roughness);
+            vs.soot = 0.8f * SS(0.3f * tauG, 1.2f * tauG, t) * (1f - SS(3f * tauG, 6f * tauG, t)) * Mathf.Lerp(1f, 0.5f, prof.humidity);
+            vs.glow = Ember * (2.5f * glow * FadeOut);
+            vs.glowRadius = 0.9f * vs.capScale;
 
-            // stem: dust column climbing from the ground to meet the trail hanging under the cap
+            // ---- stem: dust column climbing from the ground to meet the trail hanging under the cap ----
             float start = hb / c + 0.25f * tauG;
             vs.stemDensity = 0f;
             if (stemFx && t > start)
@@ -844,33 +857,105 @@ namespace BDNukes
                 vs.stemDustTop = groundY + dustFront;
                 vs.stemTrailBottom = groundY + yTop - trailLen;
                 vs.stemDensity = 0.9f * FadeOut * SS(start, start + 2f, t) * (fromGround ? 1f : 0.7f);
+                vs.updraft = (60f * Mathf.Exp(-t / riseTime) + 10f) * prof.rollSpeed;
             }
 
-            // skirt: dust thrown up around ground zero, spreading out
+            // ---- dust skirt and base surge ----
             vs.skirtDensity = 0f;
+            vs.surgeDensity = 0f;
             if (groundFx)
             {
                 float tg = hb / c;
                 float tt = Mathf.Max(0f, t - tg);
                 float ks = prof.skirtScale;
-                float flat = Mathf.Lerp(1f, 0.6f, Mathf.Clamp01((ks - 1f) * 0.6f));
                 vs.skirtCenter = new Vector3(0f, groundY, 0f) + Lean(0f) * 0.8f;
-                vs.skirtR = R * 0.9f + 2.4f * ks * R * (1f - Mathf.Exp(-tt / (5f + 2f * ks))) * 0.75f;
-                vs.skirtH = R * flat * (0.25f + 0.3f * (1f - Mathf.Exp(-tt / 6f))) + 0.03f * CapHeight(t) * flat;
-                vs.skirtDensity = 0.9f * SS(tg, tg + 0.5f, t) * FadeOut * groundFactor;
+                vs.skirtR = R * (0.8f + 1.3f * ks * (1f - Mathf.Exp(-tt / 8f)));
+                vs.skirtH = R * (0.35f + 0.55f * (1f - Mathf.Exp(-tt / 8f))) * Mathf.Lerp(1f, 0.7f, Mathf.Clamp01((ks - 1f) * 0.6f));
+                vs.skirtDensity = 0.75f * SS(tg + 0.2f, tg + 1.2f, t) * FadeOut * groundFactor;
+                vs.skirtThin = 0.35f;
+                vs.outflow = (30f * Mathf.Exp(-tt / 20f) + 3f) * prof.rollSpeed;
+
+                float rs = ShockRadius(t);
+                float rg = Mathf.Sqrt(Mathf.Max(0f, rs * rs - hb * hb));
+                float surgeMax = R * (2f + 4f * groundFactor) * Mathf.Lerp(1f, prof.skirtScale, 0.5f);
+                float surgeEnd = (surgeMax + hb) / c + 4f;
+                vs.surgeR = Mathf.Min(rg, surgeMax);
+                vs.surgeH = 0.35f * R * (1f + 0.04f * Mathf.Max(0f, t - hb / c));
+                vs.surgeWidth = 0.8f * R + 0.04f * vs.surgeR;
+                vs.surgeDensity = 0.3f * groundFactor * SS(tg + 0.3f, tg + 1f, t) * (1f - SS(surgeEnd, surgeEnd + 25f, t)) * FadeOut;
             }
 
-            // light
+            // ---- Wilson cloud: a brief, patchy veil behind the shock in humid air ----
+            vs.wilsonDensity = 0f;
+            if (wilson != null)
+            {
+                float tW = Mathf.Min(2.5f * R / c, 4f);
+                vs.wilsonDensity = 0.07f * (0.5f + prof.humidity) * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.4f * tW, 1.1f * tW, t)) * airW;
+                vs.wilsonR = Mathf.Min(R * 1.2f + c * t * 0.9f, 3.6f * R);
+                vs.wilsonThick = 0.3f * R;
+                vs.wilsonHemisphere = groundFx;
+            }
+
+            // ---- condensation rings above the fireball ----
+            vs.ring0 = vs.ring1 = vs.ring2 = Vector4.zero;
+            if (ringLayers != null)
+            {
+                for (int k = 0; k < 3; k++)
+                {
+                    float y0 = R * (1.25f + 0.75f * k);
+                    float tk = y0 / c * 0.6f + 0.2f + 0.15f * k;
+                    float hold = 3f + 0.5f * tauG;
+                    float vis = SS(tk, tk + 0.6f, t) * (1f - SS(tk + hold, tk + hold + 4f + 0.5f * tauG, t)) * airW;
+                    float rk = R * (1.5f + 0.32f * k) * (1f + 0.015f * t) * (1f + 0.4f * Rise(t));
+                    var ring = new Vector4(y0 + 0.4f * CapHeight(t), rk, 0.3f * R, 0.12f * vis * (0.6f + 0.6f * prof.humidity));
+                    if (k == 0) vs.ring0 = ring; else if (k == 1) vs.ring1 = ring; else vs.ring2 = ring;
+                }
+                vs.ringOffset = 0.8f * capDrift;
+            }
+
+            // ---- stem collars: bells of mist forming in turn as the column climbs ----
+            vs.collar0 = vs.collar1 = vs.collar2 = vs.collar3 = vs.collar4 = Vector4.zero;
+            if (collars != null && vs.stemDensity > 0f)
+            {
+                int nc = Mathf.Clamp(prof.stemCollars, 1, 5);
+                float yTop = StemTop;
+                for (int k = 0; k < nc; k++)
+                {
+                    float frac = 0.22f + 0.6f * (k + 0.5f) / nc;
+                    float tk = start + (k + 0.5f) / nc * 0.45f * riseTime;
+                    float hold = 0.04f * riseTime + 3f;
+                    float vis = SS(tk, tk + 3f, t) * (1f - SS(tk + hold, tk + hold + 0.06f * riseTime + 3f, t)) * FadeOut;
+                    float age = Mathf.Max(0f, t - tk);
+                    float u = Mathf.Min(0.95f, frac + 0.06f * age / riseTime);
+                    float stemR = StemRadius(u);
+                    Vector3 cpos = new Vector3(0f, groundY + u * yTop, 0f) + Lean(u);
+                    var pos = new Vector4(cpos.x, cpos.y, cpos.z, 0.35f * vis);
+                    var shape = new Vector4(stemR * (2f + 0.6f * SS(0f, 10f, age)), 0.35f * stemR, 0.3f, 0f);
+                    switch (k)
+                    {
+                        case 0: vs.collar0 = pos; vs.collarS0 = shape; break;
+                        case 1: vs.collar1 = pos; vs.collarS1 = shape; break;
+                        case 2: vs.collar2 = pos; vs.collarS2 = shape; break;
+                        case 3: vs.collar3 = pos; vs.collarS3 = shape; break;
+                        default: vs.collar4 = pos; vs.collarS4 = shape; break;
+                    }
+                }
+            }
+
+            // ---- light and colour ----
             vs.sunDir = sunL;
             vs.daylight = daylight;
             float low = Mathf.Clamp01(1f - sunL.y * 4f);
-            vs.sunCol = Color.Lerp(new Color(1.25f, 1.18f, 1.05f), new Color(1.2f, 0.72f, 0.42f), low);
+            vs.sunCol = Color.Lerp(new Color(1.0f, 0.97f, 0.92f), new Color(1.05f, 0.66f, 0.4f), low);
             vs.sunVisCap = sunVisCap;
             vs.sunVisLow = sunVisLow;
             float overcast = Mathf.Clamp01((1f - sunVisCam) / NukeWeather.DeckOpacity);
-            vs.ambient = Color.Lerp(new Color(0.42f, 0.5f, 0.62f), new Color(0.48f, 0.5f, 0.53f), overcast) * Mathf.Lerp(0.06f, 1f, daylight);
-            vs.albedo = CapColor(0f);
-            vs.albedoDark = Color.Lerp(colDark, CapColor(0f), 0.25f);
+            vs.ambient = Color.Lerp(new Color(0.46f, 0.55f, 0.7f), new Color(0.55f, 0.57f, 0.6f), overcast) * Mathf.Lerp(0.05f, 1f, daylight);
+            vs.groundCol = new Color(0.16f, 0.15f, 0.11f) * Mathf.Lerp(0.05f, 1f, daylight) * Mathf.Lerp(1f, 0.5f, overcast);
+            vs.capAlbedo = CapColor(0f) * 0.92f;
+            vs.stemAlbedo = Color.Lerp(stemLow, stemHigh, 0.4f) * 0.85f;
+            vs.dustAlbedo = Color.Lerp(skirtDark, skirtLight, 0.3f) * 0.8f;
+            vs.condAlbedo = CondWhite;
             vs.hazeCol = hazeCol;
             vs.haze = haze;
             volume.Update(ref vs, s.volumetricSteps);

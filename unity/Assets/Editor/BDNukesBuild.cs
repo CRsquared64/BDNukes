@@ -1,11 +1,13 @@
-// Builds the BDNukes shader bundle and renders test images of the volumetric cloud.
+// Builds the BDNukes shader bundle and renders test contact sheets of the volumetric cloud.
 //
-//   Unity.exe -batchmode -quit -projectPath <this folder> -executeMethod BDNukesBuild.BuildAll
-//   Unity.exe -batchmode -quit -projectPath <this folder> -executeMethod BDNukesBuild.RenderTests
+//   powershell -File unity/run-unity.ps1 BuildAll      -> GameData/BDNukes/Shaders/bdnukes-windows.shaders
+//   powershell -File unity/run-unity.ps1 RenderTests   -> unity/Build/tests/*.png
 //
-// BuildAll writes GameData/BDNukes/Shaders/bdnukes-windows.shaders (Windows / DirectX 11, what KSP 1.12 runs on).
+// The test renders drive the shader through BDNukes.NukeVolumeShader (Assets/Shared), the same code the plugin
+// uses, with a standalone timeline of a surface burst (NukeVolumeTestTimeline).
 using System;
 using System.IO;
+using BDNukes;
 using UnityEditor;
 using UnityEngine;
 
@@ -18,11 +20,12 @@ public static class BDNukesBuild
     static string RepoRoot => Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".."));
 
     // ------------------------------------------------------------------------------------------------------
-    // Noise: R = Perlin-Worley billows (rounded cauliflower lumps), G = Worley fBm for fine erosion
+    // Noise: R = Perlin-Worley billows (rounded cauliflower lumps), G = Worley fBm for fine erosion and wisps
     // ------------------------------------------------------------------------------------------------------
 
     public static Texture3D MakeNoise(int size)
     {
+        // RGBA32: Texture3D.SetPixels32 silently writes nothing for two-channel formats in 2019.4
         var tex = new Texture3D(size, size, size, TextureFormat.RGBA32, true)
         {
             wrapMode = TextureWrapMode.Repeat,
@@ -43,7 +46,6 @@ public static class BDNukesBuild
                     float px = x * inv, py = y * inv, pz = z * inv;
                     float wf = 0.625f * (1f - w4.F1(px, py, pz)) + 0.25f * (1f - w8.F1(px, py, pz)) + 0.125f * (1f - w16.F1(px, py, pz));
                     float pf = 0.5f + 0.5f * (0.6f * perlin.Noise(px, py, pz, 4) + 0.3f * perlin.Noise(px, py, pz, 8) + 0.1f * perlin.Noise(px, py, pz, 16));
-                    // Perlin-Worley: Perlin remapped by the billows, so it keeps the round lumps but breaks their regularity
                     float billow = Mathf.Clamp01(Remap(pf, wf - 1f, 1f, 0f, 1f));
                     float detail = 0.625f * (1f - w8.F1(px, py, pz)) + 0.25f * (1f - w16.F1(px, py, pz)) + 0.125f * (1f - w32.F1(px, py, pz));
                     cols[x + size * (y + size * z)] = new Color32((byte)(billow * 255f), (byte)(Mathf.Clamp01(detail) * 255f), 0, 255);
@@ -97,7 +99,6 @@ public static class BDNukesBuild
             for (int i = 0; i < 256; i++)
             {
                 p[i] = i;
-                grads[i] = UnityEngine.Random.onUnitSphere;
                 var g = new Vector3((float)rng.NextDouble() * 2f - 1f, (float)rng.NextDouble() * 2f - 1f, (float)rng.NextDouble() * 2f - 1f);
                 grads[i] = g.normalized;
             }
@@ -142,26 +143,28 @@ public static class BDNukesBuild
     // Bundle
     // ------------------------------------------------------------------------------------------------------
 
-    public static void BuildAll()
+    static Shader LoadShader()
     {
-        EnsureNoise();
         AssetDatabase.Refresh();
         var shader = AssetDatabase.LoadAssetAtPath<Shader>(ShaderPath);
         if (shader == null) throw new Exception("shader missing: " + ShaderPath);
+        foreach (var m in ShaderUtil.GetShaderMessages(shader))
+            Debug.Log("[BDNukesBuild] shader " + m.severity + ": " + m.message + " (line " + m.line + ")");
         if (ShaderUtil.ShaderHasError(shader)) throw new Exception("shader has compile errors");
+        return shader;
+    }
 
+    public static void BuildAll()
+    {
+        EnsureNoise();
+        LoadShader();
         string outDir = Path.Combine(RepoRoot, "unity", "Build");
         Directory.CreateDirectory(outDir);
-        var build = new AssetBundleBuild
-        {
-            assetBundleName = BundleName,
-            assetNames = new[] { ShaderPath, NoisePath },
-        };
+        var build = new AssetBundleBuild { assetBundleName = BundleName, assetNames = new[] { ShaderPath, NoisePath } };
         var manifest = BuildPipeline.BuildAssetBundles(outDir, new[] { build },
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle,
             BuildTarget.StandaloneWindows64);
         if (manifest == null) throw new Exception("bundle build failed");
-
         string dest = Path.Combine(RepoRoot, "GameData", "BDNukes", "Shaders");
         Directory.CreateDirectory(dest);
         File.Copy(Path.Combine(outDir, BundleName), Path.Combine(dest, BundleName), true);
@@ -169,64 +172,89 @@ public static class BDNukesBuild
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Test renders: a mock 20 kt surface burst a minute in, from a few viewpoints and weathers
+    // Test contact sheets
     // ------------------------------------------------------------------------------------------------------
 
-    public static void NoiseStats()
+    struct Shot
     {
-        var noise = EnsureNoise();
-        var px = noise.GetPixels32(0);
-        long sr = 0, sg = 0; int minR = 255, maxR = 0, minG = 255, maxG = 0;
-        foreach (var c in px) { sr += c.r; sg += c.g; minR = Math.Min(minR, c.r); maxR = Math.Max(maxR, c.r); minG = Math.Min(minG, c.g); maxG = Math.Max(maxG, c.g); }
-        Debug.Log(string.Format("[BDNukesBuild] noise {0} {1}x{2}x{3} fmt {4}: R {5}..{6} mean {7}, G {8}..{9} mean {10}",
-            noise.name, noise.width, noise.height, noise.depth, noise.format, minR, maxR, sr / px.Length, minG, maxG, sg / px.Length));
+        public float W, t, sunVis, haze;
+        public Vector3 cam;
+        public float lookFrac;   // look-at height as a fraction of the cap top
+        public float fov;
+        public bool debug;
     }
-
-    static bool debugNoise;
 
     public static void RenderTests()
     {
-        NoiseStats();
         var noise = EnsureNoise();
-        var shader = AssetDatabase.LoadAssetAtPath<Shader>(ShaderPath);
-        if (shader == null || ShaderUtil.ShaderHasError(shader)) throw new Exception("shader missing or has errors");
+        var shader = LoadShader();
         string outDir = Path.Combine(RepoRoot, "unity", "Build", "tests");
         Directory.CreateDirectory(outDir);
+        foreach (var f in Directory.GetFiles(outDir, "*.png")) File.Delete(f);
 
-        Render(shader, noise, Path.Combine(outDir, "01_clear_8km.png"), new Vector3(0f, 300f, -8000f), 1f, 0f, 1f);
-        Render(shader, noise, Path.Combine(outDir, "02_clear_3km_low.png"), new Vector3(0f, 50f, -3500f), 1f, 0f, 1f);
-        Render(shader, noise, Path.Combine(outDir, "03_overcast_8km.png"), new Vector3(0f, 300f, -8000f), 0.2f, 0.15f, 1f);
-        Render(shader, noise, Path.Combine(outDir, "04_far_40km_haze.png"), new Vector3(0f, 2000f, -40000f), 1f, 0.45f, 1f);
-        Render(shader, noise, Path.Combine(outDir, "05_fireball_1s.png"), new Vector3(0f, 150f, -3000f), 1f, 0f, 0.0f);
-        Render(shader, noise, Path.Combine(outDir, "06_fireball_rolling_6s.png"), new Vector3(0f, 150f, -4000f), 1f, 0f, 0.12f);
-        Render(shader, noise, Path.Combine(outDir, "07_cooling_20s.png"), new Vector3(0f, 200f, -6000f), 1f, 0f, 0.35f);
-        debugNoise = true;
-        Render(shader, noise, Path.Combine(outDir, "99_debug_noise.png"), new Vector3(0f, 300f, -8000f), 1f, 0f, 1f);
-        debugNoise = false;
+        // a 20 kt surface burst over its life, from 7 km
+        var life = new[] { 0.3f, 1.5f, 4f, 10f, 20f, 40f, 75f, 140f };
+        Sheet(shader, noise, Path.Combine(outDir, "1_life_20kt.png"), 4, Array.ConvertAll(life, t => new Shot
+        { W = 20f, t = t, sunVis = 1f, haze = 0.05f, cam = new Vector3(0f, 250f, -7000f), lookFrac = 0.5f, fov = 38f }));
+
+        // motion: one second apart, close up on the cap (it should churn, not slide or pulse)
+        var motion = new[] { 40f, 41f, 42f, 43f };
+        Sheet(shader, noise, Path.Combine(outDir, "2_motion_cap.png"), 2, Array.ConvertAll(motion, t => new Shot
+        { W = 20f, t = t, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 900f, -3200f), lookFrac = 1f, fov = 34f }));
+
+        // fireball, close: smooth white-hot ball turning into rolling fire
+        var fire = new[] { 0.2f, 0.8f, 2f, 4f, 7f, 12f };
+        Sheet(shader, noise, Path.Combine(outDir, "3_fireball.png"), 3, Array.ConvertAll(fire, t => new Shot
+        { W = 20f, t = t, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 150f, -2500f), lookFrac = 0.9f, fov = 40f }));
+
+        // weather and distance at 60 s
+        Sheet(shader, noise, Path.Combine(outDir, "4_weather.png"), 2, new[]
+        {
+            new Shot { W = 20f, t = 60f, sunVis = 1f, haze = 0.05f, cam = new Vector3(0f, 300f, -8000f), lookFrac = 0.5f, fov = 38f },
+            new Shot { W = 20f, t = 60f, sunVis = 0.18f, haze = 0.12f, cam = new Vector3(0f, 300f, -8000f), lookFrac = 0.5f, fov = 38f },
+            new Shot { W = 20f, t = 60f, sunVis = 1f, haze = 0.45f, cam = new Vector3(0f, 2000f, -40000f), lookFrac = 0.5f, fov = 20f },
+            new Shot { W = 20f, t = 60f, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 50f, -3000f), lookFrac = 0.75f, fov = 50f },
+        });
+
+        // a megaton
+        var mt = new[] { 3f, 15f, 45f, 120f };
+        Sheet(shader, noise, Path.Combine(outDir, "5_life_1Mt.png"), 2, Array.ConvertAll(mt, t => new Shot
+        { W = 1000f, t = t, sunVis = 1f, haze = 0.1f, cam = new Vector3(0f, 500f, -30000f), lookFrac = 0.5f, fov = 40f }));
+
         Debug.Log("[BDNukesBuild] test renders written to " + outDir);
     }
 
-    static void Render(Shader shader, Texture3D noise, string file, Vector3 camPos, float sunVis, float haze, float age)
+    static void Sheet(Shader shader, Texture3D noise, string file, int cols, Shot[] shots)
     {
-        const int W = 1280, H = 720;
+        const int W = 640, H = 400;
+        int rows = (shots.Length + cols - 1) / cols;
+        var sheet = new Texture2D(W * cols, H * rows, TextureFormat.RGB24, false);
+        for (int i = 0; i < shots.Length; i++)
+        {
+            var img = Render(shader, noise, shots[i], W, H);
+            int cx = i % cols, cy = rows - 1 - i / cols;
+            sheet.SetPixels(cx * W, cy * H, W, H, img.GetPixels());
+            UnityEngine.Object.DestroyImmediate(img);
+        }
+        sheet.Apply();
+        File.WriteAllBytes(file, sheet.EncodeToPNG());
+        UnityEngine.Object.DestroyImmediate(sheet);
+    }
+
+    static Texture2D Render(Shader shader, Texture3D noise, Shot shot, int W, int H)
+    {
         var root = new GameObject("TestRoot");
         try
         {
-            // ground
+            var v = NukeVolumeTestTimeline.At(shot.W, shot.t, shot.sunVis, shot.haze);
+
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.transform.SetParent(root.transform);
-            ground.transform.localScale = new Vector3(20000f, 1f, 20000f);
+            ground.transform.localScale = new Vector3(40000f, 1f, 40000f);
             var gm = new Material(Shader.Find("Unlit/Color"));
-            gm.color = Color.Lerp(new Color(0.22f, 0.3f, 0.2f), new Color(0.6f, 0.68f, 0.78f), haze);
+            gm.color = Color.Lerp(new Color(0.22f, 0.3f, 0.2f) * Mathf.Lerp(0.6f, 1f, shot.sunVis), new Color(0.6f, 0.68f, 0.78f), shot.haze);
             ground.GetComponent<Renderer>().sharedMaterial = gm;
 
-            // the cloud: same parameter layout NukeCinematic sends, for a 20 kt burst (R ~ 230 m)
-            float R = 230f;
-            float rise = Mathf.Sqrt(age);
-            float capScale = Mathf.Lerp(R, 3.2f * R, rise);
-            float capY = Mathf.Lerp(R * 0.9f, 2600f, rise);
-            float m = Mathf.Clamp01(age / 0.3f);          // ball -> rolling torus
-            float heat = Mathf.Clamp01(1f - age / 0.4f);  // white-hot -> cold smoke
             var cloudRoot = new GameObject("Cloud");
             cloudRoot.transform.SetParent(root.transform);
             var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -234,55 +262,27 @@ public static class BDNukesBuild
             box.transform.SetParent(cloudRoot.transform);
             var mat = new Material(shader);
             mat.SetTexture("_Noise", noise);
-            Vector3 drift = new Vector3(300f * age, 0f, 0f);
-            Vector3 capC = new Vector3(0f, capY, 0f) + drift;
-            float skirtR = Mathf.Lerp(1.2f * R, 3.5f * R, age);
-            Vector3 bmin = new Vector3(-Mathf.Max(1.6f * capScale, skirtR) - 50f + Mathf.Min(0f, drift.x), -20f, -Mathf.Max(1.6f * capScale, skirtR) - 50f);
-            Vector3 bmax = new Vector3(Mathf.Max(1.6f * capScale, skirtR) + 50f + Mathf.Max(0f, drift.x), capY + 1.2f * capScale, Mathf.Max(1.6f * capScale, skirtR) + 50f);
-            box.transform.localPosition = 0.5f * (bmin + bmax);
-            box.transform.localScale = bmax - bmin;
-            mat.SetMatrix("_WorldToCloud", cloudRoot.transform.worldToLocalMatrix);
-            mat.SetMatrix("_CloudToWorld", cloudRoot.transform.localToWorldMatrix);
-            mat.SetVector("_BoxMin", bmin);
-            mat.SetVector("_BoxMax", bmax);
-            mat.SetVector("_CapXZ", new Vector4(1f, 0.3f, 0f, 0f));
-            mat.SetVector("_CapCenter", new Vector4(capC.x, capC.y, capC.z, capScale));
-            mat.SetVector("_CapShape", new Vector4(Mathf.Lerp(0.05f, 0.55f, m), Mathf.Lerp(0.3f, 0.5f, m), Mathf.Lerp(0.85f, 0.6f, m), Mathf.Lerp(1f, 0.8f, m)));
-            float stemTopR = 0.17f * capScale * 0.9f;
-            mat.SetVector("_StemBase", new Vector4(0f, 0f, 0f, stemTopR * 1.1f));
-            mat.SetVector("_StemTop", new Vector4(capC.x, capY - 0.3f * capScale, capC.z, stemTopR));
-            mat.SetVector("_StemVis", new Vector4(capY * Mathf.Lerp(0.2f, 1.1f, m), capY * Mathf.Lerp(0.95f, 0.4f, m), 0.9f, 2.2f));
-            mat.SetVector("_SkirtCenter", new Vector4(0f, 0f, 0f, skirtR));
-            mat.SetVector("_Skirt", new Vector4(0.35f * R, 0.9f * m, 0.35f, 0f));
-            mat.SetVector("_Density", new Vector4(1f, 7f / capScale, 0.3f, 1f / (1.3f * capScale)));
-            mat.SetVector("_Anim", new Vector4(60f * age, 2.5f * rise, 0f, 0f));
-            mat.SetVector("_Fire", new Vector4(3f * heat, Mathf.Lerp(0.15f, 1f, heat), 0.7f, 0f));
-            Vector3 sun = new Vector3(-0.5f, 0.6f, 0.45f).normalized;
-            mat.SetVector("_SunDir", new Vector4(sun.x, sun.y, sun.z, 1f));
-            mat.SetVector("_SunCol", new Vector4(1.25f, 1.18f, 1.05f, sunVis));
-            mat.SetVector("_SunLow", new Vector4(sunVis, 0f, 0f, 0f));
-            Color amb = Color.Lerp(new Color(0.42f, 0.5f, 0.62f), new Color(0.5f, 0.52f, 0.55f), 1f - sunVis);
-            mat.SetVector("_Ambient", amb);
-            mat.SetVector("_Albedo", new Color(0.82f, 0.7f, 0.58f));
-            mat.SetVector("_AlbedoDark", new Color(0.45f, 0.36f, 0.3f));
-            float glow = heat * heat * 2f;
-            mat.SetVector("_Glow", new Vector4(1.0f * glow, 0.45f * glow, 0.15f * glow, 0.6f * capScale));
-            mat.SetVector("_GlowCenter", capC);
-            Color hc = Color.Lerp(new Color(0.62f, 0.7f, 0.8f), new Color(0.56f, 0.58f, 0.61f), 1f - sunVis);
-            mat.SetVector("_HazeCol", new Vector4(hc.r, hc.g, hc.b, haze));
-            mat.SetVector("_March", new Vector4(64f, 5f, 1f, debugNoise ? 1f : 0f));
+            NukeVolumeShader.Bounds(ref v, out var min, out var max);
+            box.transform.localPosition = 0.5f * (min + max);
+            box.transform.localScale = max - min;
+            NukeVolumeShader.Apply(mat, ref v, cloudRoot.transform.worldToLocalMatrix, min, max, 96, shot.debug);
             box.GetComponent<Renderer>().sharedMaterial = mat;
 
             var camGo = new GameObject("Cam");
             camGo.transform.SetParent(root.transform);
             var cam = camGo.AddComponent<Camera>();
+            float capTop = v.capCenter.y + v.capScale * 0.6f;
+            // frame the whole cloud: back off as it grows (keeping the given direction and elevation)
+            float need = capTop * 1.9f / Mathf.Tan(shot.fov * 0.5f * Mathf.Deg2Rad) * 0.5f;
+            Vector3 camPos = shot.cam;
+            if (!shot.debug && shot.lookFrac < 0.99f && camPos.magnitude < need) camPos = camPos.normalized * need;
             cam.transform.position = camPos;
-            cam.transform.LookAt(new Vector3(0f, capY * 0.55f, 0f));
-            cam.fieldOfView = 40f;
+            cam.transform.LookAt(new Vector3(v.capCenter.x * 0.5f, capTop * shot.lookFrac, 0f));
+            cam.fieldOfView = shot.fov;
             cam.nearClipPlane = 1f;
-            cam.farClipPlane = 200000f;
+            cam.farClipPlane = 300000f;
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = Color.Lerp(new Color(0.45f, 0.62f, 0.85f), new Color(0.6f, 0.62f, 0.65f), 1f - sunVis);
+            cam.backgroundColor = Color.Lerp(Color.Lerp(new Color(0.42f, 0.6f, 0.86f), new Color(0.6f, 0.62f, 0.65f), 1f - shot.sunVis), new Color(0.62f, 0.7f, 0.8f), shot.haze);
             cam.depthTextureMode = DepthTextureMode.Depth;
             var rt = new RenderTexture(W, H, 24, RenderTextureFormat.ARGB32);
             cam.targetTexture = rt;
@@ -291,13 +291,12 @@ public static class BDNukesBuild
             var img = new Texture2D(W, H, TextureFormat.RGB24, false);
             img.ReadPixels(new Rect(0, 0, W, H), 0, 0);
             img.Apply();
-            File.WriteAllBytes(file, img.EncodeToPNG());
             RenderTexture.active = null;
             cam.targetTexture = null;
             UnityEngine.Object.DestroyImmediate(rt);
-            UnityEngine.Object.DestroyImmediate(img);
             UnityEngine.Object.DestroyImmediate(mat);
             UnityEngine.Object.DestroyImmediate(gm);
+            return img;
         }
         finally
         {

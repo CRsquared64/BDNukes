@@ -8,6 +8,16 @@
   - Needs the shader bundle in `GameData/BDNukes/Shaders` (Windows / DirectX 11). Without it, the sprite cloud is used.
   - New settings: on/off and raymarch quality.
   - The shader source and the bundle build live in `unity/`, a Unity 2019.4.18f1 project.
+- **Everything in one volume:** the Wilson cloud (a brief, patchy veil), the condensation rings (soft bands), the stem collars (drooping bells of mist), the dust skirt (a turbulent mound) and the base surge (a rolling dust ring) are all part of the raymarched volume. Their sprites are hidden when it's on.
+- **Animation:**
+  - The billows are a fixed physical size and are carried by flow fields: the cap's poloidal roll and expansion, the stem's updraft and twist, and the outflow of the skirt and surge.
+  - Two crossfaded flow-map layers keep the cloud churning without zooming, smearing or pulsing.
+  - The fireball starts as a smooth, white-hot ball and becomes turbulent within a second or two. Tongues of flame burn through dark soot while it cools.
+- **Lighting:**
+  - The billows shade each other (cauliflower relief), with multiple-scattering light, sky light blocked by the cloud above and ground bounce.
+  - The cap, stem, dust and condensation each have their own colour.
+  - A hue-preserving tone curve keeps the hot core from clipping to flat white.
+- `unity/run-unity.ps1 RenderTests` renders contact sheets of a detonation's life, its motion, the fireball, the weather and a megaton. They are drawn through the same parameter code the plugin uses (`unity/Assets/Shared`).
 - **Terrain craters:** surface and low bursts on land dig a persistent crater (bowl, ragged rim, ejecta blanket) into the terrain, about 52 m x yield^0.294 in radius. Megaton airbursts press a wide, shallow depression in from up to about 2.2 fireball radii. Craters are bigger on low-gravity bodies, are saved with the game and come back on load or revert. The scorch mark drapes into the crater, and landed craft and colliders follow the new ground.
 - Only the terrain near a new crater is rebuilt (a few ms), and it works with Parallax. A full terrain rebuild is available as a setting, but it freezes the game for several seconds.
 - **Distance haze:** the cloud washes out toward the sky colour through the air between it and the camera. The amount depends on distance and altitude, and the haze colour follows the time of day.
