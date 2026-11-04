@@ -140,7 +140,10 @@ namespace BDNukes
         public bool volumetricClouds = true;       // raymarched cloud and fluid fireball (needs the shader bundle, Windows)
         public int volumetricSteps = 64;
         public bool fluidSim = true;
-        public bool velum = true;                  // the vast condensation veil over rising fireballs in humid air
+        public bool velum = true;
+        public bool precursorDust = true;
+        public bool groundFire = true;
+        public bool persistentClouds = true;       // clouds survive scene changes (switch vessel, reload) and carry on             // fire burning on the ground under a low burst          // the thermal precursor: a hot dust layer racing ahead of the shock                  // the vast condensation veil over rising fireballs in humid air
         public float shockDistortion = 1f;         // how strongly the shock front bends the light behind it (0 = off)
         public bool cloudShadows = true;           // the volumetric cloud casts its shadow on the ground
         public float cloudShadowStrength = 0.6f;
@@ -285,6 +288,9 @@ namespace BDNukes
             n.TryGetValue("volumetricSteps", ref volumetricSteps);
             n.TryGetValue("fluidSim", ref fluidSim);
             n.TryGetValue("velum", ref velum);
+            n.TryGetValue("precursorDust", ref precursorDust);
+            n.TryGetValue("groundFire", ref groundFire);
+            n.TryGetValue("persistentClouds", ref persistentClouds);
             n.TryGetValue("volumetricResolution", ref volumetricResolution);
             n.TryGetValue("cloudShadows", ref cloudShadows);
             n.TryGetValue("shockDistortion", ref shockDistortion);
@@ -433,6 +439,9 @@ namespace BDNukes
                 n.AddValue("volumetricSteps", volumetricSteps.ToString(CultureInfo.InvariantCulture));
                 n.AddValue("fluidSim", B(fluidSim));
                 n.AddValue("velum", B(velum));
+                n.AddValue("precursorDust", B(precursorDust));
+                n.AddValue("groundFire", B(groundFire));
+                n.AddValue("persistentClouds", B(persistentClouds));
                 n.AddValue("volumetricResolution", volumetricResolution.ToString(CultureInfo.InvariantCulture));
                 n.AddValue("cloudShadows", B(cloudShadows));
                 n.AddValue("shockDistortion", F(shockDistortion));

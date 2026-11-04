@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- **Baked mushroom simulation:** small and medium surface bursts (up to 150 kt) play a full Mantaflow bake of the whole cloud forming, not just the fireball: a hot thermal on the ground rolling up into a lumpy column and head, with ground fire and the afterwinds drawing dust up the stem. It plays through most of the climb, then hands over to the procedural cloud. Bake it with `blender -b --factory-startup --python unity/Sim/bake_fireball.py -- mushroom <out_dir>`.
+- **Persistent clouds:** every detonation is kept in the save with its universal time. Switch vessels, visit the space centre or reload, and the cloud is rebuilt at the age it has reached on that body. Only the visuals come back: the blast, crater and sound are not replayed. New setting `persistentClouds`.
+- **Ground fire:** under a low burst over land, the ground burns for the first tens of seconds, with flame tongues licking up into the stem's foot. New setting `groundFire`.
+- **Thermal precursor:** a hot, churning dust layer boils off the ground and races just ahead of the shock along the surface. New setting `precursorDust`.
+- **Fallout plume:** for tens of kilotons and up, dust falls out of the cap's underside and drifts downwind in long, soft rain-out streaks.
+- **Shock flash through EVE clouds:** while the shock crosses a cloud deck, a bright condensation ring races across it ahead of the clearing.
+- **Water bursts:** over the sea the skirt, surge and column are white spray and condensation, not dust.
 - **Velum:** in humid air a vast, translucent umbrella of condensation spreads over the rising fireball, like the great white veil in film of the biggest tests.
   - It is two to three and a half cap widths across, wider for big yields, and curves down at its fraying rim.
   - Its underside catches the fire's light. It is stronger under an EVE overcast.
@@ -53,6 +60,8 @@
 - New settings for craters (on/off, size scale, rebuild mode, fill in all craters) and for haze and weather.
 
 ### Fixed
+- **The velum** no longer spreads into a solid, glowing slab with a hard edge over big yields. It is capped at 14 km, much fainter, torn into patches with sky through the gaps, and its underside glow is toned down.
+- **The stem was clipped to a smooth tube:** an early-out radius cut its billows off. It now leaves room for them.
 - **A Tsar Bomba could still throw the camera's craft into space**, at 37,000 km/s: near a huge yield BDArmory's impulse grows without bound, and scaling it down wasn't enough. The speed one nuclear hit can give any part is now capped (`nukeMaxDeltaV`, default 120 m/s, still a violent tumble), and non-finite forces are dropped. Damage is unchanged.
 - **Crash with other visual mods:** the volumetric cloud, its shadow and the shockwave were ordinary scene renderers, so other mods' cameras drew them too. When a depth or shadow-map camera reached the shockwave's GrabPass, Unity logged "Invalid surface for grabbing pixels" and could crash with an access violation. All three are now drawn only by the flight cameras' command buffer, and the shockwave reads an explicit copy of the frame instead of a GrabPass.
 - The volumetric cloud showed through terrain in front of it where the terrain shader writes no depth (Parallax). Rays now also stop at the ground's sphere at ground zero.
@@ -60,6 +69,9 @@
 - Blasts never cleared EVE clouds: EVE's `GetEquirectangularUV` is a private static method, and the lookup only searched instance methods. The log now names any EVE member that can't be found.
 
 ### Changed
+- **Davy Crockett and other sub-kiloton bursts** rise as a tall, lumpy column of billows nearly as wide as their head, not a mushroom on a thin stalk.
+- **The stem** boils with cauliflower lumps sized to the stem itself, so a thin stem is as lumpy as a thick one. Its foot is churned-up dirt rolling in and up.
+- **The dust skirt** is a heap of rolling dust billows, not a smooth mound.
 - **Nuclear blasts push craft much less** (new `nukeImpulseScale`, default 0.15): BDArmory's blast impulse from nukes alone is scaled, and its global explosion-impulse setting is restored straight after each nuclear hit. Unscaled, a nuke could throw a light craft at near-orbital speed, taking the camera with it. Damage is unchanged.
 - **Mushroom shape and fire:**
   - The cap is a rugged rolling torus, wider than it is tall, with smoke lobes curling down its outer edge. Dusty clouds are dark grey-brown smoke rather than pale cotton.

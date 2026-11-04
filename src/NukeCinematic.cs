@@ -147,6 +147,30 @@ namespace BDNukes
 
         const int ShellFilaments = 64;
 
+        NukeRecord record;      // this detonation in the save (null if persistence is off)
+        bool restored;          // rebuilt after a scene change: visuals only, no blast, crater or sound
+
+        /// <summary>Rebuilds a recorded detonation at the age it has reached (after a scene change or a reload).</summary>
+        public static void Restore(CelestialBody body, NukeRecord r)
+        {
+            NukeAssets.Init();
+            var go = new GameObject("BDNukes_Detonation");
+            try
+            {
+                var cin = go.AddComponent<NukeCinematic>();
+                cin.record = r;
+                cin.restored = true;
+                r.live = cin;
+                Vector3 pos = body.GetWorldSurfacePosition(r.lat, r.lon, r.alt);
+                cin.Setup(body, pos, Mathf.Max(r.W, 0.001f), 0f, r.profile, NukeFXManager.LODScale());
+            }
+            catch
+            {
+                Destroy(go);
+                throw;
+            }
+        }
+
         public static void Spawn(Vector3 worldPos, float yield, float delay, NukeCloudProfile profile = null)
         {
             var body = FlightGlobals.currentMainBody;
@@ -182,6 +206,15 @@ namespace BDNukes
             lat = body.GetLatitude(pos);
             lon = body.GetLongitude(pos);
             alt = body.GetAltitude(pos);
+            if (restored)
+            {
+                lat = record.lat; lon = record.lon; alt = record.alt;
+                // pick up where it was: Time.time-based ages continue from the universal time since detonation
+                double age = NukePersistence.Now - record.ut;
+                if (age >= 0d) spawnTime = Time.time - (float)age;
+                else delay = (float)-age;
+                soundPlayed = nearShakeDone = true;
+            }
             double terrain = body.pqsController != null ? body.TerrainAltitude(lat, lon) : 0d;
             overOcean = body.ocean && terrain < 0d;
             double groundAlt = overOcean ? 0d : terrain;
@@ -266,28 +299,36 @@ namespace BDNukes
             if (vacFx || hiFx) SetupField(pos);
             life = Mathf.Max(Mathf.Max(airFx ? lifeAir : 0f, vacFx ? lifeVac : 0f), Mathf.Max(hiFx ? Mathf.Max(lifeHi, auroraFootL != null ? lifeVac : 0f) : 0f, waterFx ? lifeWater : 0f));
 
-            int windSeed = Random.Range(0, 100000);
+            int windSeed = restored ? record.windSeed : Random.Range(0, 100000);
             // every mushroom is a little different: somewhere between a wide rolling cap and a tight bulbous head,
             // small yields leaning bulbous
-            shapeBulb = Mathf.Clamp01(Mathf.Pow(Random.value, 0.9f) * 0.85f + 0.35f * prof.lowYield + 0.15f * (1f - SS(1f, 3f, Mathf.Log10(Mathf.Max(W, 0.01f)))));
+            shapeBulb = restored ? record.bulb : Mathf.Clamp01(Mathf.Pow(Random.value, 0.9f) * 0.85f + 0.35f * prof.lowYield + 0.15f * (1f - SS(1f, 3f, Mathf.Log10(Mathf.Max(W, 0.01f)))));
             // windShear is the wind at a big cloud's cap (~6 km+); a small cloud tops out in the slower air lower down
             float capTopAGL = hb + riseDelta;
             float shear = Mathf.Lerp(1f, s.windShear, SS(300f, 6000f, capTopAGL));
-            wind = new NukeWind(NukeFXManager.Instance.WindHeading, s.windSpeed, shear, windSeed,
+            float windHeading = restored ? record.windHeading : NukeFXManager.Instance.WindHeading;
+            wind = new NukeWind(windHeading, s.windSpeed, shear, windSeed,
                 Mathf.Max(life, NukeFallout.Lifetime(s, W) + 60f));
             // the rising fireball's own updraft holds it against the wind at first: it only picks up the wind's
             // speed over about half its rise
             windLag = 0.45f * riseTime;
             PlanAftermath();
             Build();
-            PlanCrater();
+            if (!restored) PlanCrater();
             // the blast blows a hole in EVE's cloud decks within reach of the shock
-            if (airFx && body.atmosphere)
+            if (airFx && body.atmosphere && !restored)
                 NukeCloudClearing.Blast(body, pos, alt, 4f * Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale),
                     c, 300f * yieldTimeScale);
             SpawnAftermath();
             NukeFXManager.Instance.Register(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
+            if (!restored && s.persistentClouds)
+                record = NukePersistence.Add(new NukeRecord
+                {
+                    body = body.bodyName, lat = lat, lon = lon, alt = alt,
+                    ut = NukePersistence.Now + delay, endUT = NukePersistence.Now + delay + life,
+                    W = W, bulb = shapeBulb, windHeading = windHeading, windSeed = windSeed, profile = request, live = this,
+                });
         }
 
         /// <summary>
@@ -875,7 +916,9 @@ namespace BDNukes
             vs.capCenter = capPosL;
             vs.capScale = Mathf.Max(1f, capScale * Mathf.Lerp(Mathf.Max(0.05f, grow), 1f, m));
             // a rolling torus wider than it is tall, its outer edge curling down into hanging lobes
-            NukeVolumeShapes.Cap(m, pkT, 0.64f * capYS, shapeBulb, out vs.ringR, out vs.tube, out vs.dome, out vs.squash);
+            float column = NukeVolumeShapes.Column(W, prof.lowYield);
+            NukeVolumeShapes.Cap(m, pkT, 0.64f * capYS, Mathf.Max(shapeBulb, column), out vs.ringR, out vs.tube, out vs.dome, out vs.squash);
+            vs.squash *= Mathf.Lerp(1f, 1.35f, column * m);
             vs.xzSpread = Mathf.Lerp(1f, Mathf.Min(capXZS, 1.7f), m);
             vs.overhang = Mathf.Max(prof.overhang, 0.45f) * m * (1f - 0.6f * pkT);
             vs.capDensity = FadeOut;
@@ -911,9 +954,11 @@ namespace BDNukes
                 vs.stemTop = new Vector3(0f, groundY + yTop, 0f) + Lean(1f);
                 // the low stem stands nearly upright in the weak low wind and bends over higher up
                 vs.stemMid = new Vector3(Mathf.Lerp(vs.stemBase.x, vs.stemTop.x, 0.1f), groundY + 0.5f * yTop, Mathf.Lerp(vs.stemBase.z, vs.stemTop.z, 0.1f));
-                vs.stemBaseR = StemRadius(0.35f) * Mathf.Lerp(1f, 0.72f, shapeBulb);
-                vs.stemTopR = StemRadius(0.95f) * Mathf.Lerp(1f, 0.72f, shapeBulb);
-                vs.stemFlare = 1.2f * prof.stemTaper;
+                float columnS = column;
+                float colW = Mathf.Lerp(1f, 0.72f, Mathf.Max(shapeBulb, columnS)) * Mathf.Lerp(1f, 3.4f, columnS);
+                vs.stemBaseR = StemRadius(0.35f) * colW * Mathf.Lerp(1f, 0.75f, columnS);
+                vs.stemTopR = StemRadius(0.95f) * colW;
+                vs.stemFlare = 1.2f * prof.stemTaper * Mathf.Lerp(1f, 0.5f, columnS);
                 vs.stemDustTop = groundY + dustFront;
                 vs.stemTrailBottom = groundY + yTop - trailLen;
                 vs.stemDensity = 0.9f * FadeOut * SS(start, start + 2f, t) * (fromGround ? 1f : 0.7f);
@@ -944,6 +989,29 @@ namespace BDNukes
                 vs.surgeH = 0.5f * R * (1f + 0.04f * Mathf.Max(0f, t - hb / c));
                 vs.surgeWidth = 0.8f * R + 0.04f * vs.surgeR;
                 vs.surgeDensity = 0.14f * groundFactor * SS(tg + 0.3f, tg + 1f, t) * (1f - SS(surgeEnd, surgeEnd + 25f, t)) * FadeOut;
+            }
+
+            // ---- thermal precursor and fallout plume ----
+            vs.precursorDensity = 0f;
+            if (groundFx && !overOcean && s.precursorDust)
+            {
+                float rs0 = ShockRadius(t);
+                float rg0 = Mathf.Sqrt(Mathf.Max(0f, rs0 * rs0 - hb * hb));
+                NukeVolumeGround.Precursor(R, t, rg0, groundFactor * (1f - SS(0.3f * R, 1.2f * R, hb)), out vs.precursorR, out vs.precursorH, out vs.precursorDensity, out vs.precursorWidth);
+                vs.precursorDensity *= FadeOut;
+            }
+            vs.groundFire = 0f;
+            if (groundFx && !overOcean && s.groundFire)
+            {
+                NukeVolumeGround.GroundFire(R, t, tauG, groundFactor * (1f - SS(0.2f * R, 0.9f * R, hb)), out vs.groundFire, out vs.groundFireR, out vs.groundFireH, out vs.groundFireTemp);
+                vs.groundFire *= FadeOut * flashK;
+            }
+            vs.plumeDensity = 0f;
+            if (falloutK > 0f && s.falloutCloud && body.atmosphere)
+            {
+                NukeVolumeGround.Plume(t, riseTime, Mathf.Clamp01(falloutK * 1.4f) * NukeVolumeShapes.PlumeYield(W), capPosL, vs.capScale, groundY, wind.Dir(t), wind.lowSpeed,
+                    out vs.plumeLow, out vs.plumeMid, out vs.plumeTop, out vs.plumeLowR, out vs.plumeTopR, out vs.plumeDensity);
+                vs.plumeDensity *= FadeOut;
             }
 
             // ---- Wilson cloud: a brief, patchy veil behind the shock in humid air ----
@@ -1036,6 +1104,12 @@ namespace BDNukes
             vs.capAlbedo = CapColor(0f) * 0.8f * Mathf.Lerp(1f, 0.6f, prof.dustiness * groundFactor);
             vs.stemAlbedo = Color.Lerp(stemLow, stemHigh, 0.4f) * 0.85f;
             vs.dustAlbedo = Color.Lerp(skirtDark, skirtLight, 0.55f) * 0.95f;
+            if (overOcean)
+            {
+                // over the sea the skirt, surge and column are spray and condensation: white, not dust
+                vs.dustAlbedo = new Color(0.86f, 0.88f, 0.91f);
+                vs.stemAlbedo = Color.Lerp(vs.stemAlbedo, new Color(0.82f, 0.84f, 0.88f), 0.7f);
+            }
             vs.condAlbedo = CondWhite;
             vs.hazeCol = hazeCol;
             vs.haze = haze;
@@ -1045,8 +1119,15 @@ namespace BDNukes
                 // a ground burst sits on the ground; an air burst is a free ball (it only meets the ground as dust later)
                 bool onGround = groundFx && hb < 0.5f * R;
                 var sim = onGround || NukeVolumetric.SimAir == null ? NukeVolumetric.SimGround : NukeVolumetric.SimAir;
-                float floorY = sim == NukeVolumetric.SimGround ? groundY : 0f;
-                NukeSimPlayer.Fill(sim, ref vs, t, Mathf.Max(6f, 2.5f * tauG), floorY, capPosL,
+                float simDur = Mathf.Max(6f, 2.5f * tauG);
+                // small and medium surface bursts: the whole baked mushroom, played through most of the climb
+                if (onGround && !overOcean && NukeVolumetric.SimMushroom != null && W <= NukeSimPlayer.MushroomMaxYield)
+                {
+                    sim = NukeVolumetric.SimMushroom;
+                    simDur = NukeSimPlayer.MushroomDuration(riseTime);
+                }
+                float floorY = sim == NukeVolumetric.SimAir ? 0f : groundY;
+                NukeSimPlayer.Fill(sim, ref vs, t, simDur, floorY, capPosL,
                     capPosL.y + Mathf.Max(vs.dome, vs.tube * vs.squash) * vs.capScale - floorY, vs.capScale * (vs.ringR + vs.tube) * vs.xzSpread,
                     FadeOut, 3f * flashK);
                 vs.fire *= 1f - vs.simMix;

@@ -168,7 +168,7 @@ Shader "BDNukes/VolumetricCloud"
                         float fd2 = dot(fv, fv) / max(_Glow.a * _Glow.a, 1.0);
                         lit += alb * _Glow.rgb / (1.0 + 3.0 * fd2);
                         // the vapour above catches the fire's light from far further: the glowing underside of the veil
-                        lit += alb * _Glow.rgb * sm.cond * 1.6 / (1.0 + 0.12 * fd2);
+                        lit += alb * _Glow.rgb * sm.cond * 0.7 / (1.0 + 0.35 * fd2);
 
                         // the burning ring: a band of fire inside the cap's vortex core that outlives the fireball,
                         // glimpsed through gaps in the smoke and lighting the cap from inside
@@ -195,6 +195,16 @@ Shader "BDNukes/VolumetricCloud"
                             float lum = dot(fc, float3(0.3, 0.59, 0.11));
                             fc = lerp(float3(lum, lum, lum), fc, 1.25);       // a touch more saturation
                             lit += max(fc, 0.0) * _Sim.z;
+                        }
+
+                        // the ground fire: flame tongues over the scorched ground, dark smoke between them
+                        if (sm.groundHeat > 0.002)
+                        {
+                            float gh = sm.groundHeat;
+                            lit = lerp(lit, lit * 0.3, saturate(gh * 2.0));
+                            float3 fc = Blackbody(gh);
+                            float lum = dot(fc, float3(0.3, 0.59, 0.11));
+                            lit += max(lerp(float3(lum, lum, lum), fc, 1.3), 0.0) * _GroundFire.x;
                         }
 
                         // incandescence

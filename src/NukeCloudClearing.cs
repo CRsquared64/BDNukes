@@ -184,7 +184,8 @@ namespace BDNukes
                     float grow = 1f - (1f - k) * (1f - k);   // fast at first, easing as the shock weakens
                     float clear = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((age - h.hold) / h.heal));
                     holeArr[n] = new Vector4(h.uv.x, h.uv.y, Mathf.Max(1e-6f, h.radiusUV * grow), clear);
-                    ringArr[n] = new Vector4(0.45f * (1f - 0.6f * k) + 0.15f, h.seed, 0f, 0f);
+                    // z: the condensation flash at the shock front, strong while the front is still crossing the deck
+                    ringArr[n] = new Vector4(0.45f * (1f - 0.6f * k) + 0.15f, h.seed, 1.2f * (1f - k) * Mathf.Clamp01(age / 0.3f), 0f);
                     n++;
                 }
                 for (int i = n; i < MaxHoles; i++) { holeArr[i] = Vector4.zero; ringArr[i] = Vector4.zero; }

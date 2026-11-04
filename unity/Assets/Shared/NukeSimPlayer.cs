@@ -41,6 +41,16 @@ namespace BDNukes
         /// </summary>
         /// <param name="floorY">local height of the bake's origin: the ground for a ground burst, the burst point for an air burst</param>
         /// <param name="capTopAboveFloor">how high above floorY the procedural cap's top is right now</param>
+        /// <summary>
+        /// Surface bursts up to this yield (kt) play the full mushroom bake (fireball, ground fire, the column rolling up
+        /// into its head) through the cloud's rise; bigger ones spread into a wide pancake the bake can't fit, and play
+        /// only the fireball stage.
+        /// </summary>
+        public const float MushroomMaxYield = 150f;
+
+        /// <summary>How long (s) the mushroom bake plays: most of the climb.</summary>
+        public static float MushroomDuration(float riseTime) => Mathf.Max(12f, 0.5f * riseTime);
+
         public static void Fill(NukeSimData d, ref NukeVolumeState v, float t, float simDuration, float floorY,
             Vector3 capCenter, float capTopAboveFloor, float capRadius, float fade, float fire)
         {

@@ -42,6 +42,10 @@ Shader "BDNukes/CoverageHole"
                     keep *= 1.0 - h.w * (1.0 - smoothstep(0.55, 1.0, r));
                     float e = (r - 1.08) / 0.16;
                     push += _HoleRing[k].x * h.w * exp(-e * e);
+                    // while the shock is still racing through the deck, the air at its front condenses: a bright,
+                    // dense ring flashing across the clouds
+                    float fe = (r - 1.0) / 0.06;
+                    push += _HoleRing[k].z * exp(-fe * fe);
                 }
                 return saturate(c * keep + c * push);
             }

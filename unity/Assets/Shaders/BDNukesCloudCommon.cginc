@@ -37,7 +37,12 @@ float4 _Age;         // x dissipation 0..1 (thinning, fraying), y unused
 float4 _Ember;       // x glow of the burning ring inside the cap's vortex, y its temperature, z core width (x tube)
 float4 _Planet;      // xyz planet centre (local), w radius below which nothing is drawn (the planet hides it)
 float4 _Pileus;
-float4 _Velum;       // x radius (m), y thickness at the centre (m), z density, w height of its centre above the cap centre (m)      // x height above the cap surface (m), y thickness (m), z density, w unused
+float4 _Velum;
+float4 _Precursor;
+float4 _GroundFire;  // fire burning on the ground under the fireball: x brightness, y radius (m), z flame height (m), w temperature   // thermal precursor: x radius (m), y height (m), z density, w ring width (m)
+float4 _PlumeA;      // fallout plume, far (lower, downwind) end: xyz, w radius
+float4 _PlumeM;      // plume bend control point: xyz, w density
+float4 _PlumeB;      // plume top under the cap: xyz, w radius       // x radius (m), y thickness at the centre (m), z density, w height of its centre above the cap centre (m)      // x height above the cap surface (m), y thickness (m), z density, w unused
 
 // --- appearance ---
 float4 _Density;     // x cap density, y extinction per m at density 1, z erosion, w noise scale (1/m)
@@ -96,6 +101,25 @@ float BentStem(float3 p, out float u, out float3 axis)
     float r = lerp(_StemBase.w, _StemTop.w, u);
     float radial = length(p.xz - axis.xz) - r;
     // rounded ends below the base and above the top
+    float over = uu < 0.0 ? -uu * h : (uu > 1.0 ? (uu - 1.0) * h : 0.0);
+    return over > 0.0 ? length(float2(max(radial, 0.0), over)) : radial;
+}
+
+float2 rdir0(float3 r)
+{
+    float l = length(r.xz);
+    return l > 1e-3 ? r.xz / l : float2(1.0, 0.0);
+}
+
+// a tube along a quadratic Bezier a -> m -> b parametrised by height (a below b): the fallout plume
+float BentTube(float3 p, float3 a, float3 m, float3 b, float ra, float rb, out float u)
+{
+    float h = max(b.y - a.y, 1.0);
+    float uu = (p.y - a.y) / h;
+    u = saturate(uu);
+    float w = 1.0 - u;
+    float3 axis = w * w * a + 2.0 * w * u * m + u * u * b;
+    float radial = length(p.xz - axis.xz) - lerp(ra, rb, u);
     float over = uu < 0.0 ? -uu * h : (uu > 1.0 ? (uu - 1.0) * h : 0.0);
     return over > 0.0 ? length(float2(max(radial, 0.0), over)) : radial;
 }
@@ -188,6 +212,7 @@ struct Sample
     float capY;      // height relative to the cap centre, in cap scales (negative = underside)
     float simHeat;   // baked fireball heat at this point (0 outside the sim)
     float cond;      // fraction of the density that is condensation (white vapour)
+    float groundHeat; // ground fire temperature at this point (0 = none)
 };
 
 // lobeMode: 0 = sample the lobe noise, 1 = most inflated (a cheap bound), 2 = average (cheap occluder)
@@ -259,7 +284,7 @@ Sample Cloud(float3 p, bool detail)
 {
     Sample s;
     s.density = 0.0; s.albedo = _CapAlbedo.rgb; s.cap = 0.0; s.core = 1.0; s.fireN = 0.5; s.hf = 0.0;
-    s.skip = 0.0; s.capY = 0.0; s.simHeat = 0.0; s.cond = 0.0;
+    s.skip = 0.0; s.capY = 0.0; s.simHeat = 0.0; s.cond = 0.0; s.groundHeat = 0.0;
     float ns = _Density.w;
     float per = _Anim.w;
 
@@ -344,6 +369,7 @@ Sample Cloud(float3 p, bool detail)
 
     // ---- stem: updraft with a slow twist, billows stretched along it ----
     float stemDen = 0.0;
+    float footDust = 0.0;
     if (_StemVis.z > 0.001)
     {
         float u;
@@ -351,7 +377,7 @@ Sample Cloud(float3 p, bool detail)
         float d0 = BentStem(p, u, axis);
         float flare = 1.0 + _StemVis.w * pow(1.0 - u, 6.0);
         float localR = lerp(_StemBase.w, _StemTop.w, u) * flare;
-        float stemOut = d0 - (flare - 1.0) * _StemBase.w - 0.45 * localR;
+        float stemOut = d0 - (flare - 1.0) * _StemBase.w - 1.15 * localR;   // room for the lumps
         skip = min(skip, stemOut * 0.6);
         if (stemOut < 0.0)
         {
@@ -362,11 +388,26 @@ Sample Cloud(float3 p, bool detail)
             float3 sv = float3(0.0, 0.35 * _Anim.z, 0.0) + float3(_Wind.x, 0.0, _Wind.z) * (0.3 * lerp(_WindFlow.x, _WindFlow.y, u));
             float n = FlowNoise(sq, sv, ns * 1.4, per, float3(0.43, 0.61, 0.07), 0);
             n = smoothstep(0.38, 0.8, n);
-            float sdf = d0 - (flare - 1.0) * _StemBase.w + (0.5 - n) * 1.35 * localR;
+            // big cauliflower lumps boiling up the column, not a smooth tube
+            float lump = smoothstep(0.3, 0.85, FlowNoise(sq * float3(1.0, 2.6, 1.0), sv * 0.8, max(ns * 0.75, 0.55 / max(localR, 1.0)), per * 1.2, float3(0.66, 0.29, 0.14), 0));
+            n = 0.45 * n + 0.55 * lump;
+            // the foot: debris churned up and drawn in by the afterwinds, big lumpy billows rolling in and up
+            // rather than a smooth cone
+            float foot = 1.0 - smoothstep(0.0, 0.3, u);
+            if (foot > 0.01)
+            {
+                float3 fv = float3(-rdir0(r).x, 0.6, -rdir0(r).y) * _Skirt.w + float3(0.0, 0.4 * _Anim.z, 0.0);
+                float fb = smoothstep(0.3, 0.85, FlowNoise(r + float3(0.0, p.y - _GroundY.x, 0.0), fv, max(ns * 0.9, 0.45 / max(localR, 1.0)), per, float3(0.12, 0.77, 0.41), 0));
+                n = lerp(n, fb, foot * 0.75);
+            }
+            float sdf = d0 - (flare - 1.0) * _StemBase.w + (0.5 - n) * lerp(1.7, 2.2, foot) * localR;
             float soft = 0.3 * localR;
             float mask = max(smoothstep(_StemVis.x, _StemVis.x - soft * 2.0, p.y),
                              smoothstep(_StemVis.y, _StemVis.y + soft * 2.0, p.y));
             stemDen = saturate(-sdf / max(soft, 1.0)) * _StemVis.z * mask * (1.0 - 0.85 * _Age.x);
+            // the churned-up foot is dirt: dust-coloured, the clean pale stem only higher up
+            footDust = stemDen * foot;
+            stemDen *= 1.0 - foot;
         }
     }
 
@@ -386,11 +427,14 @@ Sample Cloud(float3 p, bool detail)
     {
         float3 vel = float3(rdir.x, 0.25, rdir.y) * _Skirt.w + float3(_Wind.x, 0.0, _Wind.z) * (0.6 * _WindFlow.x);
         float n = smoothstep(0.35, 0.8, FlowNoise(sp, vel, ns * 1.3, per, float3(0.2, 0.9, 0.5), 0));
+        // big rolling billows on top of the fine ones: the skirt is a heap of churning dust clouds, not a smooth mound
+        float nb = smoothstep(0.3, 0.85, FlowNoise(sp, vel * 0.7, ns * 0.6, per * 1.3, float3(0.57, 0.23, 0.81), 0));
+        n = 0.45 * n + 0.55 * nb;
         float rr = rxz / max(_SkirtCenter.w, 1.0);
-        // a dome-topped mound: tallest around the stem's foot, sloping out to the rim
-        float top = _Skirt.x * lerp(1.0, 0.35, rr * rr);
-        float sd = max(rr - 1.0, (sp.y - top) / max(_Skirt.x, 1.0)) + (0.5 - n) * 1.25;
-        dustDen = saturate(-sd / 0.18) * _Skirt.y;
+        // a low, lumpy heap: tallest around the stem's foot, sloping out to the rim
+        float top = _Skirt.x * lerp(0.85, 0.3, rr) * lerp(0.6, 1.3, nb);
+        float sd = max(rr - 1.0, (sp.y - top) / max(_Skirt.x, 1.0)) + (0.5 - n) * 1.6;
+        dustDen = saturate(-sd / 0.3) * _Skirt.y * lerp(0.6, 1.0, nb);
     }
     if (_Surge.z > 0.001)
     {
@@ -401,6 +445,63 @@ Sample Cloud(float3 p, bool detail)
         float n = smoothstep(0.35, 0.8, FlowNoise(gp, vel, ns * 2.0, per * 0.8, float3(0.8, 0.4, 0.1), 0));
         float tor = length(float2((gr - _Surge.x) / max(_Surge.w, 1.0), gp.y / max(_Surge.y, 1.0))) - 1.0 + (0.5 - n) * 1.2;
         dustDen = max(dustDen, saturate(-tor / 0.2) * _Surge.z);
+    }
+    dustDen = max(dustDen, footDust);
+    // ground fire: the scorched ground under the fireball burns for the first seconds, flame tongues licking
+    // up and drawn in toward the stem's foot
+    if (_GroundFire.x > 0.001)
+    {
+        float3 gp = p - float3(_SkirtCenter.x, _GroundY.x, _SkirtCenter.z);
+        float gr = length(gp.xz) / max(_GroundFire.y, 1.0);
+        float gh = gp.y / max(_GroundFire.z, 1.0);
+        float3 gb = abs(gp - float3(0.0, 0.75 * _GroundFire.z, 0.0)) - float3(1.3 * _GroundFire.y, 0.8 * _GroundFire.z, 1.3 * _GroundFire.y);
+        skip = min(skip, length(max(gb, 0.0)));
+        if (gr < 1.3 && gh < 1.6 && gh > -0.05)
+        {
+            float2 gd = gr > 1e-3 ? gp.xz / (gr * max(_GroundFire.y, 1.0)) : float2(1.0, 0.0);
+            float3 fv = float3(-gd.x * 0.3, 1.0, -gd.y * 0.3) * (0.8 * _GroundFire.z);
+            float fsc = 3.0 / max(_GroundFire.z, 1.0);
+            float fn = FlowNoise(gp, fv, fsc, per * 0.35, float3(0.91, 0.37, 0.58), 0);
+            float tongue = smoothstep(0.35, 0.85, fn);
+            float edge = 1.0 - smoothstep(0.55 + 0.35 * fn, 1.25, gr);
+            float flame = tongue * edge * (1.0 - saturate(gh / (0.35 + 1.1 * tongue)));
+            if (flame > 0.0)
+            {
+                s.groundHeat = saturate(flame * 1.3) * _GroundFire.w;
+                dustDen = max(dustDen, flame * 0.45);
+            }
+        }
+    }
+    // thermal precursor: the flash heats the ground so fast that a hot, dusty layer boils up and races out ahead of
+    // the main shock along the surface, a low churning ring
+    if (_Precursor.z > 0.001)
+    {
+        float3 gp = p - float3(_SkirtCenter.x, _GroundY.x, _SkirtCenter.z);
+        float gr = length(gp.xz);
+        float2 gdir = gr > 1e-3 ? gp.xz / gr : float2(1.0, 0.0);
+        float n = smoothstep(0.3, 0.8, FlowNoise(gp, float3(gdir.x, 0.3, gdir.y) * 60.0, ns * 3.0, per * 0.5, float3(0.15, 0.55, 0.85), 0));
+        float ring = 1.0 - saturate(abs(gr - _Precursor.x) / max(_Precursor.w, 1.0));
+        float layer = 1.0 - saturate(gp.y / max(_Precursor.y * (0.5 + n), 1.0));
+        dustDen = max(dustDen, ring * ring * layer * step(_GroundY.x, p.y) * _Precursor.z * n);
+    }
+
+    // ---- fallout plume: dust falling out of the cap, drifting downwind in long rain-out streaks ----
+    if (_PlumeM.w > 0.001)
+    {
+        float pu;
+        float pd = BentTube(p, _PlumeA.xyz, _PlumeM.xyz, _PlumeB.xyz, _PlumeA.w, _PlumeB.w, pu);
+        float pr = lerp(_PlumeA.w, _PlumeB.w, pu);
+        if (pd < 0.5 * pr)
+        {
+            // streaks: noise stretched vertically and falling
+            float3 sq = float3(p.x, p.y * 0.22, p.z);
+            float n = smoothstep(0.3, 0.85, FlowNoise(sq, float3(0.0, -6.0, 0.0), ns * 1.6, per, float3(0.62, 0.09, 0.37), 0));
+            float soft = 0.9 * pr;
+            float pden = saturate(-(pd + (0.5 - n) * 1.2 * pr) / max(soft, 1.0)) * _PlumeM.w * n;
+            // densest just under the cap, thinning toward the ground and fading into it
+            pden *= lerp(0.25, 1.0, pu) * smoothstep(0.0, 0.15, pu);
+            stemDen = max(stemDen, pden);
+        }
     }
 
     // ---- condensation (wispy, white) ----
@@ -434,8 +535,10 @@ Sample Cloud(float3 p, bool detail)
                 float vy = (vq.y + droop) / (max(_Velum.y, 1.0) * lens);
                 // a slow, smooth flow: big soft billows rolling outward, no grain
                 float vn = FlowNoise(vq, float3(vq.x, 0.0, vq.z) * 0.02, ns * 0.9, per * 1.6, float3(0.33, 0.66, 0.11), 0);
-                float rim = 1.0 - smoothstep(0.7 + 0.25 * vn, 1.1, vr);
-                condDen = max(condDen, exp(-vy * vy * 2.5) * rim * _Velum.z * lerp(0.55, 1.0, vn));
+                // torn into sheets and patches, with blue sky through the gaps, fraying to wisps at the rim
+                float tear = smoothstep(0.35, 0.7, 0.6 * vn + 0.4 * wisp);
+                float rim = 1.0 - smoothstep(0.45 + 0.35 * vn, 1.05, vr);
+                condDen = max(condDen, exp(-vy * vy * 2.5) * rim * tear * _Velum.z);
             }
         }
     }

@@ -190,7 +190,7 @@ public static class BDNukesBuild
         public float humidity;   // 0 = use the default (0.7)
     }
 
-    static NukeSimData simGround, simAir;
+    static NukeSimData simGround, simAir, simMushroom;
 
     static NukeSimData LoadSim(string variant)
     {
@@ -209,6 +209,7 @@ public static class BDNukesBuild
         AssetDatabase.Refresh();
         simGround = LoadSim("ground");
         simAir = LoadSim("air");
+        simMushroom = LoadSim("mushroom");
         Debug.Log("[BDNukesBuild] fireball sim: " + (simGround != null ? simGround.frames.Length + " frames" : "none"));
         var noise = EnsureNoise();
         var shader = LoadShader();
@@ -327,8 +328,14 @@ public static class BDNukesBuild
             v.planetCenter = new Vector3(0f, (shot.air ? -2000f : 0f) - 600000f, 0f);
             v.planetRadius = 600000f - 8f;
             var simUse = shot.air && simAir != null ? simAir : simGround;
+            float simDur = Mathf.Max(6f, 2.5f * tauG);
+            if (!shot.air && simMushroom != null && shot.W <= NukeSimPlayer.MushroomMaxYield)
+            {
+                simUse = simMushroom;
+                simDur = NukeSimPlayer.MushroomDuration(90f);
+            }
             float floorY = shot.air ? 0f : v.groundY;
-            NukeSimPlayer.Fill(simUse, ref v, shot.t, Mathf.Max(6f, 2.5f * tauG), floorY, v.capCenter,
+            NukeSimPlayer.Fill(simUse, ref v, shot.t, simDur, floorY, v.capCenter,
                 v.capCenter.y + Mathf.Max(v.dome, v.tube * v.squash) * v.capScale - floorY, v.capScale * (v.ringR + v.tube) * v.xzSpread, 1f, 3f);
             v.fire *= 1f - v.simMix;
             v.ember *= 1f - 0.7f * v.simMix;

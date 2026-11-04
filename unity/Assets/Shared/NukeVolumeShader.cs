@@ -48,6 +48,10 @@ namespace BDNukes
         public float wilsonR, wilsonThick, wilsonDensity; public bool wilsonHemisphere;
         public float pileusOffset, pileusThick, pileusDensity;   // ice-cap veil over the rising cap
         public float velumRadius, velumThick, velumDensity, velumHeight;   // the vast condensation veil (humid air)
+        public float precursorR, precursorH, precursorDensity, precursorWidth;   // thermal precursor dust ring
+        public float groundFire, groundFireR, groundFireH, groundFireTemp;      // fire burning on the ground
+        public Vector3 plumeLow, plumeMid, plumeTop;   // fallout plume (low downwind end, bend, top under the cap)
+        public float plumeLowR, plumeTopR, plumeDensity;
         public Vector4 ring0, ring1, ring2;   // y, radius, tube, density
         public Vector3 ringOffset;
         public Vector4 collar0, collar1, collar2, collar3, collar4;          // xyz centre, w density
@@ -109,6 +113,27 @@ namespace BDNukes
                     min = Vector3.Min(min, v.ringOffset + new Vector3(-r, rg.x - rg.z * 2f, -r));
                     max = Vector3.Max(max, v.ringOffset + new Vector3(r, rg.x + rg.z * 2f, r));
                 }
+            if (v.precursorDensity > 0.001f)
+            {
+                float r = v.precursorR + v.precursorWidth;
+                min = Vector3.Min(min, v.skirtCenter + new Vector3(-r, 0f, -r));
+                max = Vector3.Max(max, v.skirtCenter + new Vector3(r, v.precursorH * 2f, r));
+            }
+            if (v.groundFire > 0.001f)
+            {
+                float r = v.groundFireR * 1.3f;
+                min = Vector3.Min(min, v.skirtCenter + new Vector3(-r, 0f, -r));
+                max = Vector3.Max(max, v.skirtCenter + new Vector3(r, v.groundFireH * 1.6f, r));
+            }
+            if (v.plumeDensity > 0.001f)
+            {
+                float r = Mathf.Max(v.plumeLowR, v.plumeTopR) * 1.3f;
+                foreach (var pt in new[] { v.plumeLow, v.plumeMid, v.plumeTop })
+                {
+                    min = Vector3.Min(min, pt - new Vector3(r, r * 0.2f, r));
+                    max = Vector3.Max(max, pt + new Vector3(r, r * 0.2f, r));
+                }
+            }
             if (v.velumDensity > 0.001f)
             {
                 Vector3 vc = v.capCenter + new Vector3(0f, v.velumHeight, 0f);
@@ -197,6 +222,11 @@ namespace BDNukes
             mat.SetVector("_SimSize", v.simSize);
             mat.SetVector("_Pileus", new Vector4(v.pileusOffset, v.pileusThick, v.pileusDensity, 0f));
             mat.SetVector("_Velum", new Vector4(v.velumRadius, v.velumThick, v.velumDensity, v.velumHeight));
+            mat.SetVector("_GroundFire", new Vector4(v.groundFire, v.groundFireR, v.groundFireH, v.groundFireTemp));
+            mat.SetVector("_Precursor", new Vector4(v.precursorR, v.precursorH, v.precursorDensity, v.precursorWidth));
+            mat.SetVector("_PlumeA", new Vector4(v.plumeLow.x, v.plumeLow.y, v.plumeLow.z, v.plumeLowR));
+            mat.SetVector("_PlumeM", new Vector4(v.plumeMid.x, v.plumeMid.y, v.plumeMid.z, v.plumeDensity));
+            mat.SetVector("_PlumeB", new Vector4(v.plumeTop.x, v.plumeTop.y, v.plumeTop.z, v.plumeTopR));
             mat.SetVector("_Density", new Vector4(v.capDensity, v.extinction, 0.3f, v.noiseScale));
             mat.SetVector("_Anim", new Vector4(v.time, v.rollRate, v.updraft, Mathf.Max(0.5f, v.flowPeriod)));
             mat.SetVector("_Fire", new Vector4(v.fire, v.fireTemp, v.flicker, v.soot));
@@ -216,7 +246,7 @@ namespace BDNukes
 
         /// <summary>Anything left to draw in this state.</summary>
         public static bool Visible(ref NukeVolumeState v) =>
-            v.simMix > 0.003f || v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
+            v.simMix > 0.003f || v.plumeDensity > 0.003f || v.precursorDensity > 0.003f || v.groundFire > 0.003f || v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
             v.wilsonDensity > 0.003f || v.pileusDensity > 0.003f || v.velumDensity > 0.003f || v.ring0.w + v.ring1.w + v.ring2.w > 0.003f ||
             v.collar0.w + v.collar1.w + v.collar2.w + v.collar3.w + v.collar4.w > 0.003f;
     }
@@ -267,7 +297,10 @@ namespace BDNukes
             v.dissipation = SS(2f * riseTime, 5f * riseTime, t);
             v.capCenter = new Vector3(0f, R * 0.9f + riseDelta * rise, 0f) + drift;
             v.capScale = capScale;
+            float column = NukeVolumeShapes.Column(W, 0f);
+            bulb = Mathf.Max(bulb, column);
             NukeVolumeShapes.Cap(morph, 0f, 1f, bulb, out v.ringR, out v.tube, out v.dome, out v.squash);
+            v.squash *= Mathf.Lerp(1f, 1.35f, column * morph);
             v.xzSpread = 1f;
             v.overhang = 0.45f * morph;
             v.roughness = SS(0.05f * tauG, 0.6f * tauG, t);
@@ -288,10 +321,10 @@ namespace BDNukes
                 v.stemTop = new Vector3(0f, yTop, 0f) + drift;
                 // the low stem stands nearly upright in the weak low wind and bends over higher up
                 v.stemMid = new Vector3(Mathf.Lerp(v.stemBase.x, v.stemTop.x, 0.1f), 0.5f * yTop, 0f);
-                float stemR = 0.17f * capScale * Mathf.Lerp(1f, 0.72f, bulb);
-                v.stemBaseR = stemR * 1.1f;
+                float stemR = 0.17f * capScale * Mathf.Lerp(1f, 0.72f, bulb) * Mathf.Lerp(1f, 3.4f, column);
+                v.stemBaseR = stemR * Mathf.Lerp(1.1f, 0.8f, column);
                 v.stemTopR = stemR;
-                v.stemFlare = 1.2f;
+                v.stemFlare = Mathf.Lerp(1.2f, 0.6f, column);
                 v.stemDustTop = dustFront;
                 v.stemTrailBottom = yTop - trailLen;
                 v.stemDensity = 0.9f * SS(start, start + 2f, t);
@@ -328,6 +361,10 @@ namespace BDNukes
                 return new Vector4(y0 + 0.4f * riseDelta * rise, rk, 0.3f * R, 0.3f * vis);
             }
             v.ring0 = Ring(0); v.ring1 = Ring(1); v.ring2 = Ring(2);
+            NukeVolumeGround.GroundFire(R, t, tauG, 1f, out v.groundFire, out v.groundFireR, out v.groundFireH, out v.groundFireTemp);
+            NukeVolumeGround.Precursor(R, t, Mathf.Min(rs, surgeMax * 1.5f), 1f, out v.precursorR, out v.precursorH, out v.precursorDensity, out v.precursorWidth);
+            NukeVolumeGround.Plume(t, riseTime, 0.8f * NukeVolumeShapes.PlumeYield(W), v.capCenter, capScale, 0f, v.windDir, windLow,
+                out v.plumeLow, out v.plumeMid, out v.plumeTop, out v.plumeLowR, out v.plumeTopR, out v.plumeDensity);
             v.pileusOffset = 0.12f * capScale;
             v.pileusThick = 0.08f * capScale;
             NukeVolumeShapes.Velum(W, t, tauG, riseTime, humidity, 0f, capScale, v.ringR + v.tube, out v.velumRadius, out v.velumThick, out v.velumDensity, out v.velumHeight);
@@ -451,6 +488,25 @@ namespace BDNukes
         /// smaller ring, a fatter tube and dome, taller). pancake/aspect: the profile's tropopause spreading and
         /// cap aspect (1 = none).
         /// </summary>
+        /// <summary>
+        /// 0 .. 1: how much the cloud is a rising column of billows rather than a mushroom. Sub-kiloton bursts (the
+        /// Davy Crockett) never punch a wide cap: the fireball's heat lifts a lumpy, cauliflower column nearly as wide
+        /// as its head. W in kt; lowYield is the profile's own small-yield factor.
+        /// </summary>
+        public static float Column(float W, float lowYield)
+        {
+            float lg = Mathf.Log10(Mathf.Max(W, 1e-4f));
+            float k = Mathf.Clamp01((0.7f - lg) / 2f);
+            return Mathf.Max(lowYield, k * k * (3f - 2f * k));
+        }
+
+        /// <summary>0 .. 1: a fallout plume visible below the cap only from tens of kilotons up.</summary>
+        public static float PlumeYield(float W)
+        {
+            float k = Mathf.Clamp01((Mathf.Log10(Mathf.Max(W, 1e-4f)) - 1.5f) / 1f);
+            return k * k * (3f - 2f * k);
+        }
+
         public static void Cap(float m, float pancake, float aspect, float bulb, out float ringR, out float tube, out float dome, out float squash)
         {
             ringR = Mathf.Lerp(0.05f, Mathf.Lerp(0.62f, 0.34f, bulb) * Mathf.Lerp(1f, 0.62f, pancake), m);
@@ -470,10 +526,64 @@ namespace BDNukes
             float humid = SS(0.2f, 0.65f, humidity) * (0.7f + 0.6f * overcast);
             float big = SS(1f, 3f, Mathf.Log10(Mathf.Max(W, 0.01f)));     // 10 kt .. 1 Mt
             float life = SS(0.3f * tauG, 1.0f * tauG, t) * (1f - SS(0.45f * riseTime, 1.0f * riseTime, t));
-            radius = capScale * capWidth * Mathf.Lerp(2.0f, 3.6f, big) * (0.75f + 0.25f * SS(0.3f * tauG, 3f * tauG, t));
-            thick = 0.2f * capScale;
+            radius = Mathf.Min(capScale * capWidth * Mathf.Lerp(1.8f, 2.6f, big) * (0.75f + 0.25f * SS(0.3f * tauG, 3f * tauG, t)), 14000f);
+            thick = Mathf.Min(0.2f * capScale, 0.06f * radius);
             height = (0.75f + 0.2f * (1f - life)) * capScale;
-            density = 0.22f * humid * life * Mathf.Lerp(0.45f, 1f, big);   // translucent: a veil, not a plate
+            density = 0.12f * humid * life * Mathf.Lerp(0.5f, 1f, big);   // translucent: a veil, not a plate
+        }
+    }
+
+    /// <summary>The thermal precursor and the fallout plume, shared by the plugin and the test timeline.</summary>
+    public static class NukeVolumeGround
+    {
+        static float SS(float a, float b, float x)
+        {
+            float k = Mathf.Clamp01((x - a) / (b - a));
+            return k * k * (3f - 2f * k);
+        }
+
+        /// <summary>
+        /// Thermal precursor: for a low burst over land, a hot dusty layer boils off the ground under the flash and runs
+        /// out ahead of the shock for the first seconds. shockGround = the shock's radius along the ground now.
+        /// </summary>
+        public static void Precursor(float R, float t, float shockGround, float groundFactor, out float radius, out float height, out float density, out float width)
+        {
+            radius = shockGround * 1.04f;
+            height = 0.12f * R;
+            width = 0.35f * R + 0.05f * shockGround;
+            density = 0.35f * groundFactor * SS(0.1f, 0.4f, t) * (1f - SS(0.4f * R / 100f + 1.5f, 0.4f * R / 100f + 4f, t));
+        }
+
+        /// <summary>
+        /// Ground fire: for a burst on or near land the ground under the fireball burns, brightest while the fireball
+        /// sits on it, dying down over tens of seconds. groundFactor 0 (high or over water) .. 1 (contact burst).
+        /// </summary>
+        public static void GroundFire(float R, float t, float tauG, float groundFactor, out float brightness, out float radius, out float height, out float temp)
+        {
+            float life = 3f * tauG + 8f;
+            float k = SS(0.15f * tauG, 0.6f * tauG, t) * (1f - SS(0.4f * life, life, t));
+            brightness = 4f * groundFactor * k;
+            radius = R * (1.1f + 0.5f * SS(0f, life, t));
+            height = R * Mathf.Lerp(0.55f, 0.3f, SS(0f, life, t));
+            temp = Mathf.Lerp(0.85f, 0.4f, SS(0.3f * tauG, life, t));
+        }
+
+        /// <summary>
+        /// Fallout plume: dust falling out of the cap's underside and drifting downwind, from the cap down to the
+        /// ground well downwind. dirt 0 (clean airburst) .. 1 (dirty surface burst).
+        /// </summary>
+        public static void Plume(float t, float riseTime, float dirt, Vector3 capCenter, float capScale, float groundY,
+            Vector3 windDir, float windLow, out Vector3 low, out Vector3 mid, out Vector3 top, out float lowR, out float topR, out float density)
+        {
+            var down = new Vector3(windDir.x, 0f, windDir.z).normalized;
+            float age = Mathf.Max(0f, t - 0.4f * riseTime);
+            float reach = Mathf.Min(windLow * age * 1.4f + 0.5f * capScale, 12f * capScale);
+            top = capCenter + new Vector3(0f, -0.35f * capScale, 0f) + down * (0.25f * capScale);
+            low = new Vector3(capCenter.x, groundY, capCenter.z) + down * reach;
+            mid = Vector3.Lerp(low, top, 0.5f) + down * (0.15f * reach);
+            topR = 0.55f * capScale;
+            lowR = 0.8f * capScale + 0.1f * reach;
+            density = 0.2f * dirt * SS(0.5f * riseTime, 1.2f * riseTime, t);
         }
     }
 }

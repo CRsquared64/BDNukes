@@ -433,12 +433,13 @@ namespace BDNukes
             if (instance == this) instance = null;
         }
 
-        public override void OnLoad(ConfigNode node) { NukeCraters.Load(node); }
+        public override void OnLoad(ConfigNode node) { NukeCraters.Load(node); NukePersistence.Load(node); }
 
-        public override void OnSave(ConfigNode node) { NukeCraters.Save(node); }
+        public override void OnSave(ConfigNode node) { NukeCraters.Save(node); NukePersistence.Save(node); }
 
         void Update()
         {
+            NukePersistence.Tick();
             if (HighLogic.LoadedScene != GameScenes.FLIGHT && HighLogic.LoadedScene != GameScenes.SPACECENTER) return;
             if (Time.unscaledTime < nextStaleCheck) return;
             nextStaleCheck = Time.unscaledTime + 1f;

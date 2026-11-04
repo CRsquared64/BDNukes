@@ -20,6 +20,8 @@ namespace BDNukes
         public static NukeSimData SimGround;
         /// <summary>The baked free-air fireball (null without it).</summary>
         public static NukeSimData SimAir;
+        /// <summary>The baked whole surface-burst mushroom (null without it).</summary>
+        public static NukeSimData SimMushroom;
 
         public static bool Available
         {
@@ -65,10 +67,12 @@ namespace BDNukes
                         simFrames.TryGetValue(meta.variant + "_" + i.ToString("00"), out d.frames[i]);
                     if (d.Valid && meta.variant == "ground") SimGround = d;
                     if (d.Valid && meta.variant == "air") SimAir = d;
+                    if (d.Valid && meta.variant == "mushroom") SimMushroom = d;
                 }
                 if (noise == null) foreach (var tx in bundle.LoadAllAssets<Texture3D>()) { noise = tx; break; }
                 Debug.Log("[BDNukes]: Fireball simulations: ground " + (SimGround != null ? SimGround.frames.Length + " frames" : "none")
-                    + ", air " + (SimAir != null ? SimAir.frames.Length + " frames" : "none") + ".");
+                    + ", air " + (SimAir != null ? SimAir.frames.Length + " frames" : "none")
+                    + ", mushroom " + (SimMushroom != null ? SimMushroom.frames.Length + " frames" : "none") + ".");
                 if (shader != null && !shader.isSupported)
                 {
                     Debug.LogWarning("[BDNukes]: Volumetric cloud shader isn't supported on this GPU; using the sprite cloud.");
