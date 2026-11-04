@@ -168,6 +168,7 @@ namespace BDNukes
             s.weatherLighting = Toggle("Overcast dims the cloud (EVE clouds)", s.weatherLighting);
             s.cloudClearing = Toggle("Blasts clear EVE clouds", s.cloudClearing);
             s.nukeImpulseScale = Slider("Blast push on craft (x BDArmory)", s.nukeImpulseScale, 0f, 1f, "0.00");
+            s.nukeMaxDeltaV = Slider("Max blast speed per hit (m/s, 0 = no cap)", s.nukeMaxDeltaV, 0f, 1000f, "0");
 
             GUILayout.Space(6f);
             GUILayout.Label("Terrain craters");

@@ -150,6 +150,7 @@ namespace BDNukes
         public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)
         public float hazeVisibility = 40000f;      // m of sea-level air that hides ~63% of the cloud's own colour
         public float nukeImpulseScale = 0.15f;     // scales BDArmory's blast push from nukes only (1 = BDArmory's own)
+        public float nukeMaxDeltaV = 120f;         // m/s: most speed one nuclear hit can give a part (0 = no cap)
         public bool cloudClearing = true;          // blasts blow holes in EVE's volumetric cloud decks, which heal over minutes
         public bool weatherLighting = true;        // EVE volumetric overcast blocks the sun on the cloud (if EVE is installed)
 
@@ -293,6 +294,7 @@ namespace BDNukes
             n.TryGetValue("weatherLighting", ref weatherLighting);
             n.TryGetValue("cloudClearing", ref cloudClearing);
             n.TryGetValue("nukeImpulseScale", ref nukeImpulseScale);
+            n.TryGetValue("nukeMaxDeltaV", ref nukeMaxDeltaV);
             n.TryGetValue("craters", ref craters);
             n.TryGetValue("craterScale", ref craterScale);
             n.TryGetValue("maxCraters", ref maxCraters);
@@ -330,6 +332,7 @@ namespace BDNukes
             lightningMinYield = Mathf.Max(1f, lightningMinYield);
             hazeVisibility = Mathf.Clamp(hazeVisibility, 2000f, 500000f);
             nukeImpulseScale = Mathf.Clamp(nukeImpulseScale, 0f, 1f);
+            nukeMaxDeltaV = Mathf.Clamp(nukeMaxDeltaV, 0f, 5000f);
             volumetricSteps = Mathf.Clamp(volumetricSteps, 16, 128);
             volumetricResolution = Mathf.Clamp(volumetricResolution, 1, 3);
             cloudShadowStrength = Mathf.Clamp01(cloudShadowStrength);
@@ -439,6 +442,7 @@ namespace BDNukes
                 n.AddValue("weatherLighting", B(weatherLighting));
                 n.AddValue("cloudClearing", B(cloudClearing));
                 n.AddValue("nukeImpulseScale", F(nukeImpulseScale));
+                n.AddValue("nukeMaxDeltaV", F(nukeMaxDeltaV));
                 n.AddValue("craters", B(craters));
                 n.AddValue("craterScale", F(craterScale));
                 n.AddValue("craterPartialRebuild", B(craterPartialRebuild));
