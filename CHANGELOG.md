@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Debris smoke trails:** surface and near-surface bursts on land throw out 12 to 40 chunks of debris on ballistic arcs, two to six fireball radii out, each trailing dark grey-brown smoke that billows and fades, with a glowing orange-white tip for the first second or two. New setting `debrisTrails`.
 - **Baked mushroom simulation:** small and medium surface bursts (up to 150 kt) play a full Mantaflow bake of the whole cloud forming, not just the fireball: a hot thermal on the ground rolling up into a lumpy column and head, with ground fire and the afterwinds drawing dust up the stem. It plays through most of the climb, then hands over to the procedural cloud. Bake it with `blender -b --factory-startup --python unity/Sim/bake_fireball.py -- mushroom <out_dir>`.
 - **Persistent clouds:** every detonation is kept in the save with its universal time. Switch vessels, visit the space centre or reload, and the cloud is rebuilt at the age it has reached on that body. Only the visuals come back: the blast, crater and sound are not replayed. New setting `persistentClouds`.
 - **Ground fire:** under a low burst over land, the ground burns for the first tens of seconds, with flame tongues licking up into the stem's foot. New setting `groundFire`.

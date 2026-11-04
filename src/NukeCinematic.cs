@@ -55,7 +55,7 @@ namespace BDNukes
 
         // --- aftermath handed to NukeFallout / NukeGroundEffects ---
         float falloutK;     // 0 clean airburst .. 1 dirty surface burst
-        bool groundEffects, scorchFx, firesFx;
+        bool groundEffects, scorchFx, firesFx, debrisFx;
         float rScorch, rOuter;
 
         // --- derived physics ---
@@ -320,6 +320,7 @@ namespace BDNukes
                 NukeCloudClearing.Blast(body, pos, alt, 4f * Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale),
                     c, 300f * yieldTimeScale);
             SpawnAftermath();
+            if (debrisFx) NukeDebrisTrails.Spawn(body, lat, lon, alt + groundY, W, R, spawnTime + delay, s.particleDensity * lod * budget);
             NukeFXManager.Instance.Register(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
             if (!restored && s.persistentClouds)
@@ -348,6 +349,7 @@ namespace BDNukes
             scorchFx = s.scorchMarks && !overOcean && hb < 1.2f * R;
             firesFx = s.lingeringFires && !overOcean && airFx && body.atmosphereContainsOxygen && hb < 8f * R;
             groundEffects = scorchFx || firesFx;
+            debrisFx = !restored && NukeDebrisTrails.Wanted(s, body, airFx, overOcean, hb, R);
         }
 
         /// <summary>
@@ -492,7 +494,8 @@ namespace BDNukes
             // Pass 1 counts what the layers would cost (with the fallout and fires this burst will spawn) and
             // works out the budget that keeps the whole detonation under maxParticles; pass 2 builds them.
             planning = true;
-            plannedBase = (falloutK > 0f ? NukeFallout.BaseParticles(s) : 0) + (groundEffects ? NukeGroundEffects.BaseParticles(firesFx) : 0);
+            plannedBase = (falloutK > 0f ? NukeFallout.BaseParticles(s) : 0) + (groundEffects ? NukeGroundEffects.BaseParticles(firesFx) : 0)
+                + (debrisFx ? NukeDebrisTrails.BaseParticles(W) : 0);
             BuildLayers(seed);
             float planned = plannedBase * s.particleDensity * lod;
             budget = planned > s.maxParticles ? s.maxParticles / planned : 1f;

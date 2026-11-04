@@ -136,6 +136,9 @@ namespace BDNukes
         public float fireDuration = 240f;          // s the lingering fires burn (yield-scaled)
         public float lightningMinYield = 1000f;    // kt; bigger bursts get lightning in the cloud (more in humid air)
 
+        // debris trails
+        public bool debrisTrails = true;           // surface bursts on land throw out arcing chunks trailing dark smoke
+
         // volumetric clouds
         public bool volumetricClouds = true;       // raymarched cloud and fluid fireball (needs the shader bundle, Windows)
         public int volumetricSteps = 64;
@@ -284,6 +287,7 @@ namespace BDNukes
             n.TryGetValue("groundAfterglow", ref groundAfterglow);
             n.TryGetValue("fireDuration", ref fireDuration);
             n.TryGetValue("lightningMinYield", ref lightningMinYield);
+            n.TryGetValue("debrisTrails", ref debrisTrails);
             n.TryGetValue("volumetricClouds", ref volumetricClouds);
             n.TryGetValue("volumetricSteps", ref volumetricSteps);
             n.TryGetValue("fluidSim", ref fluidSim);
@@ -435,6 +439,7 @@ namespace BDNukes
                 n.AddValue("scorchLifetime", F(scorchLifetime));
                 n.AddValue("groundAfterglow", B(groundAfterglow));
                 n.AddValue("fireDuration", F(fireDuration));
+                n.AddValue("debrisTrails", B(debrisTrails));
                 n.AddValue("volumetricClouds", B(volumetricClouds));
                 n.AddValue("volumetricSteps", volumetricSteps.ToString(CultureInfo.InvariantCulture));
                 n.AddValue("fluidSim", B(fluidSim));
