@@ -914,7 +914,9 @@ namespace BDNukes
             vs.extinction = 2f / R;
             // billows sized to the grown cap (fixed per detonation, so they don't zoom): small yields grow caps
             // tens of fireball radii across, and fireball-sized billows would cover them in fur
-            vs.noiseScale = 1f / (0.5f * Mathf.Max(capRadius, 3f * R));
+            // megaton caps are tens of km across: billows sized to the whole cap blur into fog, so they get relatively
+            // smaller, more numerous billows (the cauliflower texture of the big tests)
+            vs.noiseScale = Mathf.Lerp(1f, 2.6f, SS(2.5f, 4.5f, Mathf.Log10(Mathf.Max(W, 1f)))) / (0.5f * Mathf.Max(capRadius, 3f * R));
             vs.flowPeriod = 6f;
 
             // ---- fireball and cap: a ball that rolls up into the toroidal cap ----
@@ -924,7 +926,7 @@ namespace BDNukes
             float column = NukeVolumeShapes.Column(W, prof.lowYield);
             NukeVolumeShapes.Cap(m, pkT, 0.64f * capYS, Mathf.Max(shapeBulb, column), out vs.ringR, out vs.tube, out vs.dome, out vs.squash);
             vs.squash *= Mathf.Lerp(1f, 1.35f, column * m);
-            vs.xzSpread = Mathf.Lerp(1f, Mathf.Min(capXZS, 1.7f), m);
+            vs.xzSpread = Mathf.Lerp(1f, Mathf.Min(capXZS, 1.7f), m) * Mathf.Lerp(1f, 0.65f, column);   // a column's head is barely wider than it
             vs.overhang = Mathf.Max(prof.overhang, 0.45f) * m * (1f - 0.6f * pkT);
             vs.capDensity = FadeOut;
             // smooth at first, turbulent within a second or two (Rayleigh-Taylor), the cap fully churning
@@ -938,7 +940,7 @@ namespace BDNukes
             vs.fire = 4f * heatK * FadeOut * flashK;
             vs.fireTemp = Mathf.Clamp01(1.05f - 0.75f * x);
             vs.flicker = Mathf.Lerp(0.25f, 1f, vs.roughness);
-            vs.soot = 0.8f * SS(0.3f * tauG, 1.2f * tauG, t) * (1f - SS(3f * tauG, 6f * tauG, t)) * Mathf.Lerp(1f, 0.5f, prof.humidity);
+            vs.soot = Mathf.Lerp(1f, 0.25f, column) * 0.8f * SS(0.3f * tauG, 1.2f * tauG, t) * (1f - SS(3f * tauG, 6f * tauG, t)) * Mathf.Lerp(1f, 0.5f, prof.humidity);
             // the burning ring inside the vortex outlives the fireball by many seconds, even for small yields
             vs.ember = 3.2f * Mathf.Exp(-t / (3f * tauG + 15f)) * SS(0.2f * tauG, tauG, t) * FadeOut * flashK;
             vs.emberTemp = 0.64f;
@@ -982,7 +984,12 @@ namespace BDNukes
                 // a big billowing ring of dust around the foot of the stem
                 vs.skirtR = R * (0.8f + 1.0f * ks * (1f - Mathf.Exp(-tt / 8f)));
                 vs.skirtH = R * (0.6f + 1.0f * (1f - Mathf.Exp(-tt / 8f))) * Mathf.Lerp(1f, 0.75f, Mathf.Clamp01((ks - 1f) * 0.6f));
-                vs.skirtDensity = 0.75f * SS(tg + 0.2f, tg + 1.2f, t) * FadeOut * groundFactor;
+                // a sub-kiloton column kicks up a dust skirt far wider than its tiny fireball: a low, flat sheet
+                // spreading out along the ground around the column's foot
+                float growK = 1f - Mathf.Exp(-tt / 10f);
+                vs.skirtR = Mathf.Lerp(vs.skirtR, (0.4f + 1.2f * growK) * capRadius, column);
+                vs.skirtH = Mathf.Lerp(vs.skirtH, (0.08f + 0.1f * growK) * capRadius, column);
+                vs.skirtDensity = Mathf.Lerp(0.75f, 0.16f, column) * SS(tg + 0.2f, tg + 1.2f, t) * FadeOut * groundFactor;
                 vs.skirtThin = 0.35f;
                 vs.outflow = (30f * Mathf.Exp(-tt / 20f) + 3f) * prof.rollSpeed;
 
@@ -1024,7 +1031,7 @@ namespace BDNukes
             if (wilson != null)
             {
                 float tW = Mathf.Min(2.5f * R / c, 4f);
-                vs.wilsonDensity = 0.3f * (0.4f + 0.8f * prof.humidity) * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.5f * tW, 1.3f * tW, t)) * airW;
+                vs.wilsonDensity = (1f - column) * 0.3f * (0.4f + 0.8f * prof.humidity) * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.5f * tW, 1.3f * tW, t)) * airW;
                 vs.wilsonR = Mathf.Min(R * 1.2f + c * t * 0.9f, 3.6f * R);
                 vs.wilsonThick = 0.3f * R;
                 vs.wilsonHemisphere = groundFx;
@@ -1042,6 +1049,7 @@ namespace BDNukes
                     float vis = SS(tk, tk + 0.6f, t) * (1f - SS(tk + hold, tk + hold + 4f + 0.5f * tauG, t)) * airW;
                     float rk = R * (1.5f + 0.32f * k) * (1f + 0.015f * t) * (1f + 0.4f * Rise(t));
                     var ring = new Vector4(y0 + 0.4f * CapHeight(t), rk, 0.3f * R, 0.3f * vis * (0.6f + 0.6f * prof.humidity));
+                    ring.w *= 1f - column;   // no condensation rings on a small desert column
                     if (k == 0) vs.ring0 = ring; else if (k == 1) vs.ring1 = ring; else vs.ring2 = ring;
                 }
                 vs.ringOffset = 0.8f * capDrift;
@@ -1053,7 +1061,7 @@ namespace BDNukes
             {
                 vs.pileusOffset = 0.12f * vs.capScale;
                 vs.pileusThick = 0.08f * vs.capScale;
-                vs.pileusDensity = 0.9f * prof.humidity * airW * SS(0.4f * tauG, 1.2f * tauG, t) * (1f - SS(0.25f * riseTime, 0.55f * riseTime, t));
+                vs.pileusDensity = (1f - column) * 0.9f * prof.humidity * airW * SS(0.4f * tauG, 1.2f * tauG, t) * (1f - SS(0.25f * riseTime, 0.55f * riseTime, t));
             }
 
             // ---- velum: the vast condensation veil over the rising fireball in humid air ----
@@ -1063,7 +1071,7 @@ namespace BDNukes
                 float oc = Mathf.Clamp01((1f - sunVisCam) / NukeWeather.DeckOpacity);
                 NukeVolumeShapes.Velum(W, t, tauG, riseTime, prof.humidity, oc, vs.capScale, (vs.ringR + vs.tube) * vs.xzSpread,
                     out vs.velumRadius, out vs.velumThick, out vs.velumDensity, out vs.velumHeight);
-                vs.velumDensity *= airW * FadeOut;
+                vs.velumDensity *= airW * FadeOut * (1f - column);
             }
 
             // ---- stem collars: bells of mist forming in turn as the column climbs ----
@@ -1107,6 +1115,8 @@ namespace BDNukes
             vs.groundCol = new Color(0.16f, 0.15f, 0.11f) * Mathf.Lerp(0.05f, 1f, daylight) * Mathf.Lerp(1f, 0.5f, overcast);
             // dusty clouds (low yields, surface bursts) are dark grey-brown smoke, not pale cotton
             vs.capAlbedo = CapColor(0f) * 0.8f * Mathf.Lerp(1f, 0.6f, prof.dustiness * groundFactor);
+            // a small burst's column is sunlit dust and debris, light tan, hardly any soot
+            vs.capAlbedo = Color.Lerp(vs.capAlbedo, new Color(0.80f, 0.70f, 0.56f), 0.75f * column);
             vs.stemAlbedo = Color.Lerp(stemLow, stemHigh, 0.4f) * 0.85f;
             vs.dustAlbedo = Color.Lerp(skirtDark, skirtLight, 0.55f) * 0.95f;
             if (overOcean)
@@ -1134,7 +1144,7 @@ namespace BDNukes
                 float floorY = sim == NukeVolumetric.SimAir ? 0f : groundY;
                 NukeSimPlayer.Fill(sim, ref vs, t, simDur, floorY, capPosL,
                     capPosL.y + Mathf.Max(vs.dome, vs.tube * vs.squash) * vs.capScale - floorY, vs.capScale * (vs.ringR + vs.tube) * vs.xzSpread,
-                    FadeOut, 3f * flashK, sim == NukeVolumetric.SimMushroom ? NukeSimPlayer.MushroomPlayFraction : 1f);
+                    FadeOut, 3f * flashK, sim == NukeVolumetric.SimMushroom ? NukeSimPlayer.MushroomPlayFraction : 1f, sim == NukeVolumetric.SimMushroom);
                 vs.fire *= 1f - vs.simMix;
                 vs.ember *= 1f - 0.7f * vs.simMix;
             }
@@ -1319,16 +1329,17 @@ namespace BDNukes
             float atmo = Mathf.Clamp01(airW + hiW);
             col = Color.Lerp(col, fireCol, atmo);
             intensity = Mathf.Min(intensity * Mathf.Lerp(1f, yieldK, atmo) + 5f * yieldK * inc, FireLightMaxIntensity);
-            float reach = airFx ? Mathf.Clamp(120f * R, 4000f, 120000f) : hiFx ? Mathf.Clamp(40f * Rh, 4000f, 150000f) : 0f;
+            float reach = airFx ? Mathf.Clamp(60f * R, 3000f, 60000f) : hiFx ? Mathf.Clamp(25f * Rh, 3000f, 80000f) : 0f;
             range = Mathf.Max(range, reach);
 
             // the screen pass: the light's strength at the fireball's core, falling off by inverse square beyond it.
             // In daylight the sun hides some of it; at night it's the only light there is.
-            float strength = (2.5f * flash * fade + 3f * inc) * yieldK * Mathf.Lerp(1f, 0.6f, daylight) * atmo;
+            float strength = (2.5f * flash * fade + 3f * inc) * yieldK * Mathf.Lerp(1f, 0.25f, daylight) * atmo;
             if (strength < 0.01f) return;
             float core = 1.6f * Mathf.Max(capScale, R);
             Vector3 worldPos = transform.TransformPoint(capPosL);
-            NukeVolumetric.AddFireLight(worldPos, core, Mathf.Max(range, 40f * core), fireCol * Mathf.Min(strength, 6f));
+            // the wash reaches a few fireball sizes, not half the planet
+            NukeVolumetric.AddFireLight(worldPos, core, Mathf.Clamp(8f * core, range, 80000f), fireCol * Mathf.Min(strength, 6f));
         }
         // ---- end fireball lighting ----
 

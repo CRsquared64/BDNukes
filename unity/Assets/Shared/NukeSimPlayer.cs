@@ -55,7 +55,7 @@ namespace BDNukes
         public const float MushroomPlayFraction = 0.55f;
 
         public static void Fill(NukeSimData d, ref NukeVolumeState v, float t, float simDuration, float floorY,
-            Vector3 capCenter, float capTopAboveFloor, float capRadius, float fade, float fire, float playFraction = 1f)
+            Vector3 capCenter, float capTopAboveFloor, float capRadius, float fade, float fire, float playFraction = 1f, bool keepAspect = false)
         {
             v.simMix = 0f;
             if (d == null || !d.Valid || simDuration <= 0f) return;
@@ -73,6 +73,9 @@ namespace BDNukes
             float sy = Mathf.Max(1f, capTopAboveFloor) / top;
             // keep the baked proportions within reason: stretching a plume too far turns it into a pencil
             float sxz = Mathf.Clamp(Mathf.Max(1f, capRadius) / rad, 0.8f * sy, 1.35f * sy);
+            // the whole-mushroom bake already has the column's own proportions: stretching it out to a wide cap
+            // turns the column into a fat egg
+            if (keepAspect) sxz = sy;
             var bmin = new Vector3(m.boundsMin[0], m.boundsMin[1], m.boundsMin[2]);
             var bmax = new Vector3(m.boundsMax[0], m.boundsMax[1], m.boundsMax[2]);
             v.simOrigin = new Vector3(capCenter.x + bmin.x * sxz, floorY + bmin.y * sy, capCenter.z + bmin.z * sxz);

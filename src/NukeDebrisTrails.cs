@@ -43,10 +43,10 @@ namespace BDNukes
 
         /// <summary>Land bursts in air within about a fireball radius of the ground.</summary>
         public static bool Wanted(NukeSettings s, CelestialBody body, bool airFx, bool overOcean, float hb, float R)
-            => s.debrisTrails && airFx && !overOcean && body.atmosphere && hb < R;
+            => s.debrisTrails && airFx && !overOcean && body.atmosphere && hb < 0.3f * R;   // only bursts that dig into the ground throw debris
 
         /// <param name="groundAlt">Ground altitude under the burst (m ASL).</param>
-        /// <param name="startTime">Time.time of the detonation (after any fuze delay).</param>
+        /// <param name="startTime">NukeFXManager.FxTime of the detonation (after any fuze delay).</param>
         /// <param name="particleScale">Particle density x burst LOD x the detonation's budget.</param>
         public static void Spawn(CelestialBody body, double lat, double lon, double groundAlt, float W, float R,
             float startTime, float particleScale)
@@ -158,7 +158,7 @@ namespace BDNukes
                 Destroy(gameObject);
                 return;
             }
-            t = Time.time - startTime;
+            t = NukeFXManager.FxTime - startTime;
             if (t < 0f) return;
             if (t > life)
             {

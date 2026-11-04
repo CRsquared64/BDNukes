@@ -314,7 +314,8 @@ Sample Cloud(float3 p, bool detail)
         float mid = FlowNoise(qw, vel * 1.35, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
         float n = smoothstep(0.38, 0.82, 0.9 * big + 0.1 * mid);
         float sdf = CapSDF(p, n, 0.0, q);
-        float soft = 0.22 * _CapCenter.w * (1.0 + 2.0 * _Age.x);
+        // ageing frays the edges, but not into fog: the billows stay readable to the end
+        float soft = 0.22 * _CapCenter.w * (1.0 + 0.8 * _Age.x);
         // the downwind end is older, sheared-off cloud: thinner and more ragged
         float along = dot(q.xz, _Wind.xz) / (_CapCenter.w * (1.0 + _WindFlow.z));
         float tail = lerp(1.0, 0.3, saturate(along * 0.8) * saturate(_WindFlow.z));

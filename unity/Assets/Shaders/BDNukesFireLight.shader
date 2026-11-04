@@ -17,7 +17,9 @@ Shader "BDNukes/FireLight"
             ZTest Always
             ZWrite Off
             Cull Off
-            Blend One One
+            // scene colour x (1 + light): the fire tints and brightens what's there by its own albedo, instead of
+            // painting a flat glow over dark ground
+            Blend DstColor One
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
@@ -64,14 +66,9 @@ Shader "BDNukes/FireLight"
                 float eye = LinearEyeDepth(raw);
                 float3 wpos = mul(unity_CameraToWorld, float4(i.ray * eye, 1.0)).xyz;
 
-                // surface normal from the reconstructed positions, turned to face the camera
-                float3 toCam = _WorldSpaceCameraPos - wpos;
-                float3 n = cross(ddy(wpos), ddx(wpos));
-                float nn = dot(n, n);
-                n = nn > 1e-12 ? n * rsqrt(nn) : normalize(toCam);
-                if (dot(n, toCam) < 0.0) n = -n;
-
-                float wrap = _FireLightParams.z;
+                // no normals from the depth buffer: at KSP's distances its precision turns hills into stair-stepped
+                // facets. The shape of the light on terrain and craft comes from the real point light; this pass is
+                // the broad wash of fire-glow on everything around.
                 int count = (int)_FireLightParams.x;
                 float3 sum = 0.0;
                 [unroll] for (int k = 0; k < MAX_FIRE_LIGHTS; k++)
@@ -86,10 +83,7 @@ Shader "BDNukes/FireLight"
                         float r2 = r * r;
                         float window = saturate(1.0 - r2 * r2);
                         window *= window;                               // smooth to zero at the range
-                        float ndl = saturate((dot(n, l * rsqrt(d2)) + wrap) / (1.0 + wrap));
-                        // inside the fireball's own core everything is lit, whichever way it faces
-                        ndl = lerp(ndl, 1.0, saturate(core2 / d2 - 1.0));
-                        sum += _FireLightCol[k].rgb * (falloff * window * ndl);
+                        sum += _FireLightCol[k].rgb * (falloff * window);
                     }
                 }
                 // cap the brightest channel (keeping the hue) so a close fireball doesn't wash everything to white

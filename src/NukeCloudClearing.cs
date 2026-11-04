@@ -123,7 +123,10 @@ namespace BDNukes
                         var tex = mat.GetTexture(CoverageProp);
                         if (tex == null) continue;
                         layer = new Layer { volume = vol, mat = mat, original = tex };
-                        layer.rt = new RenderTexture(tex.width, tex.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
+                        // twice EVE's resolution (up to 8k): the hole and its ring are drawn far finer than one coverage
+                        // texel (~2 km on Kerbin), so their edges don't show as blocks in the clouds
+                        int scale = Mathf.Clamp(8192 / Mathf.Max(tex.width, 1), 1, 2);
+                        layer.rt = new RenderTexture(tex.width * scale, tex.height * scale, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
                         {
                             name = "BDNukesCloudCoverage", useMipMap = false, filterMode = FilterMode.Bilinear,
                             wrapModeU = TextureWrapMode.Repeat, wrapModeV = TextureWrapMode.Clamp,
