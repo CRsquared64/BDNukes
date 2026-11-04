@@ -93,6 +93,13 @@ namespace BDNukes
         // ---- reduced-resolution rendering: one command buffer, run by each flight camera ----
         static readonly System.Collections.Generic.List<NukeVolumeCompositor.Item> lowResItems = new System.Collections.Generic.List<NukeVolumeCompositor.Item>();
         static readonly System.Collections.Generic.List<Camera> lowResCams = new System.Collections.Generic.List<Camera>();
+        static readonly System.Collections.Generic.List<NukeVolumeCompositor.Shock> shockItems = new System.Collections.Generic.List<NukeVolumeCompositor.Shock>();
+
+        /// <summary>Queues a refracting shock shell for this frame (drawn by the flight cameras only).</summary>
+        public static void AddShock(Matrix4x4 matrix, Material material)
+        {
+            if (material != null) shockItems.Add(new NukeVolumeCompositor.Shock { mesh = Sphere(), matrix = matrix, material = material });
+        }
         static UnityEngine.Rendering.CommandBuffer lowResBuffer;
         static Material compositeMat;
 
@@ -101,7 +108,7 @@ namespace BDNukes
         /// <summary>Per frame, after every detonation has updated (NukeFXManager.LateUpdate): rebuilds the low-res pass.</summary>
         public static void UpdateCompositor()
         {
-            if (lowResBuffer == null && lowResItems.Count == 0) return;
+            if (lowResBuffer == null && lowResItems.Count == 0 && shockItems.Count == 0) return;
             if (lowResBuffer == null) lowResBuffer = new UnityEngine.Rendering.CommandBuffer { name = "BDNukes volumetric cloud" };
             if (compositeMat == null && compositeShader != null) compositeMat = new Material(compositeShader);
             var cams = FlightCamera.fetch != null ? FlightCamera.fetch.cameras : null;
@@ -113,8 +120,9 @@ namespace BDNukes
                         c.AddCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
                         lowResCams.Add(c);
                     }
-            NukeVolumeCompositor.Build(lowResBuffer, lowResItems, compositeMat, Divisor);
+            NukeVolumeCompositor.Build(lowResBuffer, lowResItems, compositeMat, Divisor, shockItems);
             lowResItems.Clear();
+            shockItems.Clear();
         }
 
         /// <summary>Takes the low-res pass off the cameras (scene teardown).</summary>
@@ -123,6 +131,7 @@ namespace BDNukes
             foreach (var c in lowResCams) if (c != null && lowResBuffer != null) c.RemoveCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
             lowResCams.Clear();
             lowResItems.Clear();
+            shockItems.Clear();
             if (lowResBuffer != null) { lowResBuffer.Release(); lowResBuffer = null; }
         }
 
@@ -164,33 +173,22 @@ namespace BDNukes
         readonly Transform owner;
         readonly GameObject box, shadowBox;
         readonly Material mat, shadowMat;
-        readonly MeshRenderer rend, shadowRend;
+
 
         public NukeVolumetric(Transform detonation)
         {
             owner = detonation;
             box = new GameObject("VolumetricCloud");
             box.transform.SetParent(detonation, false);
-            box.AddComponent<MeshFilter>().sharedMesh = Cube();
-            rend = box.AddComponent<MeshRenderer>();
+            // a transform only: the cloud is drawn by the flight cameras' command buffer, never as a scene renderer
             mat = new Material(shader);
             mat.SetTexture("_Noise", noise);
-            rend.sharedMaterial = mat;
-            rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            rend.receiveShadows = false;
-            rend.enabled = false;
             if (shadowShader != null && shadowShader.isSupported)
             {
                 shadowBox = new GameObject("VolumetricCloudShadow");
                 shadowBox.transform.SetParent(detonation, false);
-                shadowBox.AddComponent<MeshFilter>().sharedMesh = Cube();
-                shadowRend = shadowBox.AddComponent<MeshRenderer>();
                 shadowMat = new Material(shadowShader);
                 shadowMat.SetTexture("_Noise", noise);
-                shadowRend.sharedMaterial = shadowMat;
-                shadowRend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                shadowRend.receiveShadows = false;
-                shadowRend.enabled = false;
             }
             EnableDepth();
         }
@@ -206,11 +204,7 @@ namespace BDNukes
         public void Update(ref NukeVolumeState v, int steps)
         {
             bool on = NukeVolumeShader.Visible(ref v);
-            bool lowRes = Divisor > 1;
-            bool direct = on && !lowRes;
             bool shadow = on && shadowMat != null && NukeSettings.Current.cloudShadows && v.daylight > 0.02f;
-            if (rend.enabled != direct) rend.enabled = direct;
-            if (shadowRend != null && shadowRend.enabled != (shadow && !lowRes)) shadowRend.enabled = shadow && !lowRes;
             if (!on) return;
             NukeVolumeShader.Bounds(ref v, out var min, out var max);
             box.transform.localPosition = 0.5f * (min + max);
@@ -228,8 +222,7 @@ namespace BDNukes
                 shadowMat.SetVector("_ShadowMax", smax);
                 shadowMat.SetVector("_ShadowParams", new Vector4(NukeSettings.Current.cloudShadowStrength, 6f * Mathf.Max(1f, max.y - v.groundY), 0f, 0f));
             }
-            if (lowRes)
-                lowResItems.Add(new NukeVolumeCompositor.Item
+            lowResItems.Add(new NukeVolumeCompositor.Item
                 {
                     mesh = Cube(), matrix = box.transform.localToWorldMatrix, material = mat,
                     shadowMatrix = shadow ? shadowBox.transform.localToWorldMatrix : Matrix4x4.identity,

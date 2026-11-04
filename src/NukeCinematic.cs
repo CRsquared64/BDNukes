@@ -463,14 +463,9 @@ namespace BDNukes
                 shockMat = NukeVolumetric.MakeShockMaterial();
                 if (shockMat != null)
                 {
+                    // a transform only: the shell is drawn by the flight cameras' command buffer
                     shockDome = new GameObject("ShockDistortion");
                     shockDome.transform.SetParent(transform, false);
-                    shockDome.AddComponent<MeshFilter>().sharedMesh = NukeVolumetric.Sphere();
-                    var r = shockDome.AddComponent<MeshRenderer>();
-                    r.sharedMaterial = shockMat;
-                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                    r.receiveShadows = false;
-                    shockDome.SetActive(false);
                 }
             }
             if (airFx && !underwater && s.volumetricClouds && NukeVolumetric.Available)
@@ -833,11 +828,11 @@ namespace BDNukes
             float rs = ShockRadius(t);
             float k = Mathf.Clamp01(t / 0.05f) * (1f - SS(10f * R, 30f * R, rs)) * airW;
             bool on = k > 0.01f && t > 0f;
-            if (shockDome.activeSelf != on) shockDome.SetActive(on);
             if (!on) return;
             // Unity's sphere primitive has radius 0.5
             shockDome.transform.localPosition = Vector3.zero;
             shockDome.transform.localScale = Vector3.one * (2f * rs);
+            NukeVolumetric.AddShock(shockDome.transform.localToWorldMatrix, shockMat);
             shockMat.SetFloat("_Strength", 0.018f * s.shockDistortion * k * Mathf.Pow(R / Mathf.Max(R, rs), 0.35f));
             // ground height in the sphere's own units (radius 0.5): a dome for surface bursts
             float gy = groundFx ? Mathf.Clamp(groundY / (2f * rs), -0.5f, 0.5f) : -1f;

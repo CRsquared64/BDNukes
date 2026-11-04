@@ -11,7 +11,8 @@ Shader "BDNukes/ShockDistortion"
     SubShader
     {
         Tags { "Queue" = "Transparent+20" "RenderType" = "Transparent" "IgnoreProjector" = "True" }
-        GrabPass { "_BDNukesShockGrab" }
+        // no GrabPass: the flight cameras' command buffer copies the frame into _BDNukesShockGrab first (a GrabPass
+        // in a scene object would also run in other mods' depth/shadow cameras, which crashes Unity)
         Pass
         {
             Cull Off
@@ -40,7 +41,7 @@ Shader "BDNukes/ShockDistortion"
             {
                 v2f o;
                 o.pos = UnityObjectToClipPos(v.vertex);
-                o.grab = ComputeGrabScreenPos(o.pos);
+                o.grab = ComputeScreenPos(o.pos);
                 o.nV = normalize(mul((float3x3)UNITY_MATRIX_IT_MV, v.normal));
                 o.vV = -normalize(UnityObjectToViewPos(v.vertex));
                 o.localY = v.vertex.y;

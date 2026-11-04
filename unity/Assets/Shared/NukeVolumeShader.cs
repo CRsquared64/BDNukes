@@ -379,23 +379,61 @@ namespace BDNukes
             public Material shadowMaterial;  // null: no shadow
         }
 
-        static readonly int LowRes = Shader.PropertyToID("_BDNukesVolumeLowRes");
+        /// <summary>A refracting shock shell: drawn over a copy of what the camera has drawn so far.</summary>
+        public struct Shock
+        {
+            public Mesh mesh;
+            public Matrix4x4 matrix;
+            public Material material;
+        }
 
-        public static void Build(CommandBuffer cb, List<Item> items, Material composite, int divisor)
+        static readonly int LowRes = Shader.PropertyToID("_BDNukesVolumeLowRes");
+        static readonly int Grab = Shader.PropertyToID("_BDNukesShockGrab");
+        static readonly List<Shock> noShocks = new List<Shock>();
+
+        /// <summary>
+        /// Everything BDNukes draws volumetrically goes through this buffer, run only by the flight cameras, so other
+        /// mods' cameras (depth and shadow-map passes, reflection probes) never draw it. Order: ground shadows at full
+        /// resolution, then the cloud (directly, or at 1/divisor resolution and composited), then the shock shells
+        /// over a copy of the result.
+        /// </summary>
+        public static void Build(CommandBuffer cb, List<Item> items, Material composite, int divisor, List<Shock> shocks = null)
         {
             cb.Clear();
-            if (items.Count == 0 || composite == null) return;
-            int d = Mathf.Clamp(divisor, 1, 4);
+            shocks = shocks ?? noShocks;
+            if (items.Count == 0 && shocks.Count == 0) return;
+            int d = composite != null ? Mathf.Clamp(divisor, 1, 4) : 1;
             cb.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
             foreach (var it in items)
                 if (it.mesh != null && it.shadowMaterial != null) cb.DrawMesh(it.mesh, it.shadowMatrix, it.shadowMaterial, 0, 0);
-            cb.GetTemporaryRT(LowRes, -d, -d, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBHalf);
-            cb.SetRenderTarget(LowRes);
-            cb.ClearRenderTarget(false, true, new Color(0f, 0f, 0f, 0f));
-            foreach (var it in items)
-                if (it.mesh != null && it.material != null) cb.DrawMesh(it.mesh, it.matrix, it.material, 0, 0);
-            cb.Blit(LowRes, BuiltinRenderTextureType.CameraTarget, composite);
-            cb.ReleaseTemporaryRT(LowRes);
+            if (items.Count > 0)
+            {
+                if (d <= 1)
+                {
+                    foreach (var it in items)
+                        if (it.mesh != null && it.material != null) cb.DrawMesh(it.mesh, it.matrix, it.material, 0, 0);
+                }
+                else
+                {
+                    cb.GetTemporaryRT(LowRes, -d, -d, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBHalf);
+                    cb.SetRenderTarget(LowRes);
+                    cb.ClearRenderTarget(false, true, new Color(0f, 0f, 0f, 0f));
+                    foreach (var it in items)
+                        if (it.mesh != null && it.material != null) cb.DrawMesh(it.mesh, it.matrix, it.material, 0, 0);
+                    cb.Blit(LowRes, BuiltinRenderTextureType.CameraTarget, composite);
+                    cb.ReleaseTemporaryRT(LowRes);
+                }
+            }
+            if (shocks.Count > 0)
+            {
+                cb.GetTemporaryRT(Grab, -1, -1, 0, FilterMode.Bilinear, RenderTextureFormat.Default);
+                cb.Blit(BuiltinRenderTextureType.CameraTarget, Grab);
+                cb.SetGlobalTexture(Grab, Grab);
+                cb.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+                foreach (var sh in shocks)
+                    if (sh.mesh != null && sh.material != null) cb.DrawMesh(sh.mesh, sh.matrix, sh.material, 0, 0);
+                cb.ReleaseTemporaryRT(Grab);
+            }
         }
     }
 

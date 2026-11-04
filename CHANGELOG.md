@@ -53,6 +53,7 @@
 - New settings for craters (on/off, size scale, rebuild mode, fill in all craters) and for haze and weather.
 
 ### Fixed
+- **Crash with other visual mods:** the volumetric cloud, its shadow and the shockwave were ordinary scene renderers, so other mods' cameras drew them too. When a depth or shadow-map camera reached the shockwave's GrabPass, Unity logged "Invalid surface for grabbing pixels" and could crash with an access violation. All three are now drawn only by the flight cameras' command buffer, and the shockwave reads an explicit copy of the frame instead of a GrabPass.
 - The volumetric cloud showed through terrain in front of it where the terrain shader writes no depth (Parallax). Rays now also stop at the ground's sphere at ground zero.
 - Reduced-resolution clouds looked blocky and speckled. The upsample is now a 3×3 depth-aware filter that averages away the raymarch jitter, and the cloud takes more steps at reduced resolution.
 - Blasts never cleared EVE clouds: EVE's `GetEquirectangularUV` is a private static method, and the lookup only searched instance methods. The log now names any EVE member that can't be found.
