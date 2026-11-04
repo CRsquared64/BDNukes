@@ -989,8 +989,10 @@ namespace BDNukes
             // quality where it shows: a cloud that's a speck on screen, or one of a salvo, gets fewer steps
             Camera cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
             float fov = cam != null ? cam.fieldOfView : 60f;
+            // the cost is pixels x steps: as the cloud fills more of the screen it gets fewer steps (the per-pixel
+            // jitter hides it), so getting close doesn't tank the frame rate
             float screenFrac = 2f * Mathf.Max(vs.capScale, R) / Mathf.Max(1f, camDist * 2f * Mathf.Tan(0.5f * fov * Mathf.Deg2Rad));
-            float steps = Mathf.Lerp(20f, s.volumetricSteps, Mathf.Clamp01(screenFrac * 2.5f));
+            float steps = s.volumetricSteps * Mathf.Clamp(0.35f / Mathf.Max(screenFrac, 0.01f), 0.3f, 1f);
             int active = NukeFXManager.Existing != null ? NukeFXManager.Existing.ActiveCount : 1;
             steps *= Mathf.Clamp(1f / Mathf.Sqrt(Mathf.Max(1, active)), 0.35f, 1f);
             volume.Update(ref vs, Mathf.Clamp(Mathf.RoundToInt(steps), 16, 128));

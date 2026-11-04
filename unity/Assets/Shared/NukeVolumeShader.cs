@@ -167,7 +167,7 @@ namespace BDNukes
             mat.SetVector("_DustAlbedo", v.dustAlbedo);
             mat.SetVector("_CondAlbedo", v.condAlbedo);
             mat.SetVector("_HazeCol", new Vector4(v.hazeCol.r, v.hazeCol.g, v.hazeCol.b, v.haze));
-            mat.SetVector("_March", new Vector4(steps, 6f, 1f, debugNoise ? 1f : 0f));
+            mat.SetVector("_March", new Vector4(steps, 4f, 1f, debugNoise ? 1f : 0f));
         }
 
         /// <summary>Anything left to draw in this state.</summary>

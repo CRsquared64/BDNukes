@@ -40,6 +40,14 @@
 - New settings for craters (on/off, size scale, rebuild mode, fill in all craters) and for haze and weather.
 
 ### Changed
+- **Camera shake** is applied to the cameras only while they render, and their exact rotation is put back afterwards. KSP's camera controller never sees it, so a salvo can't spin the camera off to random angles or stop you centring on a blast.
+- **Volumetric performance:**
+  - The step count shrinks as the cloud fills the screen (a budget of pixels × steps), so getting close no longer tanks the frame rate.
+  - Empty space is jumped across using the shapes' distance fields.
+  - The shadow march takes one billowed step, then cheap ones.
+  - Sky occlusion takes one sample.
+  - The default is 64 steps.
+  - The holed EVE coverage maps are redrawn 5 times a second instead of every frame.
 - **Flash:** the double flash now scales with yield. A millisecond first pulse is followed by the thermal pulse, which peaks at 0.042 x W^0.44 s (about 0.16 s at 20 kt, 0.9 s at 1 Mt, 5 s at 50 Mt). The screen whiteout eases off as the eye adapts.
 - **Sound:**
   - The crack is an N-wave with a ground-reflected echo.

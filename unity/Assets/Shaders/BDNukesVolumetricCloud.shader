@@ -234,9 +234,11 @@ Shader "BDNukes/VolumetricCloud"
                 float core;      // distance from the cap's hot core, 0..1+
                 float fireN;     // convective flicker noise
                 float hf;        // height up the cloud 0..1
+                float skip;      // conservative distance to the nearest possible cloud (0 inside or unknown)
             };
 
-            float CapSDF(float3 p, float n, out float3 q)
+            // lobeMode: 0 = sample the lobe noise, 1 = most inflated (a cheap bound), 2 = average (cheap occluder)
+            float CapSDF(float3 p, float n, float lobeMode, out float3 q)
             {
                 float cs = _CapCenter.w;
                 q = p - _CapCenter.xyz;
@@ -253,7 +255,8 @@ Shader "BDNukes/VolumetricCloud"
                 float dome = length(c - float3(0.0, 0.18, 0.0)) - _CapShape.z;
                 float rough = lerp(0.18, 1.0, _CapXZ.z);
                 // a few big lopsided lobes, so no two caps (and no two sides of one) are the same shape
-                float lobe = tex3Dlod(_Noise, float4(q * (_Density.w * 0.3) + float3(0.71, 0.29, 0.53), 0)).r;
+                float lobe = lobeMode < 0.5 ? tex3Dlod(_Noise, float4(q * (_Density.w * 0.3) + float3(0.71, 0.29, 0.53), 0)).r
+                                            : (lobeMode < 1.5 ? 0.9 : 0.62);
                 float lobes = (0.62 - lobe) * 0.8 * cs * rough;
                 return SMin(torus, dome, 0.25) * cs + lobes + (0.5 - n) * (0.75 + 0.45 * _Age.x) * cs * rough;
             }
@@ -303,6 +306,7 @@ Shader "BDNukes/VolumetricCloud"
             {
                 Sample s;
                 s.density = 0.0; s.albedo = _CapAlbedo.rgb; s.cap = 0.0; s.core = 1.0; s.fireN = 0.5; s.hf = 0.0;
+                s.skip = 0.0;
                 float ns = _Density.w;
                 float per = _Anim.w;
 
@@ -311,8 +315,10 @@ Shader "BDNukes/VolumetricCloud"
 
                 // ---- cap / fireball ----
                 float3 q;
-                float capBound = CapSDF(p, 1.0, q);
+                float capBound = CapSDF(p, 1.0, 1.0, q);
                 float capDen = 0.0;
+                // the cap's distance field is stretched by its squash and spread: scale it down to stay safe
+                float skip = capBound * 0.6 * min(min(_CapShape.w, _CapXZ.x), 1.0);
                 if (capBound < 0.0)
                 {
                     float core;
@@ -320,7 +326,7 @@ Shader "BDNukes/VolumetricCloud"
                     float big = FlowNoise(q, vel, ns, per, float3(0.0, 0.0, 0.0), 0);
                     float mid = FlowNoise(q, vel, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
                     float n = smoothstep(0.42, 0.78, 0.65 * big + 0.35 * mid);
-                    float sdf = CapSDF(p, n, q);
+                    float sdf = CapSDF(p, n, 0.0, q);
                     float soft = 0.12 * _CapCenter.w * (1.0 + 2.0 * _Age.x);
                     // the downwind end is older, sheared-off cloud: thinner and more ragged
                     float along = dot(q.xz, _Wind.xz) / (_CapCenter.w * (1.0 + _WindFlow.z));
@@ -331,7 +337,7 @@ Shader "BDNukes/VolumetricCloud"
                         float fine = FlowNoise(q, vel, ns * 4.2, per * 0.5, float3(0.7, 0.2, 0.4), 1);
                         capDen = saturate(capDen - (1.0 - fine) * 0.1 * lerp(0.3, 1.0, _CapXZ.z));
                         // fast convective flicker for the fire, rising through the ball
-                        s.fireN = FlowNoise(q, vel * 1.8 + float3(0.0, 0.25 * _CapCenter.w * _CapXZ.w + 20.0, 0.0), ns * 3.1, per * 0.35, float3(0.11, 0.83, 0.29), 0);
+                        if (_Fire.x > 0.001 || _March.w > 0.5) s.fireN = FlowNoise(q, vel * 1.8 + float3(0.0, 0.25 * _CapCenter.w * _CapXZ.w + 20.0, 0.0), ns * 3.1, per * 0.35, float3(0.11, 0.83, 0.29), 0);
                     }
                     s.core = core;
                 }
@@ -345,7 +351,9 @@ Shader "BDNukes/VolumetricCloud"
                     float d0 = BentStem(p, u, axis);
                     float flare = 1.0 + _StemVis.w * pow(1.0 - u, 6.0);
                     float localR = lerp(_StemBase.w, _StemTop.w, u) * flare;
-                    if (d0 - (flare - 1.0) * _StemBase.w - 0.45 * localR < 0.0)
+                    float stemOut = d0 - (flare - 1.0) * _StemBase.w - 0.45 * localR;
+                    skip = min(skip, stemOut * 0.6);
+                    if (stemOut < 0.0)
                     {
                         float3 r = p - axis;
                         float tw = u * 2.5 + _Anim.x * 0.06;
@@ -364,6 +372,13 @@ Shader "BDNukes/VolumetricCloud"
 
                 // ---- dust skirt and base surge: rolling outward along the ground ----
                 float dustDen = 0.0;
+                if (_Skirt.y + _Surge.z > 0.001)
+                {
+                    // a box around the skirt and surge (stretch only pulls inward, so this stays conservative)
+                    float ext = max(_SkirtCenter.w * 1.5, _Surge.x + _Surge.w * 1.6) * (1.0 + _WindFlow.w);
+                    float3 bd = abs(p - _SkirtCenter.xyz - float3(0.0, _Skirt.x, 0.0)) - float3(ext, max(_Skirt.x * 2.0, _Surge.y * 2.0), ext);
+                    skip = min(skip, length(max(bd, 0.0)));
+                }
                 float3 sp = Stretch(p - _SkirtCenter.xyz, _WindFlow.w);
                 float rxz = length(sp.xz);
                 float2 rdir = rxz > 1e-3 ? sp.xz / rxz : float2(1.0, 0.0);
@@ -392,6 +407,7 @@ Shader "BDNukes/VolumetricCloud"
                 float condDen = 0.0;
                 if (_Wilson.z + _Pileus.z + _Rings[0].w + _Rings[1].w + _Rings[2].w + _CollarPos[0].w + _CollarPos[1].w + _CollarPos[2].w + _CollarPos[3].w + _CollarPos[4].w > 0.001)
                 {
+                    skip = 0.0; // thin condensation shells: no skipping while they're about
                     float wisp = FlowNoise(p, float3(0.0, 2.0, 0.0), ns * 3.5, per, float3(0.5, 0.5, 0.5), 1);
                     condDen = Cond(p, wisp);
                     // pileus: a smooth veil of condensation draped over the top of the rising cap, where it
@@ -399,13 +415,14 @@ Shader "BDNukes/VolumetricCloud"
                     if (_Pileus.z > 0.001)
                     {
                         float3 pq;
-                        float sd = CapSDF(p, 0.55, pq);
+                        float sd = CapSDF(p, 0.55, 2.0, pq);
                         float x = (sd - _Pileus.x) / max(_Pileus.y, 1.0);
                         float top = smoothstep(-0.1, 0.35, pq.y / max(_CapCenter.w, 1.0));
                         condDen = max(condDen, exp(-x * x * 2.0) * top * _Pileus.z * smoothstep(0.2, 0.7, wisp));
                     }
                 }
 
+                s.skip = max(skip, 0.0);
                 float total = capDen + stemDen + dustDen + condDen;
                 s.density = max(max(capDen, stemDen), max(dustDen, condDen));
                 if (total > 1e-4)
@@ -421,7 +438,7 @@ Shader "BDNukes/VolumetricCloud"
             float CloudCheap(float3 p)
             {
                 float3 q;
-                float cap = saturate(-CapSDF(p, 0.55, q) / (0.25 * _CapCenter.w) + 0.15) * _Density.x;
+                float cap = saturate(-CapSDF(p, 0.55, 2.0, q) / (0.25 * _CapCenter.w) + 0.15) * _Density.x;
                 float stem = 0.0;
                 if (_StemVis.z > 0.001)
                 {
@@ -491,7 +508,7 @@ Shader "BDNukes/VolumetricCloud"
                 [loop]
                 for (int k = 0; k < 160; k++)
                 {
-                    if (t >= t1 || T < 0.008) break;
+                    if (t >= t1 || T < 0.015) break;
                     float3 p = ro + rd * t;
                     Sample sm = Cloud(p, true);
                     float d = sm.density;
@@ -509,7 +526,7 @@ Shader "BDNukes/VolumetricCloud"
                             spos += sun * sl;
                             // near the sample the billows themselves cast the shadow (cauliflower relief),
                             // further out the smooth shape is enough
-                            od += (j < 3 ? Cloud(spos, false).density : CloudCheap(spos)) * sl;
+                            od += (j < 1 ? Cloud(spos, false).density : CloudCheap(spos)) * sl;
                             sl *= 1.55;
                         }
                         // multiple scattering: octaves of weaker extinction, softer phase, less energy
@@ -526,7 +543,7 @@ Shader "BDNukes/VolumetricCloud"
                         float3 direct = _SunCol.rgb * (_SunDir.w * vis) * ms * lerp(0.55, 1.0, powder);
 
                         // sky from above, occluded by the cloud over this point; ground bounce from below
-                        float occ = CloudCheap(p + float3(0.0, 0.35 * cs, 0.0)) + CloudCheap(p + float3(0.0, 0.8 * cs, 0.0));
+                        float occ = 2.0 * CloudCheap(p + float3(0.0, 0.5 * cs, 0.0));
                         float skyVis = exp(-sigmaK * occ * 0.3 * cs);
                         float3 amb = _Ambient.rgb * lerp(0.55, 1.15, skyVis) + _GroundCol.rgb * (1.0 - sm.hf) * 0.6;
 
@@ -559,7 +576,7 @@ Shader "BDNukes/VolumetricCloud"
                     }
                     else
                     {
-                        t += dt * 1.6; // skip empty space faster
+                        t += max(dt * 1.6, sm.skip); // jump across empty space
                     }
                 }
 

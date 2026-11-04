@@ -138,7 +138,7 @@ namespace BDNukes
 
         // volumetric clouds
         public bool volumetricClouds = true;       // raymarched cloud and fluid fireball (needs the shader bundle, Windows)
-        public int volumetricSteps = 96;           // raymarch samples per pixel: quality vs GPU cost
+        public int volumetricSteps = 64;           // raymarch samples per pixel: quality vs GPU cost
 
         // atmosphere and weather
         public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)

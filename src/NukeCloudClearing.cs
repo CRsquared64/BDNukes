@@ -44,6 +44,7 @@ namespace BDNukes
         static readonly Vector4[] holeArr = new Vector4[MaxHoles];
         static readonly Vector4[] ringArr = new Vector4[MaxHoles];
         static Material holeMat;
+        static float nextRedraw;
 
         static void Init()
         {
@@ -150,6 +151,14 @@ namespace BDNukes
         {
             if (layers.Count == 0) return;
             float now = Time.time;
+            // keep our maps bound every frame, but only redraw them a few times a second (a full-planet blit each)
+            if (now < nextRedraw)
+            {
+                foreach (var kv in layers)
+                    if (kv.Value.mat != null && kv.Value.mat.GetTexture(CoverageProp) != kv.Value.rt) kv.Value.mat.SetTexture(CoverageProp, kv.Value.rt);
+                return;
+            }
+            nextRedraw = now + 0.2f;
             List<object> done = null;
             foreach (var kv in layers)
             {

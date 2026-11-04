@@ -28,8 +28,10 @@ namespace BDNukes
 
         struct Shake { public float amplitude, duration, start; }
         readonly List<Shake> shakes = new List<Shake>();
-        Transform shakenTransform;
-        Quaternion appliedShake = Quaternion.identity;
+        // the shake is applied to each flight camera only while it renders (onPreCull -> onPostRender) and its
+        // exact rotation put back afterwards: the camera controller never sees it, so nothing can accumulate
+        Quaternion shake = Quaternion.identity;
+        readonly Dictionary<Camera, Quaternion> savedRotation = new Dictionary<Camera, Quaternion>();
         float noiseSeed;
         Texture2D white;
 
@@ -84,17 +86,54 @@ namespace BDNukes
             white = Texture2D.whiteTexture;
         }
 
+        void OnEnable()
+        {
+            Camera.onPreCull += ShakeCamera;
+            Camera.onPostRender += UnshakeCamera;
+        }
+
+        void OnDisable()
+        {
+            Camera.onPreCull -= ShakeCamera;
+            Camera.onPostRender -= UnshakeCamera;
+            RestoreAllCameras();
+        }
+
         void OnDestroy()
         {
-            RestoreCamera();
+            RestoreAllCameras();
             NukeCloudClearing.RestoreAll();
             if (instance == this) instance = null;
         }
 
-        void Update()
+        static bool IsShakeable(Camera cam)
         {
-            // Undo last frame's shake before the camera controller runs.
-            RestoreCamera();
+            if (cam == null || FlightCamera.fetch == null) return false;
+            var cams = FlightCamera.fetch.cameras;
+            if (cams != null) for (int i = 0; i < cams.Length; i++) if (cams[i] == cam) return true;
+            return ScaledCamera.Instance != null && ScaledCamera.Instance.cam == cam;
+        }
+
+        void ShakeCamera(Camera cam)
+        {
+            if (shake == Quaternion.identity || savedRotation.ContainsKey(cam) || !IsShakeable(cam)) return;
+            var tr = cam.transform;
+            savedRotation[cam] = tr.rotation;
+            tr.rotation = tr.rotation * shake;
+        }
+
+        void UnshakeCamera(Camera cam)
+        {
+            if (cam == null || !savedRotation.TryGetValue(cam, out var rot)) return;
+            cam.transform.rotation = rot;
+            savedRotation.Remove(cam);
+        }
+
+        void RestoreAllCameras()
+        {
+            foreach (var kv in savedRotation) if (kv.Key != null) kv.Key.transform.rotation = kv.Value;
+            savedRotation.Clear();
+            shake = Quaternion.identity;
         }
 
         void LateUpdate()
@@ -109,7 +148,11 @@ namespace BDNukes
                 amp += shakes[i].amplitude * k * k;
             }
             amp = Mathf.Min(amp, 1.5f) * NukeSettings.Current.cameraShake;
-            if (amp < 0.002f || FlightCamera.fetch == null) return;
+            if (amp < 0.002f || FlightCamera.fetch == null)
+            {
+                shake = Quaternion.identity;
+                return;
+            }
 
             float t = Time.time * 22f;
             float deg = amp * 2.5f;
@@ -117,18 +160,7 @@ namespace BDNukes
                 (Mathf.PerlinNoise(t, noiseSeed) - 0.5f) * 2f * deg,
                 (Mathf.PerlinNoise(noiseSeed, t) - 0.5f) * 2f * deg,
                 (Mathf.PerlinNoise(t * 0.7f, noiseSeed + 7f) - 0.5f) * deg);
-            shakenTransform = FlightCamera.fetch.transform;
-            appliedShake = Quaternion.Euler(euler);
-            shakenTransform.localRotation = shakenTransform.localRotation * appliedShake;
-        }
-
-        void RestoreCamera()
-        {
-            if (shakenTransform != null && appliedShake != Quaternion.identity)
-            {
-                shakenTransform.localRotation = shakenTransform.localRotation * Quaternion.Inverse(appliedShake);
-            }
-            appliedShake = Quaternion.identity;
+            shake = Quaternion.Euler(euler);
         }
 
         void OnGUI()
