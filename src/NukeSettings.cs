@@ -143,6 +143,7 @@ namespace BDNukes
         // atmosphere and weather
         public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)
         public float hazeVisibility = 40000f;      // m of sea-level air that hides ~63% of the cloud's own colour
+        public bool cloudClearing = true;          // blasts blow holes in EVE's volumetric cloud decks, which heal over minutes
         public bool weatherLighting = true;        // EVE volumetric overcast blocks the sun on the cloud (if EVE is installed)
 
         // terrain craters
@@ -277,6 +278,7 @@ namespace BDNukes
             n.TryGetValue("atmosphericHaze", ref atmosphericHaze);
             n.TryGetValue("hazeVisibility", ref hazeVisibility);
             n.TryGetValue("weatherLighting", ref weatherLighting);
+            n.TryGetValue("cloudClearing", ref cloudClearing);
             n.TryGetValue("craters", ref craters);
             n.TryGetValue("craterScale", ref craterScale);
             n.TryGetValue("maxCraters", ref maxCraters);
@@ -411,6 +413,7 @@ namespace BDNukes
                 n.AddValue("atmosphericHaze", B(atmosphericHaze));
                 n.AddValue("hazeVisibility", F(hazeVisibility));
                 n.AddValue("weatherLighting", B(weatherLighting));
+                n.AddValue("cloudClearing", B(cloudClearing));
                 n.AddValue("craters", B(craters));
                 n.AddValue("craterScale", F(craterScale));
                 n.AddValue("craterPartialRebuild", B(craterPartialRebuild));

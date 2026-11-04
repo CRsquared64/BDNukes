@@ -160,7 +160,7 @@ public static class BDNukesBuild
         LoadShader();
         string outDir = Path.Combine(RepoRoot, "unity", "Build");
         Directory.CreateDirectory(outDir);
-        var build = new AssetBundleBuild { assetBundleName = BundleName, assetNames = new[] { ShaderPath, NoisePath } };
+        var build = new AssetBundleBuild { assetBundleName = BundleName, assetNames = new[] { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", NoisePath } };
         var manifest = BuildPipeline.BuildAssetBundles(outDir, new[] { build },
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle,
             BuildTarget.StandaloneWindows64);

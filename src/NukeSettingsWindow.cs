@@ -161,6 +161,7 @@ namespace BDNukes
             s.atmosphericHaze = Toggle("Distance haze on the cloud", s.atmosphericHaze);
             s.hazeVisibility = Slider("Haze visibility (m)", s.hazeVisibility, 5000f, 200000f, "0");
             s.weatherLighting = Toggle("Overcast dims the cloud (EVE clouds)", s.weatherLighting);
+            s.cloudClearing = Toggle("Blasts clear EVE clouds", s.cloudClearing);
 
             GUILayout.Space(6f);
             GUILayout.Label("Terrain craters");

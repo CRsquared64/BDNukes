@@ -87,6 +87,7 @@ namespace BDNukes
         void OnDestroy()
         {
             RestoreCamera();
+            NukeCloudClearing.RestoreAll();
             if (instance == this) instance = null;
         }
 
@@ -98,6 +99,7 @@ namespace BDNukes
 
         void LateUpdate()
         {
+            NukeCloudClearing.Update();
             float amp = 0f;
             for (int i = shakes.Count - 1; i >= 0; i--)
             {

@@ -29,6 +29,9 @@ namespace BDNukes
         public float capStretch, dustStretch;   // downwind elongation (0 = round)
         public float dissipation;   // 0 fresh .. 1 frayed and thinning
 
+        // the planet, which hides the cloud from orbit (scaled-space views leave no depth buffer)
+        public Vector3 planetCenter; public float planetRadius;
+
         // skirt and base surge
         public Vector3 skirtCenter;
         public float skirtR, skirtH, skirtDensity, skirtThin, outflow;
@@ -36,6 +39,7 @@ namespace BDNukes
 
         // condensation
         public float wilsonR, wilsonThick, wilsonDensity; public bool wilsonHemisphere;
+        public float pileusOffset, pileusThick, pileusDensity;   // ice-cap veil over the rising cap
         public Vector4 ring0, ring1, ring2;   // y, radius, tube, density
         public Vector3 ringOffset;
         public Vector4 collar0, collar1, collar2, collar3, collar4;          // xyz centre, w density
@@ -147,6 +151,8 @@ namespace BDNukes
             mat.SetVector("_WindFlow", new Vector4(v.windLow, v.windHigh, v.capStretch, v.dustStretch));
             mat.SetVector("_StemMid", v.stemMid);
             mat.SetVector("_Age", new Vector4(v.dissipation, 0f, 0f, 0f));
+            mat.SetVector("_Planet", new Vector4(v.planetCenter.x, v.planetCenter.y, v.planetCenter.z, v.planetRadius));
+            mat.SetVector("_Pileus", new Vector4(v.pileusOffset, v.pileusThick, v.pileusDensity, 0f));
             mat.SetVector("_Density", new Vector4(v.capDensity, v.extinction, 0.3f, v.noiseScale));
             mat.SetVector("_Anim", new Vector4(v.time, v.rollRate, v.updraft, Mathf.Max(0.5f, v.flowPeriod)));
             mat.SetVector("_Fire", new Vector4(v.fire, v.fireTemp, v.flicker, v.soot));
@@ -167,7 +173,7 @@ namespace BDNukes
         /// <summary>Anything left to draw in this state.</summary>
         public static bool Visible(ref NukeVolumeState v) =>
             v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
-            v.wilsonDensity > 0.003f || v.ring0.w + v.ring1.w + v.ring2.w > 0.003f ||
+            v.wilsonDensity > 0.003f || v.pileusDensity > 0.003f || v.ring0.w + v.ring1.w + v.ring2.w > 0.003f ||
             v.collar0.w + v.collar1.w + v.collar2.w + v.collar3.w + v.collar4.w > 0.003f;
     }
 
@@ -266,7 +272,7 @@ namespace BDNukes
             v.surgeDensity = 0.3f * SS(0.3f, 1f, t) * (1f - SS(surgeEnd, surgeEnd + 25f, t));
 
             float tW = Mathf.Min(2.5f * R / c, 4f);
-            v.wilsonDensity = 0.07f * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.4f * tW, 1.1f * tW, t));
+            v.wilsonDensity = 0.3f * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.5f * tW, 1.3f * tW, t));
             v.wilsonR = Mathf.Min(R * 1.2f + c * t * 0.9f, 3.6f * R);
             v.wilsonThick = 0.3f * R;
             v.wilsonHemisphere = true;
@@ -278,9 +284,12 @@ namespace BDNukes
                 float hold = 3f + 0.5f * tauG;
                 float vis = SS(tk, tk + 0.6f, t) * (1f - SS(tk + hold, tk + hold + 4f + 0.5f * tauG, t));
                 float rk = R * (1.5f + 0.32f * k) * (1f + 0.015f * t) * (1f + 0.4f * rise);
-                return new Vector4(y0 + 0.4f * riseDelta * rise, rk, 0.3f * R, 0.12f * vis);
+                return new Vector4(y0 + 0.4f * riseDelta * rise, rk, 0.3f * R, 0.3f * vis);
             }
             v.ring0 = Ring(0); v.ring1 = Ring(1); v.ring2 = Ring(2);
+            v.pileusOffset = 0.12f * capScale;
+            v.pileusThick = 0.08f * capScale;
+            v.pileusDensity = 0.9f * SS(0.4f * tauG, 1.2f * tauG, t) * (1f - SS(0.25f * riseTime, 0.55f * riseTime, t));
             v.ringOffset = drift * 0.8f;
 
             float heatK = (t < 0.5f ? 1.3f : 1f) * Mathf.Exp(-Mathf.Max(0f, x - 0.35f) / 0.85f);

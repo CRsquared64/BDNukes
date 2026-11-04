@@ -274,6 +274,10 @@ namespace BDNukes
             PlanAftermath();
             Build();
             PlanCrater();
+            // the blast blows a hole in EVE's cloud decks within reach of the shock
+            if (airFx && body.atmosphere)
+                NukeCloudClearing.Blast(body, pos, alt, 4f * Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale),
+                    c, 300f * yieldTimeScale);
             SpawnAftermath();
             NukeFXManager.Instance.Register(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
@@ -902,7 +906,7 @@ namespace BDNukes
             if (wilson != null)
             {
                 float tW = Mathf.Min(2.5f * R / c, 4f);
-                vs.wilsonDensity = 0.07f * (0.5f + prof.humidity) * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.4f * tW, 1.1f * tW, t)) * airW;
+                vs.wilsonDensity = 0.3f * (0.4f + 0.8f * prof.humidity) * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.5f * tW, 1.3f * tW, t)) * airW;
                 vs.wilsonR = Mathf.Min(R * 1.2f + c * t * 0.9f, 3.6f * R);
                 vs.wilsonThick = 0.3f * R;
                 vs.wilsonHemisphere = groundFx;
@@ -919,10 +923,19 @@ namespace BDNukes
                     float hold = 3f + 0.5f * tauG;
                     float vis = SS(tk, tk + 0.6f, t) * (1f - SS(tk + hold, tk + hold + 4f + 0.5f * tauG, t)) * airW;
                     float rk = R * (1.5f + 0.32f * k) * (1f + 0.015f * t) * (1f + 0.4f * Rise(t));
-                    var ring = new Vector4(y0 + 0.4f * CapHeight(t), rk, 0.3f * R, 0.12f * vis * (0.6f + 0.6f * prof.humidity));
+                    var ring = new Vector4(y0 + 0.4f * CapHeight(t), rk, 0.3f * R, 0.3f * vis * (0.6f + 0.6f * prof.humidity));
                     if (k == 0) vs.ring0 = ring; else if (k == 1) vs.ring1 = ring; else vs.ring2 = ring;
                 }
                 vs.ringOffset = 0.8f * capDrift;
+            }
+
+            // ---- pileus: an ice-cap veil over the rising cap as it lifts moist air (humid air only) ----
+            vs.pileusDensity = 0f;
+            if (body.atmosphere && prof.humidity > 0.15f && prof.lowYield < 0.5f)
+            {
+                vs.pileusOffset = 0.12f * vs.capScale;
+                vs.pileusThick = 0.08f * vs.capScale;
+                vs.pileusDensity = 0.9f * prof.humidity * airW * SS(0.4f * tauG, 1.2f * tauG, t) * (1f - SS(0.25f * riseTime, 0.55f * riseTime, t));
             }
 
             // ---- stem collars: bells of mist forming in turn as the column climbs ----
@@ -941,7 +954,7 @@ namespace BDNukes
                     float u = Mathf.Min(0.95f, frac + 0.06f * age / riseTime);
                     float stemR = StemRadius(u);
                     Vector3 cpos = new Vector3(0f, groundY + u * yTop, 0f) + Lean(u);
-                    var pos = new Vector4(cpos.x, cpos.y, cpos.z, 0.35f * vis);
+                    var pos = new Vector4(cpos.x, cpos.y, cpos.z, 0.55f * vis);
                     var shape = new Vector4(stemR * (2f + 0.6f * SS(0f, 10f, age)), 0.35f * stemR, 0.3f, 0f);
                     switch (k)
                     {
@@ -970,7 +983,17 @@ namespace BDNukes
             vs.condAlbedo = CondWhite;
             vs.hazeCol = hazeCol;
             vs.haze = haze;
-            volume.Update(ref vs, s.volumetricSteps);
+            vs.planetCenter = transform.InverseTransformPoint(body.position);
+            vs.planetRadius = (float)(body.Radius + System.Math.Min(0d, alt + groundY)) - 150f;
+
+            // quality where it shows: a cloud that's a speck on screen, or one of a salvo, gets fewer steps
+            Camera cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
+            float fov = cam != null ? cam.fieldOfView : 60f;
+            float screenFrac = 2f * Mathf.Max(vs.capScale, R) / Mathf.Max(1f, camDist * 2f * Mathf.Tan(0.5f * fov * Mathf.Deg2Rad));
+            float steps = Mathf.Lerp(20f, s.volumetricSteps, Mathf.Clamp01(screenFrac * 2.5f));
+            int active = NukeFXManager.Existing != null ? NukeFXManager.Existing.ActiveCount : 1;
+            steps *= Mathf.Clamp(1f / Mathf.Sqrt(Mathf.Max(1, active)), 0.35f, 1f);
+            volume.Update(ref vs, Mathf.Clamp(Mathf.RoundToInt(steps), 16, 128));
         }
 
         /// <summary>

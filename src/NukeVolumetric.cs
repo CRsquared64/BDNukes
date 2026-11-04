@@ -13,7 +13,7 @@ namespace BDNukes
     internal class NukeVolumetric
     {
         static bool loadTried;
-        static Shader shader;
+        static Shader shader, holeShader;
         static Texture3D noise;
         static Mesh cube;
 
@@ -37,7 +37,11 @@ namespace BDNukes
                 if (!File.Exists(path)) return;
                 var bundle = AssetBundle.LoadFromFile(path);
                 if (bundle == null) return;
-                foreach (var sh in bundle.LoadAllAssets<Shader>()) if (sh.name == "BDNukes/VolumetricCloud") shader = sh;
+                foreach (var sh in bundle.LoadAllAssets<Shader>())
+                {
+                    if (sh.name == "BDNukes/VolumetricCloud") shader = sh;
+                    else if (sh.name == "BDNukes/CoverageHole") holeShader = sh;
+                }
                 foreach (var tx in bundle.LoadAllAssets<Texture3D>()) noise = tx;
                 if (shader != null && !shader.isSupported)
                 {
@@ -51,6 +55,13 @@ namespace BDNukes
                 shader = null;
                 Debug.LogWarning("[BDNukes]: Couldn't load the volumetric cloud shader: " + e.Message);
             }
+        }
+
+        /// <summary>The blit material that cuts blast holes into EVE's cloud coverage maps (null without the bundle).</summary>
+        public static Material MakeHoleMaterial()
+        {
+            if (!loadTried) Load();
+            return holeShader != null && holeShader.isSupported ? new Material(holeShader) : null;
         }
 
         static Mesh Cube()

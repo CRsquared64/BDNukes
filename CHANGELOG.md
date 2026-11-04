@@ -22,6 +22,16 @@
   - Wind shear leans the cap, and the cap stretches downwind as it drifts. Its downwind end thins into a ragged plume, and billows stream off the downwind side.
   - The dust skirt and base surge blow downwind.
 - **Ageing:** big lopsided lobes make every cap a different shape. Late in its life the cloud frays, thins and fades, and the stem goes first.
+- **Vapor:**
+  - A visible Wilson cloud races out with the shock in humid air.
+  - The condensation rings and stem collars are stronger.
+  - A pileus veil (the "ice cap") drapes over the rising cap where it lifts moist air.
+- **Blasts clear EVE clouds:**
+  - The shock blows a hole in EVE's volumetric cloud decks within reach. The cloud it pushes out piles up in a ring at the edge.
+  - The hole drifts with the clouds and heals over several minutes, then EVE's own coverage map goes back.
+  - New setting: "Blasts clear EVE clouds".
+- **Seen from orbit:** the planet itself now hides the volumetric cloud (behind the horizon and limb), since the scaled-space view leaves no depth buffer.
+- **Cost:** a cloud that's small on screen, or one of a salvo, raymarches with fewer steps.
 - `unity/run-unity.ps1 RenderTests` renders contact sheets of a detonation's life, its motion, the fireball, the weather and a megaton. They are drawn through the same parameter code the plugin uses (`unity/Assets/Shared`).
 - **Terrain craters:** surface and low bursts on land dig a persistent crater (bowl, ragged rim, ejecta blanket) into the terrain, about 52 m x yield^0.294 in radius. Megaton airbursts press a wide, shallow depression in from up to about 2.2 fireball radii. Craters are bigger on low-gravity bodies, are saved with the game and come back on load or revert. The scorch mark drapes into the crater, and landed craft and colliders follow the new ground.
 - Only the terrain near a new crater is rebuilt (a few ms), and it works with Parallax. A full terrain rebuild is available as a setting, but it freezes the game for several seconds.

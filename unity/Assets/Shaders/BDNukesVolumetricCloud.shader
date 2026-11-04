@@ -67,6 +67,8 @@ Shader "BDNukes/VolumetricCloud"
             float4 _WindFlow;    // x wind near the ground (m/s), y wind at the cap (m/s), z downwind stretch of the cap, w downwind stretch of the dust
             float4 _StemMid;     // xyz bend control point of the stem (quadratic Bezier between base and top)
             float4 _Age;         // x dissipation 0..1 (thinning, fraying), y unused
+            float4 _Planet;      // xyz planet centre (local), w radius below which nothing is drawn (the planet hides it)
+            float4 _Pileus;      // x height above the cap surface (m), y thickness (m), z density, w unused
 
             // --- appearance ---
             float4 _Density;     // x cap density, y extinction per m at density 1, z erosion, w noise scale (1/m)
@@ -388,10 +390,20 @@ Shader "BDNukes/VolumetricCloud"
 
                 // ---- condensation (wispy, white) ----
                 float condDen = 0.0;
-                if (_Wilson.z + _Rings[0].w + _Rings[1].w + _Rings[2].w + _CollarPos[0].w + _CollarPos[1].w + _CollarPos[2].w + _CollarPos[3].w + _CollarPos[4].w > 0.001)
+                if (_Wilson.z + _Pileus.z + _Rings[0].w + _Rings[1].w + _Rings[2].w + _CollarPos[0].w + _CollarPos[1].w + _CollarPos[2].w + _CollarPos[3].w + _CollarPos[4].w > 0.001)
                 {
                     float wisp = FlowNoise(p, float3(0.0, 2.0, 0.0), ns * 3.5, per, float3(0.5, 0.5, 0.5), 1);
                     condDen = Cond(p, wisp);
+                    // pileus: a smooth veil of condensation draped over the top of the rising cap, where it
+                    // lifts moist air through its condensation level
+                    if (_Pileus.z > 0.001)
+                    {
+                        float3 pq;
+                        float sd = CapSDF(p, 0.55, pq);
+                        float x = (sd - _Pileus.x) / max(_Pileus.y, 1.0);
+                        float top = smoothstep(-0.1, 0.35, pq.y / max(_CapCenter.w, 1.0));
+                        condDen = max(condDen, exp(-x * x * 2.0) * top * _Pileus.z * smoothstep(0.2, 0.7, wisp));
+                    }
                 }
 
                 float total = capDen + stemDen + dustDen + condDen;
@@ -446,6 +458,20 @@ Shader "BDNukes/VolumetricCloud"
                 float sceneT = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv)) / cosA;
                 float t0 = max(hit.x, nearT);
                 float t1 = min(min(hit.y, farT), sceneT);
+                // from orbit the planet is drawn by the scaled-space camera, which leaves no depth here: stop the
+                // ray where it meets the planet itself, so clouds behind the horizon or limb stay hidden
+                if (_Planet.w > 0.0)
+                {
+                    float3 oc = ro - _Planet.xyz;
+                    float b = dot(oc, rd);
+                    float c = dot(oc, oc) - _Planet.w * _Planet.w;
+                    float disc = b * b - c;
+                    if (disc > 0.0)
+                    {
+                        float tp = -b - sqrt(disc);
+                        if (tp > 0.0) t1 = min(t1, tp);
+                    }
+                }
                 if (t1 <= t0) discard;
 
                 int steps = (int)_March.x;
