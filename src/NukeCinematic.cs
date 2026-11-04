@@ -822,11 +822,13 @@ namespace BDNukes
             vs.windHigh = wind.hiSpeed;
             float capAGL = Mathf.Max(1f, hb + capPosL.y);
             vs.shear = Mathf.Clamp((wind.hiSpeed - wind.lowSpeed) * t / capAGL * 0.12f, 0f, 0.5f);
-            vs.capStretch = Mathf.Clamp((wind.hiSpeed - 0.5f * wind.lowSpeed) * Mathf.Max(0f, t - 0.2f * riseTime) * 0.1f / Mathf.Max(R, 1f), 0f, 2.5f);
+            vs.capStretch = Mathf.Clamp((wind.hiSpeed - 0.5f * wind.lowSpeed) * Mathf.Max(0f, t - 0.3f * riseTime) * 0.35f / Mathf.Max(capRadius, 1f), 0f, 0.8f);
             vs.dustStretch = Mathf.Clamp(wind.lowSpeed * t * 0.5f / Mathf.Max(3f * R, 1f), 0f, 2f);
             vs.dissipation = SS(0.45f * lifeAir, 0.9f * lifeAir, t);
             vs.extinction = 2f / R;
-            vs.noiseScale = 1f / (3f * R);
+            // billows sized to the grown cap (fixed per detonation, so they don't zoom): small yields grow caps
+            // tens of fireball radii across, and fireball-sized billows would cover them in fur
+            vs.noiseScale = 1f / (0.5f * Mathf.Max(capRadius, 3f * R));
             vs.flowPeriod = 6f;
 
             // ---- fireball and cap: a ball that rolls up into the toroidal cap ----
@@ -834,10 +836,11 @@ namespace BDNukes
             vs.capScale = Mathf.Max(1f, capScale * Mathf.Lerp(Mathf.Max(0.05f, grow), 1f, m));
             // a rolling torus wider than it is tall, its outer edge curling down into hanging lobes
             vs.ringR = Mathf.Lerp(0.05f, 0.62f * Mathf.Lerp(1f, 0.62f, pkT), m);
-            vs.tube = Mathf.Lerp(0.3f, 0.48f * (1f + 0.9f * pkT), m);
+            // a pancaking cap spreads, but stays a rounded, billowing anvil rather than a flat loaf
+            vs.tube = Mathf.Lerp(0.3f, 0.48f * (1f + 0.45f * pkT), m);
             vs.dome = Mathf.Lerp(0.85f, 0.4f, m);
-            vs.squash = Mathf.Lerp(1f, Mathf.Clamp(0.5f * capYS, 0.55f, 0.9f), m);
-            vs.xzSpread = Mathf.Lerp(1f, capXZS, m);
+            vs.squash = Mathf.Lerp(1f, Mathf.Clamp(0.5f * capYS, 0.62f, 0.9f), m);
+            vs.xzSpread = Mathf.Lerp(1f, Mathf.Min(capXZS, 1.7f), m);
             vs.overhang = Mathf.Max(prof.overhang, 0.45f) * m * (1f - 0.6f * pkT);
             vs.capDensity = FadeOut;
             // smooth at first, turbulent within a second or two (Rayleigh-Taylor), the cap fully churning

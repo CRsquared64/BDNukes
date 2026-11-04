@@ -220,7 +220,7 @@ namespace BDNukes
             v.windLow = windLow; v.windHigh = windHigh;
             float capH = R * 0.9f + riseDelta * rise;
             v.shear = Mathf.Clamp((windHigh - windLow) * t / Mathf.Max(capH, 1f) * 0.12f, 0f, 0.5f);
-            v.capStretch = Mathf.Clamp((windHigh - windLow * 0.5f) * Mathf.Max(0f, t - 20f) * 0.6f / Mathf.Max(R, 1f) / 6f, 0f, 2.5f);
+            v.capStretch = Mathf.Clamp((windHigh - windLow * 0.5f) * Mathf.Max(0f, t - 0.3f * riseTime) * 0.35f / Mathf.Max(capRadius, 1f), 0f, 0.8f);
             v.dustStretch = Mathf.Clamp(windLow * t * 0.5f / Mathf.Max(R * 3f, 1f), 0f, 2f);
             v.dissipation = SS(2f * riseTime, 5f * riseTime, t);
             v.capCenter = new Vector3(0f, R * 0.9f + riseDelta * rise, 0f) + drift;
@@ -237,7 +237,7 @@ namespace BDNukes
             v.extinction = 2f / R;
             v.rollRate = 0.35f * Mathf.Exp(-t / tauRise) + 0.03f;
             v.flowPeriod = 6f;
-            v.noiseScale = 1f / (3f * R);
+            v.noiseScale = 1f / (0.5f * Mathf.Max(capRadius, 3f * R));
 
             float start = 0.25f * tauG;
             if (t > start)

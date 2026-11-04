@@ -221,6 +221,11 @@ public static class BDNukesBuild
         Sheet(shader, noise, Path.Combine(outDir, "6_wind_20kt.png"), 2, Array.ConvertAll(windT, t => new Shot
         { W = 20f, t = t, sunVis = 1f, haze = 0.05f, cam = new Vector3(0f, 400f, -14000f), lookFrac = 0.5f, fov = 42f }));
 
+        // a Davy Crockett (0.02 kt): small fireball, a cap many fireball radii across
+        var davy = new[] { 3f, 12f, 35f, 80f };
+        Sheet(shader, noise, Path.Combine(outDir, "7_davy.png"), 2, Array.ConvertAll(davy, t => new Shot
+        { W = 0.02f, t = t, sunVis = 1f, haze = 0.03f, cam = new Vector3(0f, 60f, -2500f), lookFrac = 0.5f, fov = 40f }));
+
         // a megaton
         var mt = new[] { 3f, 15f, 45f, 120f };
         Sheet(shader, noise, Path.Combine(outDir, "5_life_1Mt.png"), 2, Array.ConvertAll(mt, t => new Shot

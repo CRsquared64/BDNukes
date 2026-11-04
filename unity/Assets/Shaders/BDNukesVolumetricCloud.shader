@@ -336,9 +336,9 @@ Shader "BDNukes/VolumetricCloud"
                     float big = FlowNoise(qw, vel, ns, per, float3(0.0, 0.0, 0.0), 0);
                     // the mid billows ride the flow a little faster than the big ones: they boil against each other
                     float mid = FlowNoise(qw, vel * 1.35, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
-                    float n = smoothstep(0.42, 0.78, 0.65 * big + 0.35 * mid);
+                    float n = smoothstep(0.4, 0.8, 0.8 * big + 0.2 * mid);
                     float sdf = CapSDF(p, n, 0.0, q);
-                    float soft = 0.12 * _CapCenter.w * (1.0 + 2.0 * _Age.x);
+                    float soft = 0.16 * _CapCenter.w * (1.0 + 2.0 * _Age.x);
                     // the downwind end is older, sheared-off cloud: thinner and more ragged
                     float along = dot(q.xz, _Wind.xz) / (_CapCenter.w * (1.0 + _WindFlow.z));
                     float tail = lerp(1.0, 0.3, saturate(along * 0.8) * saturate(_WindFlow.z));
@@ -346,7 +346,7 @@ Shader "BDNukes/VolumetricCloud"
                     if (detail && capDen > 0.0)
                     {
                         float fine = FlowNoise(qw, vel * 1.7, ns * 4.2, per * 0.5, float3(0.7, 0.2, 0.4), 1);
-                        capDen = saturate(capDen - (1.0 - fine) * 0.05 * lerp(0.3, 1.0, _CapXZ.z));
+                        capDen = saturate(capDen - (1.0 - fine) * 0.03 * lerp(0.3, 1.0, _CapXZ.z));
                         // fast convective flicker for the fire, rising through the ball
                         if (_Fire.x + _Ember.x > 0.001 || _March.w > 0.5) s.fireN = FlowNoise(q, vel * 1.8 + float3(0.0, 0.25 * _CapCenter.w * _CapXZ.w + 20.0, 0.0), ns * 3.1, per * 0.35, float3(0.11, 0.83, 0.29), 0);
                     }
