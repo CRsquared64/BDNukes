@@ -63,6 +63,10 @@ Shader "BDNukes/VolumetricCloud"
             float4 _CollarPos[5];   // per collar: xyz centre on the stem axis, w density
             float4 _CollarShape[5]; // per collar: x outer radius, y thickness, z droop, w unused
             float4 _GroundY;     // x ground height (local y)
+            float4 _Wind;        // xyz horizontal unit vector downwind, w shear: horizontal lean per metre of height
+            float4 _WindFlow;    // x wind near the ground (m/s), y wind at the cap (m/s), z downwind stretch of the cap, w downwind stretch of the dust
+            float4 _StemMid;     // xyz bend control point of the stem (quadratic Bezier between base and top)
+            float4 _Age;         // x dissipation 0..1 (thinning, fraying), y unused
 
             // --- appearance ---
             float4 _Density;     // x cap density, y extinction per m at density 1, z erosion, w noise scale (1/m)
@@ -123,6 +127,37 @@ Shader "BDNukes/VolumetricCloud"
                 return length(p - (a + ab * u)) - lerp(ra, rb, u);
             }
 
+            // The stem as a tube whose axis bends with the wind: a quadratic Bezier from the base through the bend
+            // control point to the top, parametrised by height (the stem is never more than ~45 degrees over).
+            float3 StemAxis(float u)
+            {
+                float a = 1.0 - u;
+                return a * a * _StemBase.xyz + 2.0 * a * u * _StemMid.xyz + u * u * _StemTop.xyz;
+            }
+
+            float BentStem(float3 p, out float u, out float3 axis)
+            {
+                float h = max(_StemTop.y - _StemBase.y, 1.0);
+                float uu = (p.y - _StemBase.y) / h;
+                u = saturate(uu);
+                axis = StemAxis(u);
+                float r = lerp(_StemBase.w, _StemTop.w, u);
+                float radial = length(p.xz - axis.xz) - r;
+                // rounded ends below the base and above the top
+                float over = uu < 0.0 ? -uu * h : (uu > 1.0 ? (uu - 1.0) * h : 0.0);
+                return over > 0.0 ? length(float2(max(radial, 0.0), over)) : radial;
+            }
+
+            // downwind stretch: points on the downwind side are pulled back toward the centre before the shape is
+            // evaluated, so the shape itself reaches further downwind
+            float3 Stretch(float3 q, float k)
+            {
+                float along = dot(q.xz, _Wind.xz);
+                float pulled = along > 0.0 ? along / (1.0 + k) : along / (1.0 + 0.25 * k);
+                q.xz += _Wind.xz * (pulled - along);
+                return q;
+            }
+
             // stable per-pixel jitter (interleaved gradient noise): no frame-to-frame shimmer without TAA
             float IGN(float2 pix)
             {
@@ -179,7 +214,10 @@ Shader "BDNukes/VolumetricCloud"
                 float k = exp(-dot(v, v) / (1.5 * cs * cs));
                 float om = _Anim.y * k;
                 float3 rad = float3(dir.x, 0.0, dir.y);
-                return om * (rad * v.y - float3(0.0, 1.0, 0.0) * v.x) + q * _CapXZ.w;
+                // relative to the cap the air above blows downwind and the air below lags: billows stream off the
+                // downwind side
+                float3 shear = float3(_Wind.x, 0.0, _Wind.z) * ((_WindFlow.y - _WindFlow.x) * 0.5 * q.y / max(cs, 1.0) + 0.15 * _WindFlow.y * smoothstep(0.0, cs, dot(q.xz, _Wind.xz)));
+                return om * (rad * v.y - float3(0.0, 1.0, 0.0) * v.x) + q * _CapXZ.w + shear;
             }
 
             // ------------------------------------------------------------------------------------------------
@@ -200,7 +238,11 @@ Shader "BDNukes/VolumetricCloud"
             {
                 float cs = _CapCenter.w;
                 q = p - _CapCenter.xyz;
-                float3 c = q / cs;
+                // wind shear leans the upper cap downwind, and the cloud stretches out downwind as it ages
+                float3 qs = q;
+                qs.xz -= _Wind.xz * (_Wind.w * q.y);
+                qs = Stretch(qs, _WindFlow.z);
+                float3 c = qs / cs;
                 c.xz /= max(_CapXZ.x, 0.2);
                 float rxz0 = length(c.xz);
                 c.y += _CapXZ.y * 0.35 * smoothstep(0.7, 1.25, rxz0) * (1.0 - smoothstep(-0.3, 0.25, c.y));
@@ -208,7 +250,10 @@ Shader "BDNukes/VolumetricCloud"
                 float torus = length(float2(length(c.xz) - _CapShape.x, c.y)) - _CapShape.y;
                 float dome = length(c - float3(0.0, 0.18, 0.0)) - _CapShape.z;
                 float rough = lerp(0.18, 1.0, _CapXZ.z);
-                return SMin(torus, dome, 0.25) * cs + (0.5 - n) * 0.75 * cs * rough;
+                // a few big lopsided lobes, so no two caps (and no two sides of one) are the same shape
+                float lobe = tex3Dlod(_Noise, float4(q * (_Density.w * 0.3) + float3(0.71, 0.29, 0.53), 0)).r;
+                float lobes = (0.62 - lobe) * 0.8 * cs * rough;
+                return SMin(torus, dome, 0.25) * cs + lobes + (0.5 - n) * (0.75 + 0.45 * _Age.x) * cs * rough;
             }
 
             float Cond(float3 p, float nWisp)
@@ -274,8 +319,11 @@ Shader "BDNukes/VolumetricCloud"
                     float mid = FlowNoise(q, vel, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
                     float n = smoothstep(0.42, 0.78, 0.65 * big + 0.35 * mid);
                     float sdf = CapSDF(p, n, q);
-                    float soft = 0.12 * _CapCenter.w;
-                    capDen = saturate(-sdf / soft + 0.1) * _Density.x;
+                    float soft = 0.12 * _CapCenter.w * (1.0 + 2.0 * _Age.x);
+                    // the downwind end is older, sheared-off cloud: thinner and more ragged
+                    float along = dot(q.xz, _Wind.xz) / (_CapCenter.w * (1.0 + _WindFlow.z));
+                    float tail = lerp(1.0, 0.3, saturate(along * 0.8) * saturate(_WindFlow.z));
+                    capDen = saturate(-sdf / soft + 0.1) * _Density.x * (1.0 - 0.75 * _Age.x) * tail;
                     if (detail && capDen > 0.0)
                     {
                         float fine = FlowNoise(q, vel, ns * 4.2, per * 0.5, float3(0.7, 0.2, 0.4), 1);
@@ -291,34 +339,35 @@ Shader "BDNukes/VolumetricCloud"
                 if (_StemVis.z > 0.001)
                 {
                     float u;
-                    float d0 = RoundCone(p, _StemBase.xyz, _StemTop.xyz, _StemBase.w, _StemTop.w, u);
+                    float3 axis;
+                    float d0 = BentStem(p, u, axis);
                     float flare = 1.0 + _StemVis.w * pow(1.0 - u, 6.0);
                     float localR = lerp(_StemBase.w, _StemTop.w, u) * flare;
                     if (d0 - (flare - 1.0) * _StemBase.w - 0.45 * localR < 0.0)
                     {
-                        float3 axis = lerp(_StemBase.xyz, _StemTop.xyz, u);
                         float3 r = p - axis;
                         float tw = u * 2.5 + _Anim.x * 0.06;
                         float st = sin(tw), ct = cos(tw);
                         float3 sq = float3(ct * r.x - st * r.z, (p.y - _GroundY.x) * 0.35, st * r.x + ct * r.z);
-                        float n = FlowNoise(sq, float3(0.0, 0.35 * _Anim.z, 0.0), ns * 1.4, per, float3(0.43, 0.61, 0.07), 0);
+                        float3 sv = float3(0.0, 0.35 * _Anim.z, 0.0) + float3(_Wind.x, 0.0, _Wind.z) * (0.3 * lerp(_WindFlow.x, _WindFlow.y, u));
+                        float n = FlowNoise(sq, sv, ns * 1.4, per, float3(0.43, 0.61, 0.07), 0);
                         n = smoothstep(0.38, 0.8, n);
                         float sdf = d0 - (flare - 1.0) * _StemBase.w + (0.5 - n) * 0.9 * localR;
                         float soft = 0.3 * localR;
                         float mask = max(smoothstep(_StemVis.x, _StemVis.x - soft * 2.0, p.y),
                                          smoothstep(_StemVis.y, _StemVis.y + soft * 2.0, p.y));
-                        stemDen = saturate(-sdf / max(soft, 1.0)) * _StemVis.z * mask;
+                        stemDen = saturate(-sdf / max(soft, 1.0)) * _StemVis.z * mask * (1.0 - 0.85 * _Age.x);
                     }
                 }
 
                 // ---- dust skirt and base surge: rolling outward along the ground ----
                 float dustDen = 0.0;
-                float3 sp = p - _SkirtCenter.xyz;
+                float3 sp = Stretch(p - _SkirtCenter.xyz, _WindFlow.w);
                 float rxz = length(sp.xz);
                 float2 rdir = rxz > 1e-3 ? sp.xz / rxz : float2(1.0, 0.0);
                 if (_Skirt.y > 0.001 && rxz < _SkirtCenter.w * 1.5 && sp.y < _Skirt.x * 2.0)
                 {
-                    float3 vel = float3(rdir.x, 0.25, rdir.y) * _Skirt.w;
+                    float3 vel = float3(rdir.x, 0.25, rdir.y) * _Skirt.w + float3(_Wind.x, 0.0, _Wind.z) * (0.6 * _WindFlow.x);
                     float n = smoothstep(0.35, 0.8, FlowNoise(sp, vel, ns * 1.3, per, float3(0.2, 0.9, 0.5), 0));
                     float rr = rxz / max(_SkirtCenter.w, 1.0);
                     // a dome-topped mound: tallest around the stem's foot, sloping out to the rim
@@ -328,7 +377,7 @@ Shader "BDNukes/VolumetricCloud"
                 }
                 if (_Surge.z > 0.001)
                 {
-                    float3 gp = p - float3(_SkirtCenter.x, _GroundY.x, _SkirtCenter.z);
+                    float3 gp = Stretch(p - float3(_SkirtCenter.x, _GroundY.x, _SkirtCenter.z), _WindFlow.w * 0.5);
                     float gr = length(gp.xz);
                     float2 gdir = gr > 1e-3 ? gp.xz / gr : float2(1.0, 0.0);
                     float3 vel = float3(gdir.x, 0.05, gdir.y) * _Skirt.w * 2.0;
@@ -365,7 +414,8 @@ Shader "BDNukes/VolumetricCloud"
                 if (_StemVis.z > 0.001)
                 {
                     float u;
-                    float d0 = RoundCone(p, _StemBase.xyz, _StemTop.xyz, _StemBase.w, _StemTop.w, u);
+                    float3 axis;
+                    float d0 = BentStem(p, u, axis);
                     float flare = 1.0 + _StemVis.w * pow(1.0 - u, 6.0);
                     float localR = lerp(_StemBase.w, _StemTop.w, u) * flare;
                     stem = saturate(-(d0 - (flare - 1.0) * _StemBase.w) / max(0.3 * localR, 1.0)) * _StemVis.z;

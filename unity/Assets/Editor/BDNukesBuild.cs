@@ -216,6 +216,11 @@ public static class BDNukesBuild
             new Shot { W = 20f, t = 60f, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 50f, -3000f), lookFrac = 0.75f, fov = 50f },
         });
 
+        // wind: the cloud from the side as it drifts, shears and stretches downwind, then frays and thins
+        var windT = new[] { 60f, 150f, 300f, 480f };
+        Sheet(shader, noise, Path.Combine(outDir, "6_wind_20kt.png"), 2, Array.ConvertAll(windT, t => new Shot
+        { W = 20f, t = t, sunVis = 1f, haze = 0.05f, cam = new Vector3(0f, 400f, -14000f), lookFrac = 0.5f, fov = 42f }));
+
         // a megaton
         var mt = new[] { 3f, 15f, 45f, 120f };
         Sheet(shader, noise, Path.Combine(outDir, "5_life_1Mt.png"), 2, Array.ConvertAll(mt, t => new Shot
@@ -277,6 +282,7 @@ public static class BDNukesBuild
             Vector3 camPos = shot.cam;
             if (!shot.debug && shot.lookFrac < 0.99f && camPos.magnitude < need) camPos = camPos.normalized * need;
             cam.transform.position = camPos;
+            cam.transform.position = camPos + new Vector3(v.capCenter.x * 0.5f, 0f, 0f);
             cam.transform.LookAt(new Vector3(v.capCenter.x * 0.5f, capTop * shot.lookFrac, 0f));
             cam.fieldOfView = shot.fov;
             cam.nearClipPlane = 1f;

@@ -17,6 +17,11 @@
   - The billows shade each other (cauliflower relief), with multiple-scattering light, sky light blocked by the cloud above and ground bounce.
   - The cap, stem, dust and condensation each have their own colour.
   - A hue-preserving tone curve keeps the hot core from clipping to flat white.
+- **Wind:**
+  - The stem bends over, nearly upright in the weak low wind and leaning further higher up.
+  - Wind shear leans the cap, and the cap stretches downwind as it drifts. Its downwind end thins into a ragged plume, and billows stream off the downwind side.
+  - The dust skirt and base surge blow downwind.
+- **Ageing:** big lopsided lobes make every cap a different shape. Late in its life the cloud frays, thins and fades, and the stem goes first.
 - `unity/run-unity.ps1 RenderTests` renders contact sheets of a detonation's life, its motion, the fireball, the weather and a megaton. They are drawn through the same parameter code the plugin uses (`unity/Assets/Shared`).
 - **Terrain craters:** surface and low bursts on land dig a persistent crater (bowl, ragged rim, ejecta blanket) into the terrain, about 52 m x yield^0.294 in radius. Megaton airbursts press a wide, shallow depression in from up to about 2.2 fireball radii. Craters are bigger on low-gravity bodies, are saved with the game and come back on load or revert. The scorch mark drapes into the crater, and landed craft and colliders follow the new ground.
 - Only the terrain near a new crater is rebuilt (a few ms), and it works with Parallax. A full terrain rebuild is available as a setting, but it freezes the game for several seconds.

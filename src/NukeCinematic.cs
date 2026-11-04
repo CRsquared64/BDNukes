@@ -811,6 +811,16 @@ namespace BDNukes
 
             vs.groundY = groundY;
             vs.time = t;
+
+            // ---- wind: shear leans the cap, it stretches downwind, the dust blows off, the old cloud frays ----
+            vs.windDir = wind.Dir(t);
+            vs.windLow = wind.lowSpeed;
+            vs.windHigh = wind.hiSpeed;
+            float capAGL = Mathf.Max(1f, hb + capPosL.y);
+            vs.shear = Mathf.Clamp((wind.hiSpeed - wind.lowSpeed) * t / capAGL * 0.12f, 0f, 0.5f);
+            vs.capStretch = Mathf.Clamp((wind.hiSpeed - 0.5f * wind.lowSpeed) * Mathf.Max(0f, t - 0.2f * riseTime) * 0.1f / Mathf.Max(R, 1f), 0f, 2.5f);
+            vs.dustStretch = Mathf.Clamp(wind.lowSpeed * t * 0.5f / Mathf.Max(3f * R, 1f), 0f, 2f);
+            vs.dissipation = SS(0.45f * lifeAir, 0.9f * lifeAir, t);
             vs.extinction = 2f / R;
             vs.noiseScale = 1f / (3f * R);
             vs.flowPeriod = 6f;
@@ -851,6 +861,8 @@ namespace BDNukes
                 float dustFront = fromGround ? yTop * Mathf.Lerp(0.3f, 1.05f, SS(start, start + 0.08f * riseTime + 4f, t)) : -1e5f;
                 vs.stemBase = new Vector3(0f, groundY, 0f) + Lean(0f);
                 vs.stemTop = new Vector3(0f, groundY + yTop, 0f) + Lean(1f);
+                // the low stem stands nearly upright in the weak low wind and bends over higher up
+                vs.stemMid = new Vector3(Mathf.Lerp(vs.stemBase.x, vs.stemTop.x, 0.1f), groundY + 0.5f * yTop, Mathf.Lerp(vs.stemBase.z, vs.stemTop.z, 0.1f));
                 vs.stemBaseR = StemRadius(0.35f);
                 vs.stemTopR = StemRadius(0.95f);
                 vs.stemFlare = 2.5f * prof.stemTaper;

@@ -19,7 +19,15 @@ namespace BDNukes
 
         // stem
         public Vector3 stemBase, stemTop;
+        public Vector3 stemMid;     // bend control point (quadratic Bezier between base and top)
         public float stemBaseR, stemTopR, stemDustTop, stemTrailBottom, stemDensity, stemFlare, updraft;
+
+        // wind
+        public Vector3 windDir;     // horizontal unit vector downwind
+        public float windLow, windHigh;   // m/s near the ground and at the cap
+        public float shear;         // horizontal lean of the cap per metre of height
+        public float capStretch, dustStretch;   // downwind elongation (0 = round)
+        public float dissipation;   // 0 fresh .. 1 frayed and thinning
 
         // skirt and base surge
         public Vector3 skirtCenter;
@@ -88,6 +96,24 @@ namespace BDNukes
                     min = Vector3.Min(min, v.ringOffset + new Vector3(-r, rg.x - rg.z * 2f, -r));
                     max = Vector3.Max(max, v.ringOffset + new Vector3(r, rg.x + rg.z * 2f, r));
                 }
+            // the downwind stretch reaches beyond the round shapes
+            Vector3 down = new Vector3(v.windDir.x, 0f, v.windDir.z);
+            float capReach = capHalfW * (v.capStretch + v.shear * 1.5f);
+            Vector3 capFar = v.capCenter + down * capReach;
+            min = Vector3.Min(min, capFar - new Vector3(capHalfW, capHalfH, capHalfW) * 0.5f);
+            max = Vector3.Max(max, capFar + new Vector3(capHalfW, capHalfH, capHalfW) * 0.5f);
+            if (v.skirtDensity > 0.001f || v.surgeDensity > 0.001f)
+            {
+                Vector3 dustFar = v.skirtCenter + down * (Mathf.Max(v.skirtR, v.surgeR) * v.dustStretch);
+                min = Vector3.Min(min, dustFar - new Vector3(v.skirtR, 0f, v.skirtR));
+                max = Vector3.Max(max, dustFar + new Vector3(v.skirtR, v.skirtH * 1.7f, v.skirtR));
+            }
+            if (v.stemDensity > 0.001f)
+            {
+                float r = Mathf.Max(v.stemBaseR * (1f + v.stemFlare), v.stemTopR) * 1.5f;
+                min = Vector3.Min(min, v.stemMid - new Vector3(r, 0f, r));
+                max = Vector3.Max(max, v.stemMid + new Vector3(r, 0f, r));
+            }
             min.y = Mathf.Min(min.y, v.groundY - 30f);
         }
 
@@ -115,6 +141,12 @@ namespace BDNukes
             mat.SetVectorArray("_CollarPos", collarPos);
             mat.SetVectorArray("_CollarShape", collarShape);
             mat.SetVector("_GroundY", new Vector4(v.groundY, 0f, 0f, 0f));
+            Vector3 wd = new Vector3(v.windDir.x, 0f, v.windDir.z);
+            wd = wd.sqrMagnitude > 1e-6f ? wd.normalized : Vector3.right;
+            mat.SetVector("_Wind", new Vector4(wd.x, 0f, wd.z, v.shear));
+            mat.SetVector("_WindFlow", new Vector4(v.windLow, v.windHigh, v.capStretch, v.dustStretch));
+            mat.SetVector("_StemMid", v.stemMid);
+            mat.SetVector("_Age", new Vector4(v.dissipation, 0f, 0f, 0f));
             mat.SetVector("_Density", new Vector4(v.capDensity, v.extinction, 0.3f, v.noiseScale));
             mat.SetVector("_Anim", new Vector4(v.time, v.rollRate, v.updraft, Mathf.Max(0.5f, v.flowPeriod)));
             mat.SetVector("_Fire", new Vector4(v.fire, v.fireTemp, v.flicker, v.soot));
@@ -171,7 +203,18 @@ namespace BDNukes
             v.groundY = 0f;
             v.time = t;
             float capScale = R * (1f + (capRadius / R - 1f) * rise) * Mathf.Lerp(Mathf.Max(0.05f, grow), 1f, morph);
-            Vector3 drift = new Vector3(4f * Mathf.Max(0f, t - 20f), 0f, 0f);
+            // wind: 8 m/s near the ground, 16 m/s aloft, blowing along +x; the cap picks it up over its rise
+            float windLow = 8f, windHigh = 16f;
+            float lag = 0.45f * riseTime;
+            float tl = t - lag * (1f - Mathf.Exp(-t / lag));
+            Vector3 drift = new Vector3(windHigh * tl, 0f, 0f);
+            v.windDir = Vector3.right;
+            v.windLow = windLow; v.windHigh = windHigh;
+            float capH = R * 0.9f + riseDelta * rise;
+            v.shear = Mathf.Clamp((windHigh - windLow) * t / Mathf.Max(capH, 1f) * 0.12f, 0f, 0.5f);
+            v.capStretch = Mathf.Clamp((windHigh - windLow * 0.5f) * Mathf.Max(0f, t - 20f) * 0.6f / Mathf.Max(R, 1f) / 6f, 0f, 2.5f);
+            v.dustStretch = Mathf.Clamp(windLow * t * 0.5f / Mathf.Max(R * 3f, 1f), 0f, 2f);
+            v.dissipation = SS(2f * riseTime, 5f * riseTime, t);
             v.capCenter = new Vector3(0f, R * 0.9f + riseDelta * rise, 0f) + drift;
             v.capScale = capScale;
             v.ringR = Mathf.Lerp(0.05f, 0.62f, morph);
@@ -194,8 +237,10 @@ namespace BDNukes
                 float yTop = Mathf.Max(R, v.capCenter.y - 0.35f * capScale);
                 float trailLen = yTop * (0.25f + 0.45f * SS(start, start + 10f, t));
                 float dustFront = yTop * Mathf.Lerp(0.3f, 1.05f, SS(start, start + 0.08f * riseTime + 4f, t));
-                v.stemBase = new Vector3(0f, 0f, 0f) + drift * 0.15f;
+                v.stemBase = new Vector3(windLow * t * 0.3f, 0f, 0f);
                 v.stemTop = new Vector3(0f, yTop, 0f) + drift;
+                // the low stem stands nearly upright in the weak low wind and bends over higher up
+                v.stemMid = new Vector3(Mathf.Lerp(v.stemBase.x, v.stemTop.x, 0.1f), 0.5f * yTop, 0f);
                 float stemR = 0.17f * capScale;
                 v.stemBaseR = stemR * 1.1f;
                 v.stemTopR = stemR;
@@ -206,7 +251,7 @@ namespace BDNukes
                 v.updraft = 60f * Mathf.Exp(-t / riseTime) + 10f;
             }
             float tt = t;
-            v.skirtCenter = drift * 0.1f;
+            v.skirtCenter = new Vector3(windLow * t * 0.3f, 0f, 0f);
             v.skirtR = R * (0.8f + 1.3f * (1f - Mathf.Exp(-tt / 8f)));
             v.skirtH = R * (0.35f + 0.55f * (1f - Mathf.Exp(-tt / 8f)));
             v.skirtDensity = 0.75f * SS(0.2f, 1.2f, t);
