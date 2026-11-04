@@ -40,6 +40,12 @@
 - New settings for craters (on/off, size scale, rebuild mode, fill in all craters) and for haze and weather.
 
 ### Changed
+- **Mushroom shape and fire:**
+  - The cap is a rugged rolling torus, wider than it is tall, with smoke lobes curling down its outer edge. Dusty clouds are dark grey-brown smoke rather than pale cotton.
+  - A burning ring inside the cap's vortex outlives the fireball, glowing orange through gaps in the underside even for small yields such as the Davy Crockett.
+  - The stem is a rough, lumpy column instead of a flared trumpet.
+  - A tall, billowing dust mound rises around its foot.
+- **Fluid motion:** animated domain warping makes the billows curl, fold and roll into each other, and the billow layers flow at different speeds so they boil against each other.
 - **Camera shake** is applied to the cameras only while they render, and their exact rotation is put back afterwards. KSP's camera controller never sees it, so a salvo can't spin the camera off to random angles or stop you centring on a blast.
 - **Volumetric performance:**
   - The step count shrinks as the cloud fills the screen (a budget of pixels × steps), so getting close no longer tanks the frame rate.

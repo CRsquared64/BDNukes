@@ -50,6 +50,7 @@ namespace BDNukes
 
         // fire
         public float fire, fireTemp, flicker, soot;
+        public float ember, emberTemp, emberWidth;   // the burning ring inside the cap's vortex
         public Color glow; public float glowRadius;
 
         // light and air
@@ -151,6 +152,7 @@ namespace BDNukes
             mat.SetVector("_WindFlow", new Vector4(v.windLow, v.windHigh, v.capStretch, v.dustStretch));
             mat.SetVector("_StemMid", v.stemMid);
             mat.SetVector("_Age", new Vector4(v.dissipation, 0f, 0f, 0f));
+            mat.SetVector("_Ember", new Vector4(v.ember, v.emberTemp, v.emberWidth, 0f));
             mat.SetVector("_Planet", new Vector4(v.planetCenter.x, v.planetCenter.y, v.planetCenter.z, v.planetRadius));
             mat.SetVector("_Pileus", new Vector4(v.pileusOffset, v.pileusThick, v.pileusDensity, 0f));
             mat.SetVector("_Density", new Vector4(v.capDensity, v.extinction, 0.3f, v.noiseScale));
@@ -224,11 +226,11 @@ namespace BDNukes
             v.capCenter = new Vector3(0f, R * 0.9f + riseDelta * rise, 0f) + drift;
             v.capScale = capScale;
             v.ringR = Mathf.Lerp(0.05f, 0.62f, morph);
-            v.tube = Mathf.Lerp(0.3f, 0.45f, morph);
-            v.dome = Mathf.Lerp(0.85f, 0.45f, morph);
-            v.squash = Mathf.Lerp(1f, 0.72f, morph);
+            v.tube = Mathf.Lerp(0.3f, 0.48f, morph);
+            v.dome = Mathf.Lerp(0.85f, 0.4f, morph);
+            v.squash = Mathf.Lerp(1f, 0.78f, morph);
             v.xzSpread = 1f;
-            v.overhang = 0.3f * morph;
+            v.overhang = 0.45f * morph;
             v.roughness = SS(0.05f * tauG, 0.6f * tauG, t);
             v.growthRate = Mathf.Clamp((capRadius / R - 1f) * Mathf.Exp(-Mathf.Max(0f, t - t0) / tauRise) / tauRise / Mathf.Max(1f, capScale / R), 0f, 0.5f) + (t < 1f ? 1f : 0f);
             v.capDensity = 1f;
@@ -250,7 +252,7 @@ namespace BDNukes
                 float stemR = 0.17f * capScale;
                 v.stemBaseR = stemR * 1.1f;
                 v.stemTopR = stemR;
-                v.stemFlare = 2.5f;
+                v.stemFlare = 1.2f;
                 v.stemDustTop = dustFront;
                 v.stemTrailBottom = yTop - trailLen;
                 v.stemDensity = 0.9f * SS(start, start + 2f, t);
@@ -258,18 +260,18 @@ namespace BDNukes
             }
             float tt = t;
             v.skirtCenter = new Vector3(windLow * t * 0.3f, 0f, 0f);
-            v.skirtR = R * (0.8f + 1.3f * (1f - Mathf.Exp(-tt / 8f)));
-            v.skirtH = R * (0.35f + 0.55f * (1f - Mathf.Exp(-tt / 8f)));
+            v.skirtR = R * (0.8f + 1.0f * (1f - Mathf.Exp(-tt / 8f)));
+            v.skirtH = R * (0.6f + 1.0f * (1f - Mathf.Exp(-tt / 8f)));
             v.skirtDensity = 0.75f * SS(0.2f, 1.2f, t);
             v.skirtThin = 0.35f;
             v.outflow = 30f * Mathf.Exp(-t / 20f) + 3f;
             float rs = R + c * t;
             float surgeMax = R * 6f;
             v.surgeR = Mathf.Min(rs, surgeMax);
-            v.surgeH = 0.35f * R * (1f + 0.04f * t);
+            v.surgeH = 0.5f * R * (1f + 0.04f * t);
             v.surgeWidth = 0.8f * R + 0.04f * v.surgeR;
             float surgeEnd = surgeMax / c + 4f;
-            v.surgeDensity = 0.3f * SS(0.3f, 1f, t) * (1f - SS(surgeEnd, surgeEnd + 25f, t));
+            v.surgeDensity = 0.14f * SS(0.3f, 1f, t) * (1f - SS(surgeEnd, surgeEnd + 25f, t));
 
             float tW = Mathf.Min(2.5f * R / c, 4f);
             v.wilsonDensity = 0.3f * SS(0.03f, 0.2f * tW, t) * (1f - SS(0.5f * tW, 1.3f * tW, t));
@@ -298,7 +300,10 @@ namespace BDNukes
             v.flicker = Mathf.Lerp(0.25f, 1f, v.roughness);
             v.soot = 0.8f * SS(0.3f * tauG, 1.2f * tauG, t) * (1f - SS(3f * tauG, 6f * tauG, t));
             float glow = Mathf.Exp(-t / tauG);
-            v.glow = new Color(1f, 0.52f, 0.16f) * (2.5f * glow);
+            v.ember = 3.2f * Mathf.Exp(-t / (3f * tauG + 15f)) * SS(0.2f * tauG, 1.0f * tauG, t);
+            v.emberTemp = 0.64f;
+            v.emberWidth = 0.6f;
+            v.glow = new Color(1f, 0.52f, 0.16f) * (2.5f * glow + 0.9f * v.ember);
             v.glowRadius = 0.9f * capScale;
 
             v.sunDir = new Vector3(-0.5f, 0.6f, 0.45f).normalized;
@@ -308,9 +313,9 @@ namespace BDNukes
             v.ambient = Color.Lerp(new Color(0.46f, 0.55f, 0.7f), new Color(0.55f, 0.57f, 0.6f), 1f - sunVis);
             v.groundCol = new Color(0.16f, 0.15f, 0.11f) * Mathf.Lerp(0.4f, 1f, sunVis);
             float young = 1f - SS(0.5f * riseTime, 2f * riseTime, t);
-            v.capAlbedo = Color.Lerp(new Color(0.8f, 0.74f, 0.67f), new Color(0.66f, 0.45f, 0.32f), young);
+            v.capAlbedo = Color.Lerp(new Color(0.5f, 0.47f, 0.44f), new Color(0.42f, 0.31f, 0.24f), young);
             v.stemAlbedo = new Color(0.46f, 0.4f, 0.34f);
-            v.dustAlbedo = new Color(0.44f, 0.37f, 0.29f);
+            v.dustAlbedo = new Color(0.62f, 0.6f, 0.56f);
             v.condAlbedo = new Color(0.95f, 0.96f, 0.98f);
             v.hazeCol = Color.Lerp(new Color(0.62f, 0.7f, 0.8f), new Color(0.56f, 0.58f, 0.61f), 1f - sunVis);
             v.haze = haze;

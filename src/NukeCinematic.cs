@@ -832,12 +832,13 @@ namespace BDNukes
             // ---- fireball and cap: a ball that rolls up into the toroidal cap ----
             vs.capCenter = capPosL;
             vs.capScale = Mathf.Max(1f, capScale * Mathf.Lerp(Mathf.Max(0.05f, grow), 1f, m));
+            // a rolling torus wider than it is tall, its outer edge curling down into hanging lobes
             vs.ringR = Mathf.Lerp(0.05f, 0.62f * Mathf.Lerp(1f, 0.62f, pkT), m);
-            vs.tube = Mathf.Lerp(0.3f, 0.45f * (1f + 0.9f * pkT), m);
-            vs.dome = Mathf.Lerp(0.85f, 0.45f, m);
-            vs.squash = Mathf.Clamp(Mathf.Lerp(1f, 0.6f * capYS, m), 0.35f, 1.6f);
+            vs.tube = Mathf.Lerp(0.3f, 0.48f * (1f + 0.9f * pkT), m);
+            vs.dome = Mathf.Lerp(0.85f, 0.4f, m);
+            vs.squash = Mathf.Lerp(1f, Mathf.Clamp(0.5f * capYS, 0.55f, 0.9f), m);
             vs.xzSpread = Mathf.Lerp(1f, capXZS, m);
-            vs.overhang = prof.overhang * m;
+            vs.overhang = Mathf.Max(prof.overhang, 0.45f) * m * (1f - 0.6f * pkT);
             vs.capDensity = FadeOut;
             // smooth at first, turbulent within a second or two (Rayleigh-Taylor), the cap fully churning
             vs.roughness = SS(0.05f * tauG, 0.6f * tauG, t) * Mathf.Lerp(0.85f, 1f, prof.turbulence);
@@ -851,7 +852,11 @@ namespace BDNukes
             vs.fireTemp = Mathf.Clamp01(1.05f - 0.75f * x);
             vs.flicker = Mathf.Lerp(0.25f, 1f, vs.roughness);
             vs.soot = 0.8f * SS(0.3f * tauG, 1.2f * tauG, t) * (1f - SS(3f * tauG, 6f * tauG, t)) * Mathf.Lerp(1f, 0.5f, prof.humidity);
-            vs.glow = Ember * (2.5f * glow * FadeOut);
+            // the burning ring inside the vortex outlives the fireball by many seconds, even for small yields
+            vs.ember = 3.2f * Mathf.Exp(-t / (3f * tauG + 15f)) * SS(0.2f * tauG, tauG, t) * FadeOut * flashK;
+            vs.emberTemp = 0.64f;
+            vs.emberWidth = 0.6f;
+            vs.glow = Ember * ((2.5f * glow + 0.9f * vs.ember) * FadeOut);
             vs.glowRadius = 0.9f * vs.capScale;
 
             // ---- stem: dust column climbing from the ground to meet the trail hanging under the cap ----
@@ -869,7 +874,7 @@ namespace BDNukes
                 vs.stemMid = new Vector3(Mathf.Lerp(vs.stemBase.x, vs.stemTop.x, 0.1f), groundY + 0.5f * yTop, Mathf.Lerp(vs.stemBase.z, vs.stemTop.z, 0.1f));
                 vs.stemBaseR = StemRadius(0.35f);
                 vs.stemTopR = StemRadius(0.95f);
-                vs.stemFlare = 2.5f * prof.stemTaper;
+                vs.stemFlare = 1.2f * prof.stemTaper;
                 vs.stemDustTop = groundY + dustFront;
                 vs.stemTrailBottom = groundY + yTop - trailLen;
                 vs.stemDensity = 0.9f * FadeOut * SS(start, start + 2f, t) * (fromGround ? 1f : 0.7f);
@@ -885,8 +890,9 @@ namespace BDNukes
                 float tt = Mathf.Max(0f, t - tg);
                 float ks = prof.skirtScale;
                 vs.skirtCenter = new Vector3(0f, groundY, 0f) + Lean(0f) * 0.8f;
-                vs.skirtR = R * (0.8f + 1.3f * ks * (1f - Mathf.Exp(-tt / 8f)));
-                vs.skirtH = R * (0.35f + 0.55f * (1f - Mathf.Exp(-tt / 8f))) * Mathf.Lerp(1f, 0.7f, Mathf.Clamp01((ks - 1f) * 0.6f));
+                // a big billowing ring of dust around the foot of the stem
+                vs.skirtR = R * (0.8f + 1.0f * ks * (1f - Mathf.Exp(-tt / 8f)));
+                vs.skirtH = R * (0.6f + 1.0f * (1f - Mathf.Exp(-tt / 8f))) * Mathf.Lerp(1f, 0.75f, Mathf.Clamp01((ks - 1f) * 0.6f));
                 vs.skirtDensity = 0.75f * SS(tg + 0.2f, tg + 1.2f, t) * FadeOut * groundFactor;
                 vs.skirtThin = 0.35f;
                 vs.outflow = (30f * Mathf.Exp(-tt / 20f) + 3f) * prof.rollSpeed;
@@ -896,9 +902,9 @@ namespace BDNukes
                 float surgeMax = R * (2f + 4f * groundFactor) * Mathf.Lerp(1f, prof.skirtScale, 0.5f);
                 float surgeEnd = (surgeMax + hb) / c + 4f;
                 vs.surgeR = Mathf.Min(rg, surgeMax);
-                vs.surgeH = 0.35f * R * (1f + 0.04f * Mathf.Max(0f, t - hb / c));
+                vs.surgeH = 0.5f * R * (1f + 0.04f * Mathf.Max(0f, t - hb / c));
                 vs.surgeWidth = 0.8f * R + 0.04f * vs.surgeR;
-                vs.surgeDensity = 0.3f * groundFactor * SS(tg + 0.3f, tg + 1f, t) * (1f - SS(surgeEnd, surgeEnd + 25f, t)) * FadeOut;
+                vs.surgeDensity = 0.14f * groundFactor * SS(tg + 0.3f, tg + 1f, t) * (1f - SS(surgeEnd, surgeEnd + 25f, t)) * FadeOut;
             }
 
             // ---- Wilson cloud: a brief, patchy veil behind the shock in humid air ----
@@ -977,9 +983,10 @@ namespace BDNukes
             float overcast = Mathf.Clamp01((1f - sunVisCam) / NukeWeather.DeckOpacity);
             vs.ambient = Color.Lerp(new Color(0.46f, 0.55f, 0.7f), new Color(0.55f, 0.57f, 0.6f), overcast) * Mathf.Lerp(0.05f, 1f, daylight);
             vs.groundCol = new Color(0.16f, 0.15f, 0.11f) * Mathf.Lerp(0.05f, 1f, daylight) * Mathf.Lerp(1f, 0.5f, overcast);
-            vs.capAlbedo = CapColor(0f) * 0.92f;
+            // dusty clouds (low yields, surface bursts) are dark grey-brown smoke, not pale cotton
+            vs.capAlbedo = CapColor(0f) * 0.8f * Mathf.Lerp(1f, 0.6f, prof.dustiness * groundFactor);
             vs.stemAlbedo = Color.Lerp(stemLow, stemHigh, 0.4f) * 0.85f;
-            vs.dustAlbedo = Color.Lerp(skirtDark, skirtLight, 0.3f) * 0.8f;
+            vs.dustAlbedo = Color.Lerp(skirtDark, skirtLight, 0.55f) * 0.95f;
             vs.condAlbedo = CondWhite;
             vs.hazeCol = hazeCol;
             vs.haze = haze;

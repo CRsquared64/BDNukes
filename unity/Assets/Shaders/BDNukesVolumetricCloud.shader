@@ -67,6 +67,7 @@ Shader "BDNukes/VolumetricCloud"
             float4 _WindFlow;    // x wind near the ground (m/s), y wind at the cap (m/s), z downwind stretch of the cap, w downwind stretch of the dust
             float4 _StemMid;     // xyz bend control point of the stem (quadratic Bezier between base and top)
             float4 _Age;         // x dissipation 0..1 (thinning, fraying), y unused
+            float4 _Ember;       // x glow of the burning ring inside the cap's vortex, y its temperature, z core width (x tube)
             float4 _Planet;      // xyz planet centre (local), w radius below which nothing is drawn (the planet hides it)
             float4 _Pileus;      // x height above the cap surface (m), y thickness (m), z density, w unused
 
@@ -235,6 +236,7 @@ Shader "BDNukes/VolumetricCloud"
                 float fireN;     // convective flicker noise
                 float hf;        // height up the cloud 0..1
                 float skip;      // conservative distance to the nearest possible cloud (0 inside or unknown)
+                float capY;      // height relative to the cap centre, in cap scales (negative = underside)
             };
 
             // lobeMode: 0 = sample the lobe noise, 1 = most inflated (a cheap bound), 2 = average (cheap occluder)
@@ -249,7 +251,7 @@ Shader "BDNukes/VolumetricCloud"
                 float3 c = qs / cs;
                 c.xz /= max(_CapXZ.x, 0.2);
                 float rxz0 = length(c.xz);
-                c.y += _CapXZ.y * 0.35 * smoothstep(0.7, 1.25, rxz0) * (1.0 - smoothstep(-0.3, 0.25, c.y));
+                c.y += _CapXZ.y * 0.45 * smoothstep(0.65, 1.2, rxz0) * (1.0 - smoothstep(-0.4, 0.3, c.y));
                 c.y /= _CapShape.w;
                 float torus = length(float2(length(c.xz) - _CapShape.x, c.y)) - _CapShape.y;
                 float dome = length(c - float3(0.0, 0.18, 0.0)) - _CapShape.z;
@@ -306,7 +308,7 @@ Shader "BDNukes/VolumetricCloud"
             {
                 Sample s;
                 s.density = 0.0; s.albedo = _CapAlbedo.rgb; s.cap = 0.0; s.core = 1.0; s.fireN = 0.5; s.hf = 0.0;
-                s.skip = 0.0;
+                s.skip = 0.0; s.capY = 0.0;
                 float ns = _Density.w;
                 float per = _Anim.w;
 
@@ -323,8 +325,17 @@ Shader "BDNukes/VolumetricCloud"
                 {
                     float core;
                     float3 vel = CapFlow(q, core);
-                    float big = FlowNoise(q, vel, ns, per, float3(0.0, 0.0, 0.0), 0);
-                    float mid = FlowNoise(q, vel, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
+                    // domain warp: a slowly evolving large-scale field bends the billow lookups, so lumps curl,
+                    // fold and roll into each other like a fluid instead of sliding as fixed blobs
+                    float cs0 = _CapCenter.w;
+                    float3 wq = q * (ns * 0.45) + float3(0.13, 0.57, 0.31) + _Anim.x * float3(0.006, 0.011, 0.004);
+                    float2 wa = tex3Dlod(_Noise, float4(wq, 0)).rg;
+                    float wb = tex3Dlod(_Noise, float4(wq.zxy + float3(0.43, 0.21, 0.77), 0)).r;
+                    float3 warp = (float3(wa.x, wb, wa.y) - float3(0.68, 0.68, 0.42)) * (0.3 * cs0 * lerp(0.3, 1.0, _CapXZ.z));
+                    float3 qw = q + warp;
+                    float big = FlowNoise(qw, vel, ns, per, float3(0.0, 0.0, 0.0), 0);
+                    // the mid billows ride the flow a little faster than the big ones: they boil against each other
+                    float mid = FlowNoise(qw, vel * 1.35, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
                     float n = smoothstep(0.42, 0.78, 0.65 * big + 0.35 * mid);
                     float sdf = CapSDF(p, n, 0.0, q);
                     float soft = 0.12 * _CapCenter.w * (1.0 + 2.0 * _Age.x);
@@ -334,12 +345,20 @@ Shader "BDNukes/VolumetricCloud"
                     capDen = saturate(-sdf / soft + 0.1) * _Density.x * (1.0 - 0.75 * _Age.x) * tail;
                     if (detail && capDen > 0.0)
                     {
-                        float fine = FlowNoise(q, vel, ns * 4.2, per * 0.5, float3(0.7, 0.2, 0.4), 1);
-                        capDen = saturate(capDen - (1.0 - fine) * 0.1 * lerp(0.3, 1.0, _CapXZ.z));
+                        float fine = FlowNoise(qw, vel * 1.7, ns * 4.2, per * 0.5, float3(0.7, 0.2, 0.4), 1);
+                        capDen = saturate(capDen - (1.0 - fine) * 0.05 * lerp(0.3, 1.0, _CapXZ.z));
                         // fast convective flicker for the fire, rising through the ball
-                        if (_Fire.x > 0.001 || _March.w > 0.5) s.fireN = FlowNoise(q, vel * 1.8 + float3(0.0, 0.25 * _CapCenter.w * _CapXZ.w + 20.0, 0.0), ns * 3.1, per * 0.35, float3(0.11, 0.83, 0.29), 0);
+                        if (_Fire.x + _Ember.x > 0.001 || _March.w > 0.5) s.fireN = FlowNoise(q, vel * 1.8 + float3(0.0, 0.25 * _CapCenter.w * _CapXZ.w + 20.0, 0.0), ns * 3.1, per * 0.35, float3(0.11, 0.83, 0.29), 0);
                     }
                     s.core = core;
+                    s.capY = q.y / max(_CapCenter.w, 1.0);
+                    // the burning ring is hot, thin gas rather than smoke: its glow shines out through the cap
+                    if (_Ember.x > 0.001)
+                    {
+                        float cw = max(_Ember.z, 0.05);
+                        float ring = exp(-(core * core) / (cw * cw));
+                        capDen *= lerp(1.0, 0.3, ring * saturate(_Ember.x));
+                    }
                 }
 
                 // ---- stem: updraft with a slow twist, billows stretched along it ----
@@ -360,9 +379,9 @@ Shader "BDNukes/VolumetricCloud"
                         float st = sin(tw), ct = cos(tw);
                         float3 sq = float3(ct * r.x - st * r.z, (p.y - _GroundY.x) * 0.35, st * r.x + ct * r.z);
                         float3 sv = float3(0.0, 0.35 * _Anim.z, 0.0) + float3(_Wind.x, 0.0, _Wind.z) * (0.3 * lerp(_WindFlow.x, _WindFlow.y, u));
-                        float n = FlowNoise(sq, sv, ns * 1.4, per, float3(0.43, 0.61, 0.07), 0);
+                        float n = FlowNoise(sq, sv, ns * 2.0, per, float3(0.43, 0.61, 0.07), 0);
                         n = smoothstep(0.38, 0.8, n);
-                        float sdf = d0 - (flare - 1.0) * _StemBase.w + (0.5 - n) * 0.9 * localR;
+                        float sdf = d0 - (flare - 1.0) * _StemBase.w + (0.5 - n) * 1.35 * localR;
                         float soft = 0.3 * localR;
                         float mask = max(smoothstep(_StemVis.x, _StemVis.x - soft * 2.0, p.y),
                                          smoothstep(_StemVis.y, _StemVis.y + soft * 2.0, p.y));
@@ -389,7 +408,7 @@ Shader "BDNukes/VolumetricCloud"
                     float rr = rxz / max(_SkirtCenter.w, 1.0);
                     // a dome-topped mound: tallest around the stem's foot, sloping out to the rim
                     float top = _Skirt.x * lerp(1.0, 0.35, rr * rr);
-                    float sd = max(rr - 1.0, (sp.y - top) / max(_Skirt.x, 1.0)) + (0.5 - n) * 0.9;
+                    float sd = max(rr - 1.0, (sp.y - top) / max(_Skirt.x, 1.0)) + (0.5 - n) * 1.25;
                     dustDen = saturate(-sd / 0.18) * _Skirt.y;
                 }
                 if (_Surge.z > 0.001)
@@ -557,6 +576,19 @@ Shader "BDNukes/VolumetricCloud"
                         float3 fv = p - _CapCenter.xyz;
                         float fd2 = dot(fv, fv) / max(_Glow.a * _Glow.a, 1.0);
                         lit += alb * _Glow.rgb / (1.0 + 3.0 * fd2);
+
+                        // the burning ring: a band of fire inside the cap's vortex core that outlives the fireball,
+                        // glimpsed through gaps in the smoke and lighting the cap from inside
+                        if (_Ember.x > 0.001 && sm.cap > 0.01)
+                        {
+                            // hottest along the vortex core, a dull red-orange glow reaching out to the surface,
+                            // strongest on the underside and the hanging lobes, broken up by the smoke
+                            float ring = exp(-(sm.core * sm.core) / 1.1);
+                            float under = lerp(0.35, 1.0, smoothstep(0.35, -0.35, sm.capY));
+                            float flick = smoothstep(0.25, 0.85, sm.fireN);
+                            float eh = _Ember.y * ring * lerp(0.4, 1.2, flick);
+                            lit += Blackbody(eh) * (_Ember.x * sm.cap * ring * under * lerp(0.3, 1.0, flick));
+                        }
 
                         // incandescence
                         if (_Fire.x > 0.001 && sm.cap > 0.01)
