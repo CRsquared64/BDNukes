@@ -162,6 +162,7 @@ namespace BDNukes
             s.hazeVisibility = Slider("Haze visibility (m)", s.hazeVisibility, 5000f, 200000f, "0");
             s.weatherLighting = Toggle("Overcast dims the cloud (EVE clouds)", s.weatherLighting);
             s.cloudClearing = Toggle("Blasts clear EVE clouds", s.cloudClearing);
+            s.nukeImpulseScale = Slider("Blast push on craft (x BDArmory)", s.nukeImpulseScale, 0f, 1f, "0.00");
 
             GUILayout.Space(6f);
             GUILayout.Label("Terrain craters");

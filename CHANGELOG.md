@@ -39,7 +39,11 @@
 - **Overcast lighting:** with EVE volumetric clouds, the cloud below an overcast deck loses direct sun (flatter, greyer, no silver lining). A cap that rises above the deck stays sunlit.
 - New settings for craters (on/off, size scale, rebuild mode, fill in all craters) and for haze and weather.
 
+### Fixed
+- Blasts never cleared EVE clouds: EVE's `GetEquirectangularUV` is a private static method, and the lookup only searched instance methods. The log now names any EVE member that can't be found.
+
 ### Changed
+- **Nuclear blasts push craft much less** (new `nukeImpulseScale`, default 0.15): BDArmory's blast impulse from nukes alone is scaled, and its global explosion-impulse setting is restored straight after each nuclear hit. Unscaled, a nuke could throw a light craft at near-orbital speed, taking the camera with it. Damage is unchanged.
 - **Mushroom shape and fire:**
   - The cap is a rugged rolling torus, wider than it is tall, with smoke lobes curling down its outer edge. Dusty clouds are dark grey-brown smoke rather than pale cotton.
   - A burning ring inside the cap's vortex outlives the fireball, glowing orange through gaps in the underside even for small yields such as the Davy Crockett.

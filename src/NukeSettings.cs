@@ -143,6 +143,7 @@ namespace BDNukes
         // atmosphere and weather
         public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)
         public float hazeVisibility = 40000f;      // m of sea-level air that hides ~63% of the cloud's own colour
+        public float nukeImpulseScale = 0.15f;     // scales BDArmory's blast push from nukes only (1 = BDArmory's own)
         public bool cloudClearing = true;          // blasts blow holes in EVE's volumetric cloud decks, which heal over minutes
         public bool weatherLighting = true;        // EVE volumetric overcast blocks the sun on the cloud (if EVE is installed)
 
@@ -279,6 +280,7 @@ namespace BDNukes
             n.TryGetValue("hazeVisibility", ref hazeVisibility);
             n.TryGetValue("weatherLighting", ref weatherLighting);
             n.TryGetValue("cloudClearing", ref cloudClearing);
+            n.TryGetValue("nukeImpulseScale", ref nukeImpulseScale);
             n.TryGetValue("craters", ref craters);
             n.TryGetValue("craterScale", ref craterScale);
             n.TryGetValue("maxCraters", ref maxCraters);
@@ -315,6 +317,7 @@ namespace BDNukes
             fireDuration = Mathf.Clamp(fireDuration, 10f, 3600f);
             lightningMinYield = Mathf.Max(1f, lightningMinYield);
             hazeVisibility = Mathf.Clamp(hazeVisibility, 2000f, 500000f);
+            nukeImpulseScale = Mathf.Clamp(nukeImpulseScale, 0f, 1f);
             volumetricSteps = Mathf.Clamp(volumetricSteps, 16, 128);
             craterScale = Mathf.Clamp(craterScale, 0.1f, 5f);
             maxCraters = Mathf.Clamp(maxCraters, 1, 1000);
@@ -414,6 +417,7 @@ namespace BDNukes
                 n.AddValue("hazeVisibility", F(hazeVisibility));
                 n.AddValue("weatherLighting", B(weatherLighting));
                 n.AddValue("cloudClearing", B(cloudClearing));
+                n.AddValue("nukeImpulseScale", F(nukeImpulseScale));
                 n.AddValue("craters", B(craters));
                 n.AddValue("craterScale", F(craterScale));
                 n.AddValue("craterPartialRebuild", B(craterPartialRebuild));

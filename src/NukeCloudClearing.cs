@@ -66,10 +66,17 @@ namespace BDNukes
                 coverageField = volType.GetField("coverageMap", all);
                 matField = volType.GetField("raymarchedCloudMaterial", all);
                 Type wrapper = coverageField != null ? coverageField.FieldType : null;
-                uvMethod = wrapper != null ? wrapper.GetMethod("GetEquirectangularUV", all, null, new[] { typeof(Vector3) }, null) : null;
+                // a private static helper on EVE's TextureWrapper
+                uvMethod = wrapper != null ? wrapper.GetMethod("GetEquirectangularUV", all | BindingFlags.Static, null, new[] { typeof(Vector3) }, null) : null;
                 available = layerProp != null && rotField != null && minAltField != null && maxAltField != null && bodyField != null
                             && coverageField != null && matField != null && uvMethod != null;
-                if (!available) Debug.LogWarning("[BDNukes]: EVE found, but its cloud coverage can't be reached; blasts won't clear clouds.");
+                if (!available)
+                    Debug.LogWarning("[BDNukes]: EVE found, but its cloud coverage can't be reached; blasts won't clear clouds. Missing:"
+                        + (layerProp == null ? " LayerRaymarchedVolume" : "") + (rotField == null ? " cloudRotationMatrix" : "")
+                        + (minAltField == null || maxAltField == null ? " cloudMin/MaxAltitude" : "") + (bodyField == null ? " parentCelestialBody" : "")
+                        + (coverageField == null ? " coverageMap" : "") + (matField == null ? " raymarchedCloudMaterial" : "")
+                        + (uvMethod == null ? " GetEquirectangularUV" : ""));
+                else Debug.Log("[BDNukes]: EVE cloud coverage hooked; blasts will clear clouds.");
             }
             catch (Exception e)
             {
@@ -107,7 +114,7 @@ namespace BDNukes
                     Vector3 deckPoint = (Vector3)body.position + up * (float)(body.Radius + deckAlt);
                     var rot = (Matrix4x4)rotField.GetValue(vol);
                     Vector3 dir = rot.MultiplyPoint(deckPoint).normalized;
-                    var uv = (Vector2)uvMethod.Invoke(coverageField.GetValue(vol), new object[] { dir });
+                    var uv = (Vector2)uvMethod.Invoke(uvMethod.IsStatic ? null : coverageField.GetValue(vol), new object[] { dir });
 
                     if (!layers.TryGetValue(vol, out var layer))
                     {

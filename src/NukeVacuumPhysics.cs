@@ -52,11 +52,30 @@ namespace BDNukes
     [HarmonyPatch(typeof(NukeFX), "ExecutePartBlastEvent")]
     internal static class Patch_NukeFX_ExecutePartBlastEvent
     {
-        static bool Prefix(NukeFX __instance, NukeHitEvent eventToExecute)
+        /// <summary>
+        /// Drops the vacuum suck-back, and scales the impulse of nuclear hits only (nukeImpulseScale): BDArmory's
+        /// global explosion-impulse modifier is lowered just for this hit and put back afterwards. Unscaled, a nuke
+        /// can throw a light craft several km away at near-orbital speed (the camera following it off-screen); a real
+        /// blast wave tumbles vehicles at tens of m/s.
+        /// </summary>
+        static bool Prefix(NukeFX __instance, NukeHitEvent eventToExecute, out float __state)
         {
-            if (eventToExecute == null || !eventToExecute.IsNegativePressure) return true;
-            if (!NukeSettings.Current.vacuumPhysics) return true;
-            return !NukeVacuumPhysics.IsVacuum(__instance);
+            __state = float.NaN;
+            if (eventToExecute != null && eventToExecute.IsNegativePressure && NukeSettings.Current.vacuumPhysics
+                && NukeVacuumPhysics.IsVacuum(__instance))
+                return false;
+            float k = NukeSettings.Current.nukeImpulseScale;
+            if (k < 0.999f)
+            {
+                __state = BDArmory.Settings.BDArmorySettings.EXP_IMP_MOD;
+                BDArmory.Settings.BDArmorySettings.EXP_IMP_MOD = __state * k;
+            }
+            return true;
+        }
+
+        static void Postfix(float __state)
+        {
+            if (!float.IsNaN(__state)) BDArmory.Settings.BDArmorySettings.EXP_IMP_MOD = __state;
         }
     }
 }
