@@ -106,6 +106,10 @@ namespace BDNukes
         float sunVisCap = 1f, sunVisLow = 1f, sunVisCam = 1f;
         float nextWeatherSample;
         readonly List<NukeWeather.Deck> decks = new List<NukeWeather.Deck>();
+
+        // raymarched cloud and fireball (replaces the sprite cap, fireball, stem and skirt when available)
+        NukeVolumetric volume;
+        NukeVolumeState vs;
         Layer fireCore, capSmoke, capDetail, capUpper, capGlow, flash, shock, wilson, skirt, surge, stem, collars, sparks;
         Layer[] ringLayers;
         Layer hiFire, airglow;
@@ -402,6 +406,7 @@ namespace BDNukes
         void OnDestroy()
         {
             GameEvents.onGameSceneLoadRequested.Remove(OnSceneChange);
+            if (volume != null) volume.Destroy();
             var manager = NukeFXManager.Existing;
             if (manager != null) manager.Unregister(this);
         }
@@ -441,6 +446,12 @@ namespace BDNukes
             planning = false;
             BuildLayers(seed);
             BuildLightning(seed);
+            if (airFx && !underwater && s.volumetricClouds && NukeVolumetric.Available)
+            {
+                volume = new NukeVolumetric(transform);
+                foreach (var l in new[] { capSmoke, capDetail, capUpper, fireCore, capGlow, skirt, stem })
+                    if (l != null) l.SetVisible(false);
+            }
 
             var lightGo = new GameObject("NukeLight");
             lightGo.transform.SetParent(transform, false);
@@ -689,16 +700,20 @@ namespace BDNukes
             if (airFx)
             {
                 UpdateCapShape();
-                UpdateFireball();
-                UpdateCapSmoke();
-                if (capDetail != null) UpdateCapDetail();
-                if (capUpper != null) UpdateCapUpper();
-                UpdateCapGlow();
+                if (volume != null) UpdateVolume();
+                else
+                {
+                    UpdateFireball();
+                    UpdateCapSmoke();
+                    if (capDetail != null) UpdateCapDetail();
+                    if (capUpper != null) UpdateCapUpper();
+                    UpdateCapGlow();
+                }
                 if (ringLayers != null) for (int k = 0; k < ringLayers.Length; k++) UpdateRing(k);
                 sunVis = sunVisLow; // skirt, surge and stem live under any low cloud deck
-                if (skirt != null) UpdateSkirt();
+                if (skirt != null && volume == null) UpdateSkirt();
                 if (surge != null) UpdateSurge();
-                if (stem != null) UpdateStem();
+                if (stem != null && volume == null) UpdateStem();
                 if (collars != null) UpdateCollars();
                 if (sparks != null) UpdateSparks();
                 if (lightningFx) UpdateLightning();
@@ -779,6 +794,87 @@ namespace BDNukes
 
         /// <summary>Debris speed along the field: full speed in vacuum, slowed by the thin air at high altitude.</summary>
         float StreamerSpeed => vDebris * Mathf.Lerp(0.2f, 1f, vacW / Mathf.Max(1e-3f, vacW + hiW));
+
+        /// <summary>
+        /// Feeds the raymarched cloud from the same timeline as the sprite cloud: a white-hot ball that cools
+        /// through yellow and orange while its shell rolls into the toroidal cap, the stem and skirt from the
+        /// ground, the weather and the haze.
+        /// </summary>
+        void UpdateVolume()
+        {
+            float m = Morph;
+            float x = t / tauGlow;
+            float intensity = (t < 0.5f ? 1.3f : 1f) * Mathf.Exp(-Mathf.Max(0f, x - 0.35f) / 0.85f);
+            float glow = Glow(t);
+            float grow = 1f - Mathf.Exp(-t / 0.15f);
+
+            vs.groundY = groundY;
+            vs.capCenter = capPosL;
+            vs.capScale = Mathf.Max(1f, capScale * Mathf.Lerp(Mathf.Max(0.05f, grow), 1f, m));
+            vs.ringR = Mathf.Lerp(0.05f, 0.55f * Mathf.Lerp(1f, 0.62f, pkT), m);
+            vs.tube = Mathf.Lerp(0.3f, 0.5f * (1f + 0.9f * pkT), m);
+            vs.dome = Mathf.Lerp(0.85f, 0.6f, m);
+            vs.squash = Mathf.Clamp(Mathf.Lerp(1f, 0.85f * capYS, m), 0.35f, 1.6f);
+            vs.xzSpread = Mathf.Lerp(1f, capXZS, m);
+            vs.overhang = prof.overhang * m;
+            vs.capDensity = FadeOut;
+            vs.time = t;
+            vs.roll = (0.55f * tauRise * (1f - Mathf.Exp(-t / tauRise)) + 0.03f * t) * prof.rollSpeed;
+
+            // incandescence: white-hot at first, cooling to a dull red glow deep in the cap
+            vs.fire = 3f * intensity * FadeOut * flashK;
+            vs.fireTemp = Mathf.Clamp01(1.05f - 0.75f * x);
+            vs.glow = Ember * (2f * glow * FadeOut);
+            vs.glowRadius = 0.8f * vs.capScale;
+
+            // stem: dust column climbing from the ground to meet the trail hanging under the cap
+            float start = hb / c + 0.25f * tauG;
+            vs.stemDensity = 0f;
+            if (stemFx && t > start)
+            {
+                bool fromGround = groundFx;
+                float yTop = StemTop;
+                float trailLen = yTop * (fromGround ? 0.25f + 0.45f * SS(start, start + 10f, t) : 0.45f);
+                float dustFront = fromGround ? yTop * Mathf.Lerp(0.3f, 1.05f, SS(start, start + 0.08f * riseTime + 4f, t)) : -1e5f;
+                vs.stemBase = new Vector3(0f, groundY, 0f) + Lean(0f);
+                vs.stemTop = new Vector3(0f, groundY + yTop, 0f) + Lean(1f);
+                vs.stemBaseR = StemRadius(0.35f);
+                vs.stemTopR = StemRadius(0.95f);
+                vs.stemFlare = 2.5f * prof.stemTaper;
+                vs.stemDustTop = groundY + dustFront;
+                vs.stemTrailBottom = groundY + yTop - trailLen;
+                vs.stemDensity = 0.9f * FadeOut * SS(start, start + 2f, t) * (fromGround ? 1f : 0.7f);
+            }
+
+            // skirt: dust thrown up around ground zero, spreading out
+            vs.skirtDensity = 0f;
+            if (groundFx)
+            {
+                float tg = hb / c;
+                float tt = Mathf.Max(0f, t - tg);
+                float ks = prof.skirtScale;
+                float flat = Mathf.Lerp(1f, 0.6f, Mathf.Clamp01((ks - 1f) * 0.6f));
+                vs.skirtCenter = new Vector3(0f, groundY, 0f) + Lean(0f) * 0.8f;
+                vs.skirtR = R * 0.9f + 2.4f * ks * R * (1f - Mathf.Exp(-tt / (5f + 2f * ks))) * 0.75f;
+                vs.skirtH = R * flat * (0.25f + 0.3f * (1f - Mathf.Exp(-tt / 6f))) + 0.03f * CapHeight(t) * flat;
+                vs.skirtDensity = 0.9f * SS(tg, tg + 0.5f, t) * FadeOut * groundFactor;
+            }
+
+            // light
+            vs.sunDir = sunL;
+            vs.daylight = daylight;
+            float low = Mathf.Clamp01(1f - sunL.y * 4f);
+            vs.sunCol = Color.Lerp(new Color(1.25f, 1.18f, 1.05f), new Color(1.2f, 0.72f, 0.42f), low);
+            vs.sunVisCap = sunVisCap;
+            vs.sunVisLow = sunVisLow;
+            float overcast = Mathf.Clamp01((1f - sunVisCam) / NukeWeather.DeckOpacity);
+            vs.ambient = Color.Lerp(new Color(0.42f, 0.5f, 0.62f), new Color(0.48f, 0.5f, 0.53f), overcast) * Mathf.Lerp(0.06f, 1f, daylight);
+            vs.albedo = CapColor(0f);
+            vs.albedoDark = Color.Lerp(colDark, CapColor(0f), 0.25f);
+            vs.hazeCol = hazeCol;
+            vs.haze = haze;
+            volume.Update(ref vs, s.volumetricSteps);
+        }
 
         /// <summary>
         /// Per frame: the haze between the camera and the cloud, the overcast above it (EVE clouds, sampled once a

@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **Volumetric mushroom clouds:** the cap, stem and dust skirt are raymarched through a 3D billow-noise volume instead of drawn as sprites. They get cauliflower billows, self-shadowing from the sun, sky and ground light, haze and overcast lighting.
+- **Fluid fireballs:** the fireball is part of the same volume. It is a white-hot ball whose turbulent incandescent filaments cool through yellow, orange and dull red, and its shell rolls into the toroidal cap with the cap's poloidal circulation.
+  - Needs the shader bundle in `GameData/BDNukes/Shaders` (Windows / DirectX 11). Without it, the sprite cloud is used.
+  - New settings: on/off and raymarch quality.
+  - The shader source and the bundle build live in `unity/`, a Unity 2019.4.18f1 project.
 - **Terrain craters:** surface and low bursts on land dig a persistent crater (bowl, ragged rim, ejecta blanket) into the terrain, about 52 m x yield^0.294 in radius. Megaton airbursts press a wide, shallow depression in from up to about 2.2 fireball radii. Craters are bigger on low-gravity bodies, are saved with the game and come back on load or revert. The scorch mark drapes into the crater, and landed craft and colliders follow the new ground.
 - Only the terrain near a new crater is rebuilt (a few ms), and it works with Parallax. A full terrain rebuild is available as a setting, but it freezes the game for several seconds.
 - **Distance haze:** the cloud washes out toward the sky colour through the air between it and the camera. The amount depends on distance and altitude, and the haze colour follows the time of day.

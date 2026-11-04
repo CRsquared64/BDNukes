@@ -21,6 +21,9 @@ if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 
 $dll = Join-Path $modDir "Plugins\BDNukes.dll"
 if (-not (Test-Path $dll)) { throw "BDNukes.dll missing after build" }
+# the volumetric cloud shader bundle is built in Unity 2019.4.18f1: powershell -File unity/run-unity.ps1 BuildAll
+$bundle = Join-Path $modDir "Shaders\bdnukes-windows.shaders"
+if (-not (Test-Path $bundle)) { throw "Shader bundle missing: build it with unity/run-unity.ps1 BuildAll" }
 
 $stage = Join-Path $repo "release\stage"
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }

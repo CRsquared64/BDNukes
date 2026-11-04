@@ -13,3 +13,6 @@ release/
 
 # per-player settings saved by the in-game window
 GameData/BDNukes/PluginData/
+
+# volumetric cloud shader bundle: built by unity/run-unity.ps1 BuildAll, attached to releases
+GameData/BDNukes/Shaders/*.shaders

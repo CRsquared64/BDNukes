@@ -136,6 +136,10 @@ namespace BDNukes
         public float fireDuration = 240f;          // s the lingering fires burn (yield-scaled)
         public float lightningMinYield = 1000f;    // kt; bigger bursts get lightning in the cloud (more in humid air)
 
+        // volumetric clouds
+        public bool volumetricClouds = true;       // raymarched cloud and fluid fireball (needs the shader bundle, Windows)
+        public int volumetricSteps = 64;           // raymarch samples per pixel: quality vs GPU cost
+
         // atmosphere and weather
         public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)
         public float hazeVisibility = 40000f;      // m of sea-level air that hides ~63% of the cloud's own colour
@@ -268,6 +272,8 @@ namespace BDNukes
             n.TryGetValue("groundAfterglow", ref groundAfterglow);
             n.TryGetValue("fireDuration", ref fireDuration);
             n.TryGetValue("lightningMinYield", ref lightningMinYield);
+            n.TryGetValue("volumetricClouds", ref volumetricClouds);
+            n.TryGetValue("volumetricSteps", ref volumetricSteps);
             n.TryGetValue("atmosphericHaze", ref atmosphericHaze);
             n.TryGetValue("hazeVisibility", ref hazeVisibility);
             n.TryGetValue("weatherLighting", ref weatherLighting);
@@ -307,6 +313,7 @@ namespace BDNukes
             fireDuration = Mathf.Clamp(fireDuration, 10f, 3600f);
             lightningMinYield = Mathf.Max(1f, lightningMinYield);
             hazeVisibility = Mathf.Clamp(hazeVisibility, 2000f, 500000f);
+            volumetricSteps = Mathf.Clamp(volumetricSteps, 16, 128);
             craterScale = Mathf.Clamp(craterScale, 0.1f, 5f);
             maxCraters = Mathf.Clamp(maxCraters, 1, 1000);
         }
@@ -399,6 +406,8 @@ namespace BDNukes
                 n.AddValue("scorchLifetime", F(scorchLifetime));
                 n.AddValue("groundAfterglow", B(groundAfterglow));
                 n.AddValue("fireDuration", F(fireDuration));
+                n.AddValue("volumetricClouds", B(volumetricClouds));
+                n.AddValue("volumetricSteps", volumetricSteps.ToString(CultureInfo.InvariantCulture));
                 n.AddValue("atmosphericHaze", B(atmosphericHaze));
                 n.AddValue("hazeVisibility", F(hazeVisibility));
                 n.AddValue("weatherLighting", B(weatherLighting));

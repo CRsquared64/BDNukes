@@ -152,6 +152,11 @@ namespace BDNukes
             s.volume = Slider("Volume", s.volume, 0f, 2f, "0.00");
 
             GUILayout.Space(6f);
+            GUILayout.Label("Volumetric clouds");
+            s.volumetricClouds = Toggle("Raymarched cloud and fireball", s.volumetricClouds);
+            s.volumetricSteps = Mathf.RoundToInt(Slider("Raymarch steps (quality)", s.volumetricSteps, 16f, 128f, "0"));
+
+            GUILayout.Space(6f);
             GUILayout.Label("Atmosphere and weather");
             s.atmosphericHaze = Toggle("Distance haze on the cloud", s.atmosphericHaze);
             s.hazeVisibility = Slider("Haze visibility (m)", s.hazeVisibility, 5000f, 200000f, "0");
