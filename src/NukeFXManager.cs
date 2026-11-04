@@ -103,6 +103,7 @@ namespace BDNukes
         {
             RestoreAllCameras();
             NukeCloudClearing.RestoreAll();
+            NukeVolumetric.ReleaseCompositor();
             if (instance == this) instance = null;
         }
 
@@ -139,6 +140,7 @@ namespace BDNukes
         void LateUpdate()
         {
             NukeCloudClearing.Update();
+            NukeVolumetric.UpdateCompositor();
             float amp = 0f;
             for (int i = shakes.Count - 1; i >= 0; i--)
             {

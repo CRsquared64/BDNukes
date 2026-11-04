@@ -1,6 +1,8 @@
 // Shared by the BDNukes plugin and the Unity test harness (unity/Assets/Editor/BDNukesBuild.cs), so the test
 // renders use exactly the uniforms KSP sends. UnityEngine only: no KSP types in here.
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace BDNukes
 {
@@ -130,6 +132,22 @@ namespace BDNukes
                 max = Vector3.Max(max, v.stemMid + new Vector3(r, 0f, r));
             }
             min.y = Mathf.Min(min.y, v.groundY - 30f);
+        }
+
+        /// <summary>
+        /// Box (local) the cloud's shadow can fall in: the cloud's own box plus its footprint on the ground along
+        /// the sun (capped for a low sun, when the shadow would stretch out to the horizon).
+        /// </summary>
+        public static void ShadowBounds(ref NukeVolumeState v, Vector3 min, Vector3 max, out Vector3 smin, out Vector3 smax)
+        {
+            Vector3 sun = v.sunDir.sqrMagnitude > 1e-6f ? v.sunDir.normalized : Vector3.up;
+            float h = Mathf.Max(1f, max.y - v.groundY);
+            float reach = Mathf.Min(h / Mathf.Max(0.12f, sun.y), 6f * h);
+            Vector3 shift = new Vector3(-sun.x, 0f, -sun.z) / Mathf.Max(1e-3f, new Vector2(sun.x, sun.z).magnitude + 1e-3f) * reach * new Vector2(sun.x, sun.z).magnitude / Mathf.Max(1e-3f, Mathf.Sqrt(1f - Mathf.Min(0.9999f, sun.y * sun.y)));
+            smin = Vector3.Min(min, min + shift);
+            smax = Vector3.Max(max, max + shift);
+            smin.y = v.groundY - 200f;
+            smax.y = max.y;
         }
 
         public static void Apply(Material mat, ref NukeVolumeState v, Matrix4x4 worldToCloud, Vector3 min, Vector3 max, int steps, bool debugNoise = false)
@@ -335,6 +353,42 @@ namespace BDNukes
             v.hazeCol = Color.Lerp(new Color(0.62f, 0.7f, 0.8f), new Color(0.56f, 0.58f, 0.61f), 1f - sunVis);
             v.haze = haze;
             return v;
+        }
+    }
+
+    /// <summary>
+    /// Reduced-resolution rendering: the volumes are raymarched into a low-res buffer (camera size / divisor) and
+    /// composited over the scene by BDNukes/VolumeComposite with a depth-aware upsample. The buffer runs on each
+    /// camera at AfterForwardAlpha; the low-res target is sized to whichever camera executes it.
+    /// </summary>
+    public static class NukeVolumeCompositor
+    {
+        public struct Item
+        {
+            public Mesh mesh;
+            public Matrix4x4 matrix;
+            public Material material;
+            public Matrix4x4 shadowMatrix;   // the shadow box, drawn at full resolution before the cloud
+            public Material shadowMaterial;  // null: no shadow
+        }
+
+        static readonly int LowRes = Shader.PropertyToID("_BDNukesVolumeLowRes");
+
+        public static void Build(CommandBuffer cb, List<Item> items, Material composite, int divisor)
+        {
+            cb.Clear();
+            if (items.Count == 0 || composite == null) return;
+            int d = Mathf.Clamp(divisor, 1, 4);
+            cb.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+            foreach (var it in items)
+                if (it.mesh != null && it.shadowMaterial != null) cb.DrawMesh(it.mesh, it.shadowMatrix, it.shadowMaterial, 0, 0);
+            cb.GetTemporaryRT(LowRes, -d, -d, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBHalf);
+            cb.SetRenderTarget(LowRes);
+            cb.ClearRenderTarget(false, true, new Color(0f, 0f, 0f, 0f));
+            foreach (var it in items)
+                if (it.mesh != null && it.material != null) cb.DrawMesh(it.mesh, it.matrix, it.material, 0, 0);
+            cb.Blit(LowRes, BuiltinRenderTextureType.CameraTarget, composite);
+            cb.ReleaseTemporaryRT(LowRes);
         }
     }
 }

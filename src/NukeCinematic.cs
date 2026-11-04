@@ -110,6 +110,9 @@ namespace BDNukes
         // raymarched cloud and fireball (replaces the sprite cap, fireball, stem and skirt when available)
         NukeVolumetric volume;
         NukeVolumeState vs;
+        // the refracting shock shell
+        GameObject shockDome;
+        Material shockMat;
         Layer fireCore, capSmoke, capDetail, capUpper, capGlow, flash, shock, wilson, skirt, surge, stem, collars, sparks;
         Layer[] ringLayers;
         Layer hiFire, airglow;
@@ -411,6 +414,7 @@ namespace BDNukes
         {
             GameEvents.onGameSceneLoadRequested.Remove(OnSceneChange);
             if (volume != null) volume.Destroy();
+            if (shockMat != null) Destroy(shockMat);
             var manager = NukeFXManager.Existing;
             if (manager != null) manager.Unregister(this);
         }
@@ -450,6 +454,21 @@ namespace BDNukes
             planning = false;
             BuildLayers(seed);
             BuildLightning(seed);
+            if (airFx && body.atmosphere && s.shockDistortion > 0f && NukeVolumetric.Available)
+            {
+                shockMat = NukeVolumetric.MakeShockMaterial();
+                if (shockMat != null)
+                {
+                    shockDome = new GameObject("ShockDistortion");
+                    shockDome.transform.SetParent(transform, false);
+                    shockDome.AddComponent<MeshFilter>().sharedMesh = NukeVolumetric.Sphere();
+                    var r = shockDome.AddComponent<MeshRenderer>();
+                    r.sharedMaterial = shockMat;
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    r.receiveShadows = false;
+                    shockDome.SetActive(false);
+                }
+            }
             if (airFx && !underwater && s.volumetricClouds && NukeVolumetric.Available)
             {
                 volume = new NukeVolumetric(transform);
@@ -724,6 +743,7 @@ namespace BDNukes
                 if (lightningFx) UpdateLightning();
             }
             sunVis = sunVisLow;
+            if (shockDome != null) UpdateShockDome();
             if (shock != null) UpdateShock();
             if (wilson != null && volume == null) UpdateWilson();
             if (waterColumn != null)
@@ -799,6 +819,26 @@ namespace BDNukes
 
         /// <summary>Debris speed along the field: full speed in vacuum, slowed by the thin air at high altitude.</summary>
         float StreamerSpeed => vDebris * Mathf.Lerp(0.2f, 1f, vacW / Mathf.Max(1e-3f, vacW + hiW));
+
+        /// <summary>
+        /// The shock front bending the light behind it: strongest while it's young and dense, fading as it spreads
+        /// out and weakens (gone by ~30 fireball radii).
+        /// </summary>
+        void UpdateShockDome()
+        {
+            float rs = ShockRadius(t);
+            float k = Mathf.Clamp01(t / 0.05f) * (1f - SS(10f * R, 30f * R, rs)) * airW;
+            bool on = k > 0.01f && t > 0f;
+            if (shockDome.activeSelf != on) shockDome.SetActive(on);
+            if (!on) return;
+            // Unity's sphere primitive has radius 0.5
+            shockDome.transform.localPosition = Vector3.zero;
+            shockDome.transform.localScale = Vector3.one * (2f * rs);
+            shockMat.SetFloat("_Strength", 0.018f * s.shockDistortion * k * Mathf.Pow(R / Mathf.Max(R, rs), 0.35f));
+            // ground height in the sphere's own units (radius 0.5): a dome for surface bursts
+            float gy = groundFx ? Mathf.Clamp(groundY / (2f * rs), -0.5f, 0.5f) : -1f;
+            shockMat.SetVector("_ShockParams", new Vector4(gy, 0.35f * k * daylight, 1f, 0f));
+        }
 
         /// <summary>
         /// Feeds the raymarched cloud from the same timeline as the sprite cloud: a white-hot ball that cools

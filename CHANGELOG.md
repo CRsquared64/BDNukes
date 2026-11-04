@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- **Reduced-resolution rendering** (default ½): the cloud is raymarched at ½ or ⅓ resolution and composited over the scene with a depth-aware upsample, so edges in front of it stay sharp. That's 4–9× fewer raymarched pixels, with no visible loss in the test renders. New setting: "Cloud resolution".
+- **Cloud shadow on the ground:** the volumetric cloud darkens the ground and craft beneath it along the sun direction. It fades out under overcast. New settings: on/off and strength.
+- **Light-bending shockwave:** the shock front is a refracting shell (a dome for ground bursts) that bends the scene behind it, strongest at its silhouette, and fades as it spreads. New setting: strength (0 = off).
 - **Simulated fireball:** the fireball plays back a fluid simulation baked in Blender with its built-in Mantaflow solver: a full-size hot hemisphere on the ground that burns, rolls and lifts off, with real swirling flame and soot. The volume blends between baked frames and adds sub-voxel detail. The box is fitted to the procedural cap each frame, and it hands over to the procedural cloud once the fire has burned down.
   - `unity/Sim/bake_fireball.py` bakes it, and the bundle build imports it (about 6 MB more in the bundle).
   - New setting: "Simulated fireball".

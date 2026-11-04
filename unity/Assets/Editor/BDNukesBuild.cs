@@ -160,7 +160,7 @@ public static class BDNukesBuild
         LoadShader();
         string outDir = Path.Combine(RepoRoot, "unity", "Build");
         Directory.CreateDirectory(outDir);
-        var names = new System.Collections.Generic.List<string> { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", NoisePath };
+        var names = new System.Collections.Generic.List<string> { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", "Assets/Shaders/BDNukesVolumeComposite.shader", "Assets/Shaders/BDNukesCloudShadow.shader", "Assets/Shaders/BDNukesShockDistortion.shader", NoisePath };
         names.AddRange(BDNukesSimImport.ImportAll());
         var build = new AssetBundleBuild { assetBundleName = BundleName, assetNames = names.ToArray() };
         var manifest = BuildPipeline.BuildAssetBundles(outDir, new[] { build },
@@ -184,6 +184,7 @@ public static class BDNukesBuild
         public float lookFrac;   // look-at height as a fraction of the cap top
         public float fov;
         public bool debug;
+        public int div;          // 2 or 3: render through the reduced-resolution compositor
     }
 
     static NukeSimData simGround;
@@ -245,6 +246,21 @@ public static class BDNukesBuild
         Sheet(shader, noise, Path.Combine(outDir, "7_davy.png"), 2, Array.ConvertAll(davy, t => new Shot
         { W = 0.02f, t = t, sunVis = 1f, haze = 0.03f, cam = new Vector3(0f, 60f, -2500f), lookFrac = 0.5f, fov = 40f }));
 
+        // reduced resolution: full vs 1/2 vs 1/3 through the compositor, low camera with the ground cutting the stem
+        Sheet(shader, noise, Path.Combine(outDir, "8_resolution.png"), 3, new[]
+        {
+            new Shot { W = 20f, t = 30f, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 20f, -3500f), lookFrac = 0.6f, fov = 45f, div = 1 },
+            new Shot { W = 20f, t = 30f, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 20f, -3500f), lookFrac = 0.6f, fov = 45f, div = 2 },
+            new Shot { W = 20f, t = 30f, sunVis = 1f, haze = 0f, cam = new Vector3(0f, 20f, -3500f), lookFrac = 0.6f, fov = 45f, div = 3 },
+        });
+
+        // the cloud's shadow on the ground, seen from above and to the side
+        Sheet(shader, noise, Path.Combine(outDir, "9_shadow.png"), 2, new[]
+        {
+            new Shot { W = 20f, t = 60f, sunVis = 1f, haze = 0f, cam = new Vector3(6000f, 9000f, -9000f), lookFrac = 0.15f, fov = 50f },
+            new Shot { W = 20f, t = 60f, sunVis = 0.2f, haze = 0f, cam = new Vector3(6000f, 9000f, -9000f), lookFrac = 0.15f, fov = 50f },
+        });
+
         // a megaton
         var mt = new[] { 3f, 15f, 45f, 120f };
         Sheet(shader, noise, Path.Combine(outDir, "5_life_1Mt.png"), 2, Array.ConvertAll(mt, t => new Shot
@@ -285,9 +301,18 @@ public static class BDNukesBuild
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.transform.SetParent(root.transform);
             ground.transform.localScale = new Vector3(40000f, 1f, 40000f);
-            var gm = new Material(Shader.Find("Unlit/Color"));
-            gm.color = Color.Lerp(new Color(0.22f, 0.3f, 0.2f) * Mathf.Lerp(0.6f, 1f, shot.sunVis), new Color(0.6f, 0.68f, 0.78f), shot.haze);
+            // a lit ground that writes depth (it has a shadow-caster pass), like KSP's terrain
+            var gm = new Material(Shader.Find("Legacy Shaders/Diffuse"));
+            gm.color = Color.Lerp(new Color(0.24f, 0.33f, 0.22f) * Mathf.Lerp(0.6f, 1f, shot.sunVis), new Color(0.6f, 0.68f, 0.78f), shot.haze);
             ground.GetComponent<Renderer>().sharedMaterial = gm;
+            var lightGo = new GameObject("Sun");
+            lightGo.transform.SetParent(root.transform);
+            var sunLight = lightGo.AddComponent<Light>();
+            sunLight.type = LightType.Directional;
+            sunLight.intensity = Mathf.Lerp(0.35f, 1f, shot.sunVis);
+            sunLight.shadows = LightShadows.None;
+            lightGo.transform.rotation = Quaternion.LookRotation(-v.sunDir.normalized);
+            RenderSettings.ambientLight = new Color(0.45f, 0.5f, 0.55f);
 
             var cloudRoot = new GameObject("Cloud");
             cloudRoot.transform.SetParent(root.transform);
@@ -301,6 +326,27 @@ public static class BDNukesBuild
             box.transform.localScale = max - min;
             NukeVolumeShader.Apply(mat, ref v, cloudRoot.transform.worldToLocalMatrix, min, max, 96, shot.debug);
             box.GetComponent<Renderer>().sharedMaterial = mat;
+            // the ground shadow, drawn directly (full resolution)
+            var shadowShader = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Shaders/BDNukesCloudShadow.shader");
+            Material shadowMat = null;
+            if (shadowShader != null && !ShaderUtil.ShaderHasError(shadowShader))
+            {
+                var sbox = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                UnityEngine.Object.DestroyImmediate(sbox.GetComponent<Collider>());
+                sbox.transform.SetParent(cloudRoot.transform);
+                NukeVolumeShader.ShadowBounds(ref v, min, max, out var smin, out var smax);
+                sbox.transform.localPosition = 0.5f * (smin + smax);
+                sbox.transform.localScale = smax - smin;
+                shadowMat = new Material(shadowShader);
+                shadowMat.SetTexture("_Noise", noise);
+                NukeVolumeShader.Apply(shadowMat, ref v, cloudRoot.transform.worldToLocalMatrix, min, max, 96);
+                shadowMat.SetVector("_ShadowMin", smin);
+                shadowMat.SetVector("_ShadowMax", smax);
+                shadowMat.SetVector("_ShadowParams", new Vector4(0.75f, 6f * (max.y - v.groundY), 0f, 0f));
+                sbox.GetComponent<Renderer>().sharedMaterial = shadowMat;
+            }
+            UnityEngine.Rendering.CommandBuffer cb = null;
+            Material compositeMat = null;
 
             var camGo = new GameObject("Cam");
             camGo.transform.SetParent(root.transform);
@@ -319,6 +365,18 @@ public static class BDNukesBuild
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = Color.Lerp(Color.Lerp(new Color(0.42f, 0.6f, 0.86f), new Color(0.6f, 0.62f, 0.65f), 1f - shot.sunVis), new Color(0.62f, 0.7f, 0.8f), shot.haze);
             cam.depthTextureMode = DepthTextureMode.Depth;
+            if (shot.div > 1)
+            {
+                box.GetComponent<Renderer>().enabled = false;
+                compositeMat = new Material(AssetDatabase.LoadAssetAtPath<Shader>("Assets/Shaders/BDNukesVolumeComposite.shader"));
+                cb = new UnityEngine.Rendering.CommandBuffer { name = "BDNukes volume" };
+                var items = new System.Collections.Generic.List<NukeVolumeCompositor.Item>
+                {
+                    new NukeVolumeCompositor.Item { mesh = box.GetComponent<MeshFilter>().sharedMesh, matrix = box.transform.localToWorldMatrix, material = mat },
+                };
+                NukeVolumeCompositor.Build(cb, items, compositeMat, shot.div);
+                cam.AddCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, cb);
+            }
             var rt = new RenderTexture(W, H, 24, RenderTextureFormat.ARGB32);
             cam.targetTexture = rt;
             cam.Render();
@@ -329,6 +387,9 @@ public static class BDNukesBuild
             RenderTexture.active = null;
             cam.targetTexture = null;
             UnityEngine.Object.DestroyImmediate(rt);
+            if (cb != null) { cam.RemoveAllCommandBuffers(); cb.Release(); }
+            if (compositeMat != null) UnityEngine.Object.DestroyImmediate(compositeMat);
+            if (shadowMat != null) UnityEngine.Object.DestroyImmediate(shadowMat);
             UnityEngine.Object.DestroyImmediate(mat);
             UnityEngine.Object.DestroyImmediate(gm);
             return img;

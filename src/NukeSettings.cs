@@ -139,7 +139,11 @@ namespace BDNukes
         // volumetric clouds
         public bool volumetricClouds = true;       // raymarched cloud and fluid fireball (needs the shader bundle, Windows)
         public int volumetricSteps = 64;
-        public bool fluidSim = true;               // the fireball plays a baked fluid simulation (in the shader bundle)           // raymarch samples per pixel: quality vs GPU cost
+        public bool fluidSim = true;
+        public float shockDistortion = 1f;         // how strongly the shock front bends the light behind it (0 = off)
+        public bool cloudShadows = true;           // the volumetric cloud casts its shadow on the ground
+        public float cloudShadowStrength = 0.6f;
+        public int volumetricResolution = 2;       // 1 = full, 2 = half, 3 = third resolution (composited back with a depth-aware upsample)               // the fireball plays a baked fluid simulation (in the shader bundle)           // raymarch samples per pixel: quality vs GPU cost
 
         // atmosphere and weather
         public bool atmosphericHaze = true;        // distant clouds wash out toward the sky colour (aerial perspective)
@@ -278,6 +282,10 @@ namespace BDNukes
             n.TryGetValue("volumetricClouds", ref volumetricClouds);
             n.TryGetValue("volumetricSteps", ref volumetricSteps);
             n.TryGetValue("fluidSim", ref fluidSim);
+            n.TryGetValue("volumetricResolution", ref volumetricResolution);
+            n.TryGetValue("cloudShadows", ref cloudShadows);
+            n.TryGetValue("shockDistortion", ref shockDistortion);
+            n.TryGetValue("cloudShadowStrength", ref cloudShadowStrength);
             n.TryGetValue("atmosphericHaze", ref atmosphericHaze);
             n.TryGetValue("hazeVisibility", ref hazeVisibility);
             n.TryGetValue("weatherLighting", ref weatherLighting);
@@ -321,6 +329,9 @@ namespace BDNukes
             hazeVisibility = Mathf.Clamp(hazeVisibility, 2000f, 500000f);
             nukeImpulseScale = Mathf.Clamp(nukeImpulseScale, 0f, 1f);
             volumetricSteps = Mathf.Clamp(volumetricSteps, 16, 128);
+            volumetricResolution = Mathf.Clamp(volumetricResolution, 1, 3);
+            cloudShadowStrength = Mathf.Clamp01(cloudShadowStrength);
+            shockDistortion = Mathf.Clamp(shockDistortion, 0f, 3f);
             craterScale = Mathf.Clamp(craterScale, 0.1f, 5f);
             maxCraters = Mathf.Clamp(maxCraters, 1, 1000);
         }
@@ -416,6 +427,10 @@ namespace BDNukes
                 n.AddValue("volumetricClouds", B(volumetricClouds));
                 n.AddValue("volumetricSteps", volumetricSteps.ToString(CultureInfo.InvariantCulture));
                 n.AddValue("fluidSim", B(fluidSim));
+                n.AddValue("volumetricResolution", volumetricResolution.ToString(CultureInfo.InvariantCulture));
+                n.AddValue("cloudShadows", B(cloudShadows));
+                n.AddValue("shockDistortion", F(shockDistortion));
+                n.AddValue("cloudShadowStrength", F(cloudShadowStrength));
                 n.AddValue("atmosphericHaze", B(atmosphericHaze));
                 n.AddValue("hazeVisibility", F(hazeVisibility));
                 n.AddValue("weatherLighting", B(weatherLighting));
