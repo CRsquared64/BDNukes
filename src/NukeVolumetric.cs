@@ -14,6 +14,9 @@ namespace BDNukes
     {
         static bool loadTried;
         static Shader shader, holeShader, compositeShader, shadowShader, shockShader;
+        // ---- fireball lighting ----
+        static Shader fireLightShader;
+        // ---- end fireball lighting ----
         static Texture3D noise;
         static Mesh cube;
         /// <summary>The baked ground-burst fireball (null without it in the bundle).</summary>
@@ -50,6 +53,9 @@ namespace BDNukes
                     else if (sh.name == "BDNukes/VolumeComposite") compositeShader = sh;
                     else if (sh.name == "BDNukes/CloudShadow") shadowShader = sh;
                     else if (sh.name == "BDNukes/ShockDistortion") shockShader = sh;
+                    // ---- fireball lighting ----
+                    else if (sh.name == "BDNukes/FireLight") fireLightShader = sh;
+                    // ---- end fireball lighting ----
                 }
                 var simFrames = new System.Collections.Generic.Dictionary<string, Texture>();
                 foreach (var tx in bundle.LoadAllAssets<Texture3D>())
@@ -107,6 +113,29 @@ namespace BDNukes
         static UnityEngine.Rendering.CommandBuffer lowResBuffer;
         static Material compositeMat;
 
+        // ---- fireball lighting ----
+        static readonly System.Collections.Generic.List<NukeVolumeCompositor.FireLight> fireLights = new System.Collections.Generic.List<NukeVolumeCompositor.FireLight>();
+        static Material fireLightMat;
+
+        /// <summary>The full-screen fireball light pass can run (the bundle has a supported BDNukes/FireLight).</summary>
+        public static bool FireLightAvailable
+        {
+            get
+            {
+                if (!loadTried) Load();
+                return fireLightShader != null && fireLightShader.isSupported;
+            }
+        }
+
+        /// <summary>Queues a fireball lighting the scene this frame (world space; drawn by the flight cameras only).</summary>
+        public static void AddFireLight(Vector3 worldPos, float core, float range, Color colorTimesStrength)
+        {
+            if (!FireLightAvailable) return;
+            if (colorTimesStrength.maxColorComponent < 1e-3f || range <= 0f) return;
+            fireLights.Add(new NukeVolumeCompositor.FireLight { position = worldPos, core = core, range = range, color = colorTimesStrength });
+        }
+        // ---- end fireball lighting ----
+
         static int Divisor => compositeShader != null && compositeShader.isSupported ? Mathf.Clamp(NukeSettings.Current.volumetricResolution + NukeFXManager.ExtraDivisor, 1, 3) : 1;
 
         /// <summary>Volumetric clouds queued to draw this frame (read by the adaptive quality before the compositor runs).</summary>
@@ -115,9 +144,16 @@ namespace BDNukes
         /// <summary>Per frame, after every detonation has updated (NukeFXManager.LateUpdate): rebuilds the low-res pass.</summary>
         public static void UpdateCompositor()
         {
-            if (lowResBuffer == null && lowResItems.Count == 0 && shockItems.Count == 0) return;
+            if (lowResBuffer == null && lowResItems.Count == 0 && shockItems.Count == 0 && fireLights.Count == 0) return;
             if (lowResBuffer == null) lowResBuffer = new UnityEngine.Rendering.CommandBuffer { name = "BDNukes volumetric cloud" };
             if (compositeMat == null && compositeShader != null) compositeMat = new Material(compositeShader);
+            // ---- fireball lighting ----
+            if (fireLights.Count > 0)
+            {
+                if (fireLightMat == null && FireLightAvailable) fireLightMat = new Material(fireLightShader);
+                EnableDepth();   // the pass rebuilds world positions from the depth, even with the sprite cloud
+            }
+            // ---- end fireball lighting ----
             var cams = FlightCamera.fetch != null ? FlightCamera.fetch.cameras : null;
             lowResCams.RemoveAll(c => c == null);
             if (cams != null)
@@ -127,9 +163,10 @@ namespace BDNukes
                         c.AddCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
                         lowResCams.Add(c);
                     }
-            NukeVolumeCompositor.Build(lowResBuffer, lowResItems, compositeMat, Divisor, shockItems);
+            NukeVolumeCompositor.Build(lowResBuffer, lowResItems, compositeMat, Divisor, shockItems, fireLights, fireLightMat);
             lowResItems.Clear();
             shockItems.Clear();
+            fireLights.Clear();   // fireball lighting
         }
 
         /// <summary>Takes the low-res pass off the cameras (scene teardown).</summary>
@@ -139,6 +176,7 @@ namespace BDNukes
             lowResCams.Clear();
             lowResItems.Clear();
             shockItems.Clear();
+            fireLights.Clear();   // fireball lighting
             if (lowResBuffer != null) { lowResBuffer.Release(); lowResBuffer = null; }
         }
 

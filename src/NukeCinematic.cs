@@ -1282,11 +1282,55 @@ namespace BDNukes
                 col = Color.Lerp(col, Color.Lerp(PlasmaColor(x), new Color(0.85f, 0.9f, 1f), Mathf.Clamp01(fi)), vacW);
                 range = Mathf.Max(range, Mathf.Clamp(ShellRadius(t) * 3f, 3000f, 200000f));
             }
+            if (s.fireballLighting) FireballLighting(fi, fade, ref intensity, ref col, ref range);
             lightFx.intensity = intensity;
             lightFx.color = col;
             lightFx.range = range;
             lightFx.transform.localPosition = capPosL;
         }
+
+        // ---- fireball lighting ----
+        /// <summary>Most intensity the fireball's point light reaches, so even a megaton seen up close doesn't wash out.</summary>
+        const float FireLightMaxIntensity = 12f;
+
+        /// <summary>
+        /// The fireball's surface temperature (K) as it cools: ~7500 K through the thermal pulse, through yellow and
+        /// orange to a dull red ~1600 K as the incandescence dies (same clock as the volume's fireTemp).
+        /// </summary>
+        float FireballKelvin => Mathf.Lerp(1600f, 7500f, Mathf.Clamp01(1.05f - 0.75f * t / tauGlow));
+
+        /// <summary>
+        /// The fireball lighting the world: the point light gets stronger and reaches further with yield, takes the
+        /// fireball's blackbody colour and fades with its incandescence, and the flight cameras add a full-screen warm
+        /// pass (BDNukes/FireLight) that lights terrain and craft by their distance from the fireball.
+        /// </summary>
+        void FireballLighting(float fi, float fade, ref float intensity, ref Color col, ref float range)
+        {
+            if (underwater) return;
+            // 0.4 at 10 t, 0.75 at 1 kt, 1.1 at 100 kt, 1.5 at 10 Mt and up
+            float yieldK = Mathf.Clamp(0.75f + 0.18f * Mathf.Log10(Mathf.Max(W, 1e-3f)), 0.4f, 1.5f);
+            float inc = 0f;   // incandescence, 1 at the start
+            if (airFx) inc = Mathf.Pow(Glow(t), 0.8f) * FadeOut;
+            if (hiFx) inc = Mathf.Max(inc, 0.6f * HiGlow(t) * FadeHi);
+            float flash = Mathf.Clamp01(fi);
+            Color fire = NukeFireLighting.Blackbody(FireballKelvin);
+            // the flash is white; the glowing ball after it is its own blackbody colour
+            Color fireCol = Color.Lerp(fire, new Color(0.96f, 0.97f, 1f), flash);
+            float atmo = Mathf.Clamp01(airW + hiW);
+            col = Color.Lerp(col, fireCol, atmo);
+            intensity = Mathf.Min(intensity * Mathf.Lerp(1f, yieldK, atmo) + 5f * yieldK * inc, FireLightMaxIntensity);
+            float reach = airFx ? Mathf.Clamp(120f * R, 4000f, 120000f) : hiFx ? Mathf.Clamp(40f * Rh, 4000f, 150000f) : 0f;
+            range = Mathf.Max(range, reach);
+
+            // the screen pass: the light's strength at the fireball's core, falling off by inverse square beyond it.
+            // In daylight the sun hides some of it; at night it's the only light there is.
+            float strength = (2.5f * flash * fade + 3f * inc) * yieldK * Mathf.Lerp(1f, 0.6f, daylight) * atmo;
+            if (strength < 0.01f) return;
+            float core = 1.6f * Mathf.Max(capScale, R);
+            Vector3 worldPos = transform.TransformPoint(capPosL);
+            NukeVolumetric.AddFireLight(worldPos, core, Mathf.Max(range, 40f * core), fireCol * Mathf.Min(strength, 6f));
+        }
+        // ---- end fireball lighting ----
 
         static readonly float[] FlashSizes = { 14f, 6f, 2.4f };
 

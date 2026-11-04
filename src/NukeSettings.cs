@@ -175,6 +175,10 @@ namespace BDNukes
         // thermal scorch on craft
         public bool craftScorch = true;            // the flash chars the side of loaded vessels facing the fireball
 
+        // ---- fireball lighting ----
+        public bool fireballLighting = true;       // the fireball lights terrain and craft: a stronger point light plus a screen-space warm glow pass
+        // ---- end fireball lighting ----
+
         static NukeSettings current;
 
         public static NukeSettings Current
@@ -333,6 +337,7 @@ namespace BDNukes
                 volumetricQuality = NukeQuality.Custom;
             n.TryGetValue("adaptivePerformance", ref adaptivePerformance);
             n.TryGetValue("targetFrameRate", ref targetFrameRate);
+            n.TryGetValue("fireballLighting", ref fireballLighting);
         }
 
         /// <summary>The volumetric preset's steps, resolution divisor and shadows. False for Custom.</summary>
@@ -516,6 +521,9 @@ namespace BDNukes
 
                 // thermal scorch on craft
                 n.AddValue("craftScorch", B(craftScorch));
+                // ---- fireball lighting ----
+                n.AddValue("fireballLighting", B(fireballLighting));
+                // ---- end fireball lighting ----
                 root.Save(path, "BDNukes user settings, written by the in-game settings window. Overrides GameData/BDNukes/Settings.cfg; delete this file to go back to the defaults.");
                 Debug.Log("[BDNukes]: Settings saved to " + path);
                 return true;

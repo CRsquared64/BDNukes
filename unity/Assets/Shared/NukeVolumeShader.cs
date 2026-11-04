@@ -424,6 +424,17 @@ namespace BDNukes
             public Material material;
         }
 
+        // ---- fireball lighting ----
+        /// <summary>A fireball lighting the scene around it (world space, the frame's floating origin).</summary>
+        public struct FireLight
+        {
+            public Vector3 position;
+            public float core;     // m: soft core radius of the inverse-square falloff (about the fireball's radius)
+            public float range;    // m: the light is windowed smoothly to zero here
+            public Color color;    // blackbody colour times strength (the strength at the core)
+        }
+        // ---- end fireball lighting ----
+
         static readonly int LowRes = Shader.PropertyToID("_BDNukesVolumeLowRes");
         static readonly int Grab = Shader.PropertyToID("_BDNukesShockGrab");
         static readonly List<Shock> noShocks = new List<Shock>();
@@ -434,15 +445,28 @@ namespace BDNukes
         /// resolution, then the cloud (directly, or at 1/divisor resolution and composited), then the shock shells
         /// over a copy of the result.
         /// </summary>
-        public static void Build(CommandBuffer cb, List<Item> items, Material composite, int divisor, List<Shock> shocks = null)
+        public static void Build(CommandBuffer cb, List<Item> items, Material composite, int divisor, List<Shock> shocks = null,
+            List<FireLight> fireLights = null, Material fireLightMat = null)
         {
             cb.Clear();
             shocks = shocks ?? noShocks;
-            if (items.Count == 0 && shocks.Count == 0) return;
+            // ---- fireball lighting ----
+            bool lit = fireLights != null && fireLights.Count > 0 && fireLightMat != null;
+            // ---- end fireball lighting ----
+            if (items.Count == 0 && shocks.Count == 0 && !lit) return;
             int d = composite != null ? Mathf.Clamp(divisor, 1, 4) : 1;
             cb.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
             foreach (var it in items)
                 if (it.mesh != null && it.shadowMaterial != null) cb.DrawMesh(it.mesh, it.shadowMatrix, it.shadowMaterial, 0, 0);
+            // ---- fireball lighting ----
+            // after the cloud shadows (the fireball lights ground the cloud shades from the sun) and before the cloud,
+            // which isn't in the depth buffer and lights itself
+            if (lit)
+            {
+                NukeFireLighting.Apply(fireLightMat, fireLights);
+                cb.DrawMesh(NukeFireLighting.ScreenQuad(), Matrix4x4.identity, fireLightMat, 0, 0);
+            }
+            // ---- end fireball lighting ----
             if (items.Count > 0)
             {
                 if (d <= 1)
@@ -473,6 +497,89 @@ namespace BDNukes
             }
         }
     }
+
+    // ---- fireball lighting ----
+    /// <summary>
+    /// The fireball lighting the world: its blackbody colour, and the uniforms of BDNukes/FireLight, a full-screen
+    /// additive pass that rebuilds each pixel's world position from the camera depth and adds the fireballs' light.
+    /// </summary>
+    public static class NukeFireLighting
+    {
+        public const int MaxLights = 4;
+        /// <summary>Most light the pass adds to one pixel (brightest channel), so a close fireball doesn't wash out to white.</summary>
+        public const float PixelCap = 1.6f;
+        /// <summary>Wrap lighting: surfaces turned somewhat away from the fireball still catch a little (light scattered by the air).</summary>
+        public const float Wrap = 0.35f;
+
+        static readonly Vector4[] pos = new Vector4[MaxLights];
+        static readonly Vector4[] col = new Vector4[MaxLights];
+        static readonly int PosId = Shader.PropertyToID("_FireLightPos");
+        static readonly int ColId = Shader.PropertyToID("_FireLightCol");
+        static readonly int ParamsId = Shader.PropertyToID("_FireLightParams");
+        static Mesh quad;
+
+        /// <summary>
+        /// Colour of a black body at this temperature (K), brightest channel 1. A fit to the Planckian locus in sRGB
+        /// (Tanner Helland's), good from ~1000 K to 40000 K: dull red at 1500 K, orange at 2500 K, near white at 6500 K.
+        /// </summary>
+        public static Color Blackbody(float kelvin)
+        {
+            float t = Mathf.Clamp(kelvin, 1000f, 40000f) / 100f;
+            float r, g, b;
+            if (t <= 66f)
+            {
+                r = 1f;
+                g = Mathf.Clamp01((99.4708025861f * Mathf.Log(t) - 161.1195681661f) / 255f);
+                b = t <= 19f ? 0f : Mathf.Clamp01((138.5177312231f * Mathf.Log(t - 10f) - 305.0447927307f) / 255f);
+            }
+            else
+            {
+                r = Mathf.Clamp01(329.698727446f * Mathf.Pow(t - 60f, -0.1332047592f) / 255f);
+                g = Mathf.Clamp01(288.1221695283f * Mathf.Pow(t - 60f, -0.0755148492f) / 255f);
+                b = 1f;
+            }
+            return new Color(r, g, b);
+        }
+
+        /// <summary>Sets the pass's uniforms: up to MaxLights fireballs, the strongest first if there are more.</summary>
+        public static void Apply(Material mat, List<NukeVolumeCompositor.FireLight> lights)
+        {
+            if (lights.Count > MaxLights) lights.Sort((a, b) => Strength(b).CompareTo(Strength(a)));
+            int n = Mathf.Min(lights.Count, MaxLights);
+            for (int i = 0; i < MaxLights; i++)
+            {
+                if (i < n)
+                {
+                    var l = lights[i];
+                    float core = Mathf.Max(1f, l.core);
+                    pos[i] = new Vector4(l.position.x, l.position.y, l.position.z, core);
+                    col[i] = new Vector4(l.color.r, l.color.g, l.color.b, Mathf.Max(1.5f * core, l.range));
+                }
+                else
+                {
+                    pos[i] = new Vector4(0f, 0f, 0f, 1f);
+                    col[i] = new Vector4(0f, 0f, 0f, 1f);
+                }
+            }
+            mat.SetVectorArray(PosId, pos);
+            mat.SetVectorArray(ColId, col);
+            mat.SetVector(ParamsId, new Vector4(n, PixelCap, Wrap, 0f));
+        }
+
+        static float Strength(NukeVolumeCompositor.FireLight l) => Mathf.Max(l.color.r, Mathf.Max(l.color.g, l.color.b)) * l.range;
+
+        /// <summary>A quad covering clip space (-1..1): the shader puts it on screen itself and ignores the matrices.</summary>
+        public static Mesh ScreenQuad()
+        {
+            if (quad != null) return quad;
+            quad = new Mesh { name = "BDNukesFireLightQuad" };
+            quad.vertices = new[] { new Vector3(-1f, -1f, 0f), new Vector3(-1f, 1f, 0f), new Vector3(1f, 1f, 0f), new Vector3(1f, -1f, 0f) };
+            quad.triangles = new[] { 0, 1, 2, 0, 2, 3 };
+            quad.bounds = new Bounds(Vector3.zero, Vector3.one * 1e6f);
+            return quad;
+        }
+    }
+    // ---- end fireball lighting ----
 
     /// <summary>Mushroom shapes and the condensation veil, shared by the plugin and the test timeline.</summary>
     public static class NukeVolumeShapes

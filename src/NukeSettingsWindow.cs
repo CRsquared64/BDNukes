@@ -179,6 +179,7 @@ namespace BDNukes
             s.adaptivePerformance = Toggle("Adaptive quality (hold the frame rate)", s.adaptivePerformance);
             s.targetFrameRate = Mathf.Round(Slider("Target frame rate (fps)", s.targetFrameRate, 20f, 144f, "0"));
             GUILayout.Label(NukeFXManager.AdaptiveStatus());
+            s.fireballLighting = Toggle("Fireball lights the ground and craft", s.fireballLighting);
 
             GUILayout.Space(6f);
             GUILayout.Label("Atmosphere and weather");

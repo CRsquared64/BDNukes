@@ -160,7 +160,7 @@ public static class BDNukesBuild
         LoadShader();
         string outDir = Path.Combine(RepoRoot, "unity", "Build");
         Directory.CreateDirectory(outDir);
-        var names = new System.Collections.Generic.List<string> { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", "Assets/Shaders/BDNukesVolumeComposite.shader", "Assets/Shaders/BDNukesCloudShadow.shader", "Assets/Shaders/BDNukesShockDistortion.shader", NoisePath };
+        var names = new System.Collections.Generic.List<string> { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", "Assets/Shaders/BDNukesVolumeComposite.shader", "Assets/Shaders/BDNukesCloudShadow.shader", "Assets/Shaders/BDNukesShockDistortion.shader", "Assets/Shaders/BDNukesFireLight.shader", NoisePath };
         names.AddRange(BDNukesSimImport.ImportAll());
         var build = new AssetBundleBuild { assetBundleName = BundleName, assetNames = names.ToArray() };
         var manifest = BuildPipeline.BuildAssetBundles(outDir, new[] { build },
