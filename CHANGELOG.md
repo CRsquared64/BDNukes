@@ -63,6 +63,9 @@
 - New settings for craters (on/off, size scale, rebuild mode, fill in all craters) and for haze and weather.
 
 ### Fixed
+- **The cloud drew over parts of the ship** whose shaders skip Unity's depth texture (mod PBR shaders, transparent parts). The loaded vessels are now drawn into BDNukes' own depth each frame and the cloud stops at them.
+- **Craters buried the space centre:** craters now fade out over the KSC and other built-up sites (PQS cities, Kerbal Konstructs statics), so buildings stay on their own ground and can be repaired. Existing craters are masked the next time the terrain loads. New setting `protectSites`.
+- **Flat-topped caps:** the baked sim box cut the procedural cap off flat where it rose past the box. Sim and procedural now blend over the box's outer margin. The mushroom bake is smoothed a little more on import, against vertical streaks.
 - **The velum** no longer spreads into a solid, glowing slab with a hard edge over big yields. It is capped at 14 km, much fainter, torn into patches with sky through the gaps, and its underside glow is toned down.
 - **The stem was clipped to a smooth tube:** an early-out radius cut its billows off. It now leaves room for them.
 - **A Tsar Bomba could still throw the camera's craft into space**, at 37,000 km/s: near a huge yield BDArmory's impulse grows without bound, and scaling it down wasn't enough. The speed one nuclear hit can give any part is now capped (`nukeMaxDeltaV`, default 120 m/s, still a violent tumble), and non-finite forces are dropped. Damage is unchanged.

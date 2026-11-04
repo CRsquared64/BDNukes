@@ -105,6 +105,16 @@ float BentStem(float3 p, out float u, out float3 axis)
     return over > 0.0 ? length(float2(max(radial, 0.0), over)) : radial;
 }
 
+// how much the baked sim owns this point: 1 well inside its box, fading to 0 over the box's outer margin (the
+// floor excepted, where the bake meets the ground), so the procedural cloud carries on past the box instead of the box
+// cutting it off flat
+float SimEdge(float3 su)
+{
+    float3 e = min(su, 1.0 - su);
+    e.y = 1.0 - su.y;
+    return saturate(min(e.x, min(e.y, e.z)) / 0.1);
+}
+
 float2 rdir0(float3 r)
 {
     float l = length(r.xz);
@@ -345,9 +355,11 @@ Sample Cloud(float3 p, bool detail)
         float3 bd = max(max(-su, su - 1.0), 0.0) * _SimSize.xyz;
         skip = min(skip, length(bd) * 0.9);
         float simDen = 0.0;
+        float simOwn = 0.0;
         if (all(su > 0.0) && all(su < 1.0))
         {
             float4 sv = lerp(tex3Dlod(_SimA, float4(su, 0)), tex3Dlod(_SimB, float4(su, 0)), _Sim.x);
+            simOwn = SimEdge(su);
             simDen = sv.r * sv.r;
             if (detail && simDen > 0.003)
             {
@@ -362,9 +374,9 @@ Sample Cloud(float3 p, bool detail)
             simDen *= _Sim.w;
             // heat from the smooth temperature field, the flame field only adding to it: the flame's thin outer
             // tongues would otherwise glow as hard as the core and read as spikes
-            s.simHeat = max(0.6 * sv.g, 0.85 * sv.b) * _Sim.y * saturate(simDen * 4.0);
+            s.simHeat = max(0.6 * sv.g, 0.85 * sv.b) * _Sim.y * simOwn * saturate(simDen * 4.0);
         }
-        capDen = lerp(capDen, simDen, _Sim.y);
+        capDen = lerp(capDen, simDen, _Sim.y * simOwn);
         if (simDen > 0.0) s.core = lerp(s.core, 1.0 - sqrt(saturate(s.simHeat)), _Sim.y);
     }
 
@@ -578,9 +590,8 @@ float CloudCheap(float3 p)
         if (all(su > 0.0) && all(su < 1.0))
         {
             float r = tex3Dlod(_SimA, float4(su, 0)).r;
-            cap = lerp(cap, r * r * _Sim.w, _Sim.y);
+            cap = lerp(cap, r * r * _Sim.w, _Sim.y * SimEdge(su));
         }
-        else cap *= 1.0 - _Sim.y;
     }
     return max(cap, stem);
 }

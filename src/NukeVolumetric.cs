@@ -55,6 +55,7 @@ namespace BDNukes
                     else if (sh.name == "BDNukes/ShockDistortion") shockShader = sh;
                     // ---- fireball lighting ----
                     else if (sh.name == "BDNukes/FireLight") fireLightShader = sh;
+                    else if (sh.name == "BDNukes/PartDepth") partDepthShader = sh;
                     // ---- end fireball lighting ----
                 }
                 var simFrames = new System.Collections.Generic.Dictionary<string, Texture>();
@@ -163,10 +164,39 @@ namespace BDNukes
                         c.AddCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
                         lowResCams.Add(c);
                     }
-            NukeVolumeCompositor.Build(lowResBuffer, lowResItems, compositeMat, Divisor, shockItems, fireLights, fireLightMat);
+            if (lowResItems.Count > 0) GatherOccluders();
+            else occluders.Clear();
+            NukeVolumeCompositor.Build(lowResBuffer, lowResItems, compositeMat, Divisor, shockItems, fireLights, fireLightMat, occluders, partDepthMat);
             lowResItems.Clear();
             shockItems.Clear();
             fireLights.Clear();   // fireball lighting
+        }
+
+        static Shader partDepthShader;
+        static Material partDepthMat;
+        static readonly System.Collections.Generic.List<Renderer> occluders = new System.Collections.Generic.List<Renderer>();
+
+        /// <summary>The loaded vessels' visible part renderers, drawn into BDNukes' own depth so the cloud stops at them.</summary>
+        static void GatherOccluders()
+        {
+            occluders.Clear();
+            if (partDepthShader == null || !partDepthShader.isSupported) return;
+            if (partDepthMat == null) partDepthMat = new Material(partDepthShader);
+            var vessels = FlightGlobals.VesselsLoaded;
+            if (vessels == null) return;
+            foreach (var v in vessels)
+            {
+                if (v == null || v.parts == null) continue;
+                foreach (var p in v.parts)
+                {
+                    if (p == null) continue;
+                    var rs = p.FindModelRenderersCached();
+                    if (rs == null) continue;
+                    foreach (var r in rs)
+                        if (r != null && r.enabled && r.isVisible && r.gameObject.activeInHierarchy && (r is MeshRenderer || r is SkinnedMeshRenderer))
+                            occluders.Add(r);
+                }
+            }
         }
 
         /// <summary>Takes the low-res pass off the cameras (scene teardown).</summary>

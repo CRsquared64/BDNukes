@@ -169,7 +169,8 @@ namespace BDNukes
         public bool craters = true;                // surface bursts on land leave a persistent crater in the terrain
         public float craterScale = 1f;             // multiplies crater radius and depth
         public int maxCraters = 100;               // per body; the oldest is filled in beyond this
-        public bool craterPartialRebuild = true;   // rebuild only the quads near the crater; off = RebuildSphere (multi-second freeze)
+        public bool craterPartialRebuild = true;
+        public bool protectSites = true;           // craters leave the space centre and other built-up sites' ground alone   // rebuild only the quads near the crater; off = RebuildSphere (multi-second freeze)
         // photo mode (Alt+F7 cycles normal / slow motion / frozen)
         public float photoModeSlowRate = 0.25f;    // effects speed in slow motion (1 = normal)
         // thermal scorch on craft
@@ -325,6 +326,7 @@ namespace BDNukes
             n.TryGetValue("craterScale", ref craterScale);
             n.TryGetValue("maxCraters", ref maxCraters);
             n.TryGetValue("craterPartialRebuild", ref craterPartialRebuild);
+            n.TryGetValue("protectSites", ref protectSites);
 
             string vq = n.GetValue("volumetricQuality");
             if (!string.IsNullOrEmpty(vq))
@@ -513,6 +515,7 @@ namespace BDNukes
                 n.AddValue("craters", B(craters));
                 n.AddValue("craterScale", F(craterScale));
                 n.AddValue("craterPartialRebuild", B(craterPartialRebuild));
+                n.AddValue("protectSites", B(protectSites));
                 n.AddValue("volumetricQuality", volumetricQuality.ToString());
                 n.AddValue("adaptivePerformance", B(adaptivePerformance));
                 n.AddValue("targetFrameRate", F(targetFrameRate));

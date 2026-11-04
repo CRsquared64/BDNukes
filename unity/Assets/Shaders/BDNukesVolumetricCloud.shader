@@ -64,6 +64,9 @@ Shader "BDNukes/VolumetricCloud"
             // helpers
             // ------------------------------------------------------------------------------------------------
 
+            sampler2D _BDNukesPartDepth;   // eye depth of the vessels' parts (BDNukes/PartDepth)
+            float _BDNukesPartDepthOn;
+
             fixed4 frag(v2f i, float face : VFACE) : SV_Target
             {
                 float3 camW = _WorldSpaceCameraPos;
@@ -83,6 +86,8 @@ Shader "BDNukes/VolumetricCloud"
 
                 float2 uv = i.screenPos.xy / i.screenPos.w;
                 float sceneT = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv)) / cosA;
+                // parts whose shaders skip the camera depth texture still hide the cloud behind them
+                if (_BDNukesPartDepthOn > 0.5) sceneT = min(sceneT, tex2Dlod(_BDNukesPartDepth, float4(uv, 0, 0)).r / cosA);
                 float t0 = max(hit.x, nearT);
                 float t1 = min(min(hit.y, farT), sceneT);
                 // from orbit the planet is drawn by the scaled-space camera, which leaves no depth here: stop the

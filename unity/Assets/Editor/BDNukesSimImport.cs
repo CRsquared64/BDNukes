@@ -76,7 +76,9 @@ public static class BDNukesSimImport
             Buffer.BlockCopy(bytes, 0, arr, 0, Math.Min(bytes.Length, arr.Length * 4));
             // smooth away voxel-scale jaggedness (the solver's one-voxel flame tongues read as spikes); the shader's
             // flame folds put the fine detail back, smoothly
-            for (int c = 0; c < 3; c++) Smooth(arr, c * n, bx, by, bz, c == 0 ? 1 : 2);
+            // the long mushroom bake's rising smoke has vertical solver grain: smooth it a little harder
+            int dPasses = variant == "mushroom" ? 2 : 1;
+            for (int c = 0; c < 3; c++) Smooth(arr, c * n, bx, by, bz, c == 0 ? dPasses : 2);
             for (int i = 0; i < n; i++)
             {
                 maxD = Mathf.Max(maxD, arr[i]);

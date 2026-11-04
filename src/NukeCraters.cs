@@ -100,14 +100,53 @@ namespace BDNukes
         public CelestialBody body;
         public List<NukeCrater> craters = new List<NukeCrater>();
 
+        /// <summary>Built-up sites (the space centre, other PQS cities): craters leave their ground alone.</summary>
+        public readonly List<Vector3d> siteDirs = new List<Vector3d>();
+        public readonly List<double> siteCosIn = new List<double>(), siteCosOut = new List<double>();
+
         public override void OnVertexBuildHeight(PQS.VertexBuildData data)
         {
             int n = craters.Count;
             if (n == 0) return;
             double R = sphere.radius;
             Vector3d v = data.directionFromCenter;
+            double h = 0d;
             for (int i = 0; i < n; i++)
-                data.vertHeight += craters[i].Offset(v, R);
+                h += craters[i].Offset(v, R);
+            if (h == 0d) return;
+            // inside a protected site the crater fades out: buildings stay on their own ground, not buried under a
+            // rim or left floating over a bowl
+            for (int i = 0; i < siteDirs.Count; i++)
+            {
+                double c = Vector3d.Dot(v, siteDirs[i]);
+                if (c <= siteCosOut[i]) continue;
+                if (c >= siteCosIn[i]) return;
+                double k = (c - siteCosOut[i]) / (siteCosIn[i] - siteCosOut[i]);
+                h *= 1d - k * k * (3d - 2d * k);
+            }
+            data.vertHeight += h;
+        }
+
+        /// <summary>Finds the body's built-up sites: PQSCity (the space centre and its like) and PQSCity2 (Kerbal Konstructs, stock monuments).</summary>
+        public void FindSites()
+        {
+            siteDirs.Clear(); siteCosIn.Clear(); siteCosOut.Clear();
+            if (!NukeSettings.Current.protectSites || sphere == null) return;
+            double R = sphere.radius;
+            void Add(Vector3d dir, double inner, double outer)
+            {
+                if (dir.sqrMagnitude < 1e-12) return;
+                siteDirs.Add(dir.normalized);
+                siteCosIn.Add(Math.Cos(inner / R));
+                siteCosOut.Add(Math.Cos(outer / R));
+            }
+            foreach (var city in sphere.GetComponentsInChildren<PQSCity>(true))
+            {
+                bool ksc = city.name == "KSC" || city.name.StartsWith("KSC");
+                Add((Vector3d)city.repositionRadial, ksc ? 1300d : 250d, ksc ? 2000d : 450d);
+            }
+            foreach (var city in sphere.GetComponentsInChildren<PQSCity2>(true))
+                Add(body.GetRelSurfaceNVector(city.lat, city.lon), 200d, 380d);
         }
     }
 
@@ -263,6 +302,7 @@ namespace BDNukes
             mod.modEnabled = true;
             mod.order = 99999999; // last in the height chain; also where SetupMods sorts it if it ever runs again
             mod.requirements = PQS.ModiferRequirements.Default;
+            mod.FindSites();
             mods[body.bodyName] = mod;
 
             // splice it into the live mod list (SetupMods would re-run OnSetup on every mod of the body)

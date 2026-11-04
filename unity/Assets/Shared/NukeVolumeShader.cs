@@ -444,6 +444,8 @@ namespace BDNukes
         // ---- end fireball lighting ----
 
         static readonly int LowRes = Shader.PropertyToID("_BDNukesVolumeLowRes");
+        static readonly int PartDepth = Shader.PropertyToID("_BDNukesPartDepth");
+        static readonly int PartDepthOn = Shader.PropertyToID("_BDNukesPartDepthOn");
         static readonly int Grab = Shader.PropertyToID("_BDNukesShockGrab");
         static readonly List<Shock> noShocks = new List<Shock>();
 
@@ -454,7 +456,7 @@ namespace BDNukes
         /// over a copy of the result.
         /// </summary>
         public static void Build(CommandBuffer cb, List<Item> items, Material composite, int divisor, List<Shock> shocks = null,
-            List<FireLight> fireLights = null, Material fireLightMat = null)
+            List<FireLight> fireLights = null, Material fireLightMat = null, List<Renderer> occluders = null, Material occluderMat = null)
         {
             cb.Clear();
             shocks = shocks ?? noShocks;
@@ -475,6 +477,23 @@ namespace BDNukes
                 cb.DrawMesh(NukeFireLighting.ScreenQuad(), Matrix4x4.identity, fireLightMat, 0, 0);
             }
             // ---- end fireball lighting ----
+            // the vessels' own depth: the cloud's march stops at it too, whatever shader the parts use
+            bool parts = items.Count > 0 && occluders != null && occluders.Count > 0 && occluderMat != null;
+            cb.SetGlobalFloat(PartDepthOn, parts ? 1f : 0f);
+            if (parts)
+            {
+                cb.GetTemporaryRT(PartDepth, -1, -1, 24, FilterMode.Point, RenderTextureFormat.RFloat);
+                cb.SetRenderTarget(PartDepth);
+                cb.ClearRenderTarget(true, true, new Color(1e9f, 0f, 0f, 0f));
+                foreach (var r in occluders)
+                {
+                    if (r == null) continue;
+                    int subs = r.sharedMaterials.Length;
+                    for (int i = 0; i < Mathf.Max(1, subs); i++) cb.DrawRenderer(r, occluderMat, i, 0);
+                }
+                cb.SetGlobalTexture(PartDepth, PartDepth);
+                cb.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+            }
             if (items.Count > 0)
             {
                 if (d <= 1)
@@ -493,6 +512,7 @@ namespace BDNukes
                     cb.ReleaseTemporaryRT(LowRes);
                 }
             }
+            if (parts) cb.ReleaseTemporaryRT(PartDepth);
             if (shocks.Count > 0)
             {
                 cb.GetTemporaryRT(Grab, -1, -1, 0, FilterMode.Bilinear, RenderTextureFormat.Default);
