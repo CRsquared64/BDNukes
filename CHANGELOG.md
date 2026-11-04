@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- **Photo mode:** Alt+F7 cycles the nuclear effects between normal speed, slow motion (`photoModeSlowRate`, default 0.25x) and frozen, without pausing the game, so you can line up screenshots. Blast sounds slow down and pause with them.
+- **Thermal scorch on craft:** the flash chars the side of loaded vessels that faces the fireball, out to about 1.2 km x sqrt(yield in kt). Terrain blocks it and parts in the way shade what is behind them. Cosmetic only, and it lasts until the vessel unloads. Setting `craftScorch`.
 - **Debris smoke trails:** surface and near-surface bursts on land throw out 12 to 40 chunks of debris on ballistic arcs, two to six fireball radii out, each trailing dark grey-brown smoke that billows and fades, with a glowing orange-white tip for the first second or two. New setting `debrisTrails`.
 - **Cloud quality presets and adaptive quality:** a Low / Medium / High / Ultra / Custom preset for the volumetric cloud sets its raymarch steps, resolution and ground shadow in one click; editing any of them by hand switches to Custom. Adaptive quality watches the frame rate while a cloud is on screen and, if it stays under the target (default 50 fps), trims raymarch steps and then the resolution, bringing them back once there is headroom. The settings window shows the current runtime scale. New settings `volumetricQuality`, `adaptivePerformance` and `targetFrameRate`.
 - **The fireball lights the world:** terrain and craft now catch the fireball's light. Its light is stronger and reaches further for bigger yields. It takes the fireball's blackbody colour, white in the flash and then yellow, orange and dull red, and fades as the fireball stops glowing. A full-screen pass also adds warm light to everything near the fireball, falling off with distance. Surfaces facing it catch the most, and the sky is left alone. It is capped so a close burst doesn't wash out the screen. New setting `fireballLighting`.
@@ -101,8 +103,6 @@
   - Close to ground zero, a roaring blast wind and afterwind follow the shock.
 - **Wind on small clouds:** a cloud only feels the wind at the height it actually reaches, and the rising fireball picks up the wind gradually. Low-yield clouds such as the Davy Crockett's now stand up instead of smearing sideways.
 - Far away, the smoke puffs merge into one mass instead of reading as separate balls.
-- **Photo mode:** Alt+F7 cycles the nuclear effects between normal speed, slow motion (`photoModeSlowRate`, default 0.25x) and frozen, without pausing the game, so you can line up screenshots. Blast sounds slow down and pause with them.
-- **Thermal scorch on craft:** the flash chars the side of loaded vessels that faces the fireball, out to about 1.2 km x sqrt(yield in kt). Terrain blocks it and parts in the way shade what is behind them. Cosmetic only, and it lasts until the vessel unloads. Setting `craftScorch`.
 
 ## 1.0.1
 
