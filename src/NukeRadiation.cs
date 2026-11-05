@@ -62,6 +62,24 @@ namespace BDNukes
             }
         }
 
+        /// <summary>
+        /// Adds a dose from another source (the artificial radiation belt) to a kerbal. With a part (loaded vessel)
+        /// the usual sickness warning and death apply; without one (unloaded vessel) the dose only accumulates, and
+        /// a lethal dose takes effect the next time the vessel is loaded and checked.
+        /// </summary>
+        internal static void AddDose(Part part, ProtoCrewMember c, float sv, bool warn)
+        {
+            if (c == null || c.rosterStatus == ProtoCrewMember.RosterStatus.Dead) return;
+            var s = NukeSettings.Current;
+            doses.TryGetValue(c.name, out float d0);
+            float d = d0 + Mathf.Max(0f, sv);
+            if (d > 0f) doses[c.name] = d;
+            if (part == null) return;
+            if (d >= s.lethalDose) Kill(part, c);
+            else if (d >= s.sicknessDose && warned.Add(c.name) && warn)
+                ScreenMessages.PostScreenMessage($"{c.displayName} has radiation sickness ({d:0.0} Sv)", 6f, ScreenMessageStyle.UPPER_CENTER);
+        }
+
         void Awake()
         {
             Instance = this;

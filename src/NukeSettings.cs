@@ -185,6 +185,57 @@ namespace BDNukes
         public bool fireballLighting = true;       // the fireball lights terrain and craft: a stronger point light plus a screen-space warm glow pass
         // ---- end fireball lighting ----
 
+        // ---- high-altitude effects: artificial radiation belts and high-altitude EMP ----
+        public bool radiationBelts = true;         // bursts above the atmosphere of a magnetised body inject a trapped-electron belt
+        public string beltBodies = "Kerbin, Jool, Eve"; // bodies with a magnetosphere (comma separated)
+        public bool beltAllAtmospheres = false;    // also give every other body with an atmosphere a magnetosphere
+        public float beltMinAltitude = 70000f;     // m; lowest burst that feeds a belt (at least the top of the atmosphere)
+        public float beltHalfLifeDays = 30f;       // Kerbin days; slow decay of the belt
+        public float beltFastDecayDays = 1f;       // Kerbin days; e-folding time of the quickly lost part of the injection
+        public float beltFastFraction = 0.6f;      // fraction of the injected electrons lost on the fast time scale
+        public float beltDoseRate = 2f;            // Sv/h at the belt's heart right after a 1 Mt burst (linear in yield)
+        public bool beltDamage = true;             // belt dose degrades solar panels and kills probe electronics
+        public float beltPanelDose = 30f;          // Sv for solar panels to drop to 1/e of their output
+        public float beltPanelMinEfficiency = 0.1f; // panels never drop below this fraction
+        public float beltFailDose = 60f;           // Sv (+/-30% per part) at which an uncrewed probe core fails
+        public float beltCrewShielding = 0.25f;    // fraction of the belt dose rate that reaches the crew inside the hull
+        public bool hemp = true;                   // bursts at 30-400 km over an atmosphere EMP craft low down within the horizon circle
+        public bool showRadiationBelts = true;     // draw the belts in map view and the tracking station
+
+        void ReadBelts(ConfigNode n)
+        {
+            n.TryGetValue("radiationBelts", ref radiationBelts);
+            n.TryGetValue("beltBodies", ref beltBodies);
+            n.TryGetValue("beltAllAtmospheres", ref beltAllAtmospheres);
+            n.TryGetValue("beltMinAltitude", ref beltMinAltitude);
+            n.TryGetValue("beltHalfLifeDays", ref beltHalfLifeDays);
+            n.TryGetValue("beltFastDecayDays", ref beltFastDecayDays);
+            n.TryGetValue("beltFastFraction", ref beltFastFraction);
+            n.TryGetValue("beltDoseRate", ref beltDoseRate);
+            n.TryGetValue("beltDamage", ref beltDamage);
+            n.TryGetValue("beltPanelDose", ref beltPanelDose);
+            n.TryGetValue("beltPanelMinEfficiency", ref beltPanelMinEfficiency);
+            n.TryGetValue("beltFailDose", ref beltFailDose);
+            n.TryGetValue("beltCrewShielding", ref beltCrewShielding);
+            n.TryGetValue("hemp", ref hemp);
+            n.TryGetValue("showRadiationBelts", ref showRadiationBelts);
+        }
+
+        void ValidateBelts()
+        {
+            if (beltBodies == null) beltBodies = "";
+            beltMinAltitude = Mathf.Max(0f, beltMinAltitude);
+            beltHalfLifeDays = Mathf.Clamp(beltHalfLifeDays, 0.1f, 100000f);
+            beltFastDecayDays = Mathf.Clamp(beltFastDecayDays, 0.01f, 1000f);
+            beltFastFraction = Mathf.Clamp01(beltFastFraction);
+            beltDoseRate = Mathf.Max(0f, beltDoseRate);
+            beltPanelDose = Mathf.Max(0.1f, beltPanelDose);
+            beltPanelMinEfficiency = Mathf.Clamp01(beltPanelMinEfficiency);
+            beltFailDose = Mathf.Max(0.1f, beltFailDose);
+            beltCrewShielding = Mathf.Clamp01(beltCrewShielding);
+        }
+        // ---- end high-altitude effects ----
+
         static NukeSettings current;
 
         public static NukeSettings Current
@@ -349,6 +400,7 @@ namespace BDNukes
             n.TryGetValue("adaptivePerformance", ref adaptivePerformance);
             n.TryGetValue("targetFrameRate", ref targetFrameRate);
             n.TryGetValue("fireballLighting", ref fireballLighting);
+            ReadBelts(n); // high-altitude effects
         }
 
         /// <summary>The volumetric preset's steps, resolution divisor and shadows. False for Custom.</summary>
@@ -413,6 +465,7 @@ namespace BDNukes
             maxCraters = Mathf.Clamp(maxCraters, 1, 1000);
             targetFrameRate = Mathf.Clamp(targetFrameRate, 15f, 240f);
             photoModeSlowRate = Mathf.Clamp(photoModeSlowRate, 0.01f, 1f);
+            ValidateBelts(); // high-altitude effects
         }
 
         static void ValidateQuality(NukeQualityValues q)

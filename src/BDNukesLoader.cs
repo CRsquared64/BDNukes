@@ -74,6 +74,8 @@ namespace BDNukes
                     }
                 }
 
+                NukeRadiationBelt.OnDetonation(FlightGlobals.currentMainBody, position, Yield, delay); // radiation belt, HEMP
+
                 if (!settings.enabled) return;
 
                 NukeCinematic.Spawn(position, Yield, delay, ModuleNukeCloudProfile.FromPart(nukePart));
