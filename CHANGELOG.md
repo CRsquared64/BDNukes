@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **W54 SADM "backpack nuke"** (0.01–1 kt dial-a-yield): carry it in an inventory, place it on EVA, set a 10 s – 10 min timer and arm it from the part menu, the EVA kerbal's menu or an action group. The countdown is shown in the menu and on screen and survives save/load.
+- **Project Orion nuclear pulse drive:** a 10 m pusher-plate engine that burns Nuclear Pulse Units (a new resource). The throttle sets the pulse rate. Each pulse gives a cushioned kick with a bright flash, a plasma disc in vacuum and a thump in air.
+- **Rope tricks:** tower and low bursts under about 100 kt shoot thin, bright spikes down the guy wires from the fireball's underside for the first fraction of a second. Setting `ropeTricks`.
+- **Mach stem dust ring:** air bursts 0.5–8 fireball radii up raise a thin, bright-edged dust ring where the reflected shock runs out along the ground, ahead of the base surge, fading over about 15 s. Drawn in the volumetric cloud, with sprites in the fallback. Setting `machStemDust`.
+- **Cloud-deck flash:** EVE cloud decks above or below a burst light up with the fireball, white with the flash and then orange, fading with distance over the first seconds. Setting `cloudDeckFlash`.
+- **Forests are flattened** when Parallax (Continued) is installed: trees and bushes out to about 5 psi, and every scatter over the crater, kept in the save. Setting `flattenTrees`.
+- **Fallout footprint:** ground and low bursts leave a persistent downwind hot zone, a faint ground tint that fades over game days and gives a slow radiation dose inside it. Settings `falloutFootprint`, `footprintDays`, `footprintDose`.
+- **Firestorms:** after big bursts over land, fires spread through the thermal radius and merge, feeding smoke columns that drift downwind for several minutes. Settings `firestorm`, `firestormMinYield`, `firestormDuration`.
+- **Artificial radiation belts (Starfish Prime):** bursts above the atmosphere of Kerbin, Jool or Eve (configurable) trap fission electrons in a belt along the field shell through the burst. It decays over Kerbin days (`beltHalfLifeDays`), stacks over several bursts, and is saved with the game.
+  - Craft in a belt take a dose, loaded or not. Solar panels lose output, uncrewed probe cores eventually fail, and kerbals take a shielded share toward radiation sickness. Probe cores and panels show the dose in their part menu.
+  - The belts are drawn in map view and the tracking station, coloured by intensity (`showRadiationBelts`).
+- **High-altitude EMP:** bursts at 30–400 km over an atmosphere hit loaded craft below 20 km anywhere within the horizon circle with an EMP, strongest under the burst. Setting `hemp`.
+- **Effects-range overlay** (Alt+F8 or the settings window): NUKEMAP-style rings on the terrain for the fireball, 20/5/1 psi and the thermal radius around your nuke's predicted impact point, with labels and the yield. Nuke parts also list these ranges in km in the part menu and editor tooltip.
+- **Cinematic camera** (`cinematicCamera`, Alt+F6, off by default): frames and slowly orbits detonations near you. Any camera input gives control back.
+- **Replay last detonation** (settings window or Alt+F10): plays the last detonation or salvo again from the start, visuals and sound only, with no damage, crater, scorch or radiation.
+
+### Changed
+- Explosion effects follow time warp, including on-rails warp. Clouds, fireballs, EVE cloud holes and debris age at the warped rate.
+
+### Fixed
+- Parallax scatters no longer float above or sink into fresh craters.
+
 ## 1.1.0
 
 ### Added
