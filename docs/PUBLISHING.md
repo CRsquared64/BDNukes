@@ -4,6 +4,8 @@ The path is: GitHub repo → GitHub release with the zip → forum thread (optio
 
 ## 1. Before a release
 - Bump the version in `GameData/BDNukes/BDNukes.version` (the packaging script reads it and stamps the DLL).
+  Keep `<Version>` in `src/BDNukes.csproj` and `KSPAssembly` in `src/AssemblyInfo.cs` in step with it.
+- If any shader changed, rebuild the bundle: `powershell -File unity/run-unity.ps1 BuildAll` (Unity 2019.4.18f1).
 - Add a section to `CHANGELOG.md`.
 - Test in game: atmospheric burst, vacuum burst, Small Nuclear Warhead fuzes, and a Tsar Bomba drop.
   Check `KSP.log` for `[BDNukes]` errors.
@@ -12,19 +14,15 @@ The path is: GitHub repo → GitHub release with the zip → forum thread (optio
 ```
 powershell -ExecutionPolicy Bypass -File tools/package.ps1
 ```
-This writes `release/BDNukes-<version>.zip`, containing `GameData/BDNukes/` (DLL, configs, LICENSE, README, CHANGELOG).
+This writes `release/BDNukes-<version>.zip`, containing `GameData/BDNukes/` (DLL, configs, shader bundle, LICENSE, README,
+CHANGELOG) and the example craft under `Ships/`. `GameData/BDNukes/PluginData` (your own settings) is left out.
 CKAN finds the `BDNukes` folder by the mod identifier, and manual installers just drop `GameData` into KSP.
 
 ## 3. GitHub
-```
-git remote add origin https://github.com/CRsquared64/BDNukes.git
-git push -u origin main
-```
-Create a release with tag `v<version>` (e.g. `v1.0.0`) and attach the zip as an asset. Use the CHANGELOG section as the notes.
-CKAN's GitHub indexer reads the tag and asset from here.
-
-Then replace the forum URL placeholder in `ckan/BDNukes.netkan`.
-Optionally add `"URL"`, `"DOWNLOAD"` and `"GITHUB"` fields to `BDNukes.version` so KSP-AVC can notify users of updates.
+Merge the release branch into `main` and push it (the repo is https://github.com/CRsquared64/BDNukes).
+Create a release with tag `v<version>` (e.g. `v1.2.0`) and attach the zip as an asset. Use the CHANGELOG section as the notes.
+CKAN's GitHub indexer reads the tag and asset from here, and KSP-AVC reads `BDNukes.version` from `main` to tell
+players an update is out, so push `main` before (or with) the release.
 
 ## 4. Forum thread (recommended) and SpaceDock (optional)
 - CKAN reviewers want `resources.homepage` to point at a forum thread. Post in
@@ -49,8 +47,8 @@ What the reviewers check:
 - The `homepage` is the forum thread.
 - The identifier (`BDNukes`) only uses letters, digits and dashes.
 - The `.version` file is valid, because `$vref: '#/ckan/ksp-avc'` sets the KSP compatibility from it.
-- Dependencies use `depends`, not bundled copies. BDNukes depends on `ModuleManager`, `Harmony2` and `BDArmory`
-  (`BDArmory` is the virtual identifier that `BDArmoryContinued` provides). It suggests `BDArmoryExtended`.
+- Dependencies use `depends`, not bundled copies. BDNukes depends on `ModuleManager`, `Harmony2` and
+  `BDArmoryForRunwayProject` (BDArmory Plus, v1.12 or later). It suggests `BDArmoryExtended`.
 
 After the first merge, every new GitHub release with a zip asset is picked up automatically, usually within an hour or so.
 

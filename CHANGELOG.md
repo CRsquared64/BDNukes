@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 ### Added
 - **New weapons:**
@@ -34,6 +34,39 @@
 
 ### Fixed
 - Parallax scatters no longer float above or sink into fresh craters.
+- Effects kept a single-precision clock, so after a few hours of game time clouds stepped and jittered instead of moving smoothly.
+- Dropped bombs and released warheads were unloaded once the carrier flew 2–22 km away, taking their laydown, airburst and depth fuzes with them. They now stay in physics until they fire.
+- Laydown countdowns ran on physics frames, so time warp and reloads stretched them. They now end at a fixed game time.
+- Bumps and hard landings on the carrier no longer trip a carried weapon's impact fuze.
+- A SADM put back in an inventory while armed went off as soon as it was placed again. It now comes out safe, and never fires while unloaded.
+- The yield lock and the ballistic motor cutoff were forgotten on reload, so a launched weapon's yield could be changed again or its motor relit.
+- The B57 broke up on hitting the water before its depth fuze could work.
+- The B83 laydown speed was above its crash tolerance, so laydown drops broke the bomb instead of starting the timer.
+- The Davy Crockett was silent without BDArmory Extended installed.
+- Kerbals killed by radiation were reported dead twice.
+- Radiation doses ignored time warp on loaded craft, and radiation fronts missed unloaded craft and other scenes.
+- High-altitude EMP could cancel a stronger EMP already hitting a craft.
+- A failure inside the vacuum-burst patch could leave BDArmory's air density changed for every later explosion.
+- One error while drawing belts, fronts or alerts in map view turned the overlay off for good.
+- Restored clouds that had already run out were rebuilt every frame after loading, and restores used the crater floor as the ground.
+- Landed craft near a new crater were launched or buried when the terrain was rebuilt under them.
+- Photo mode changed the blast sound's pitch for good, and missed the roar.
+- Cloud-deck flash meshes leaked, as did flattened-scatter holders for evicted sites.
+- Old replays and over-limit craters or flattened sites came back after loading another save.
+- Every old crater refreshed nearby scatters on each rebuild, not just the new one.
+- Condensation collars could be clipped by the cloud's bounding box.
+- EVE cubemap or very large coverage textures broke the blast holes in the cloud deck.
+- A malformed fluid-sim bake could be played.
+- The cinematic camera didn't give back the player's camera mode when the vessel it was following died.
+- The range overlay searched for a weapon every frame on craft without one, and re-traced its rings constantly while flying.
+- The Orion pulse drive was listed among the nuclear weapons in the editor.
+- Out-of-range values for cloud height, screen flash, tint, camera shake, volume and billow rotation in Settings.cfg are now clamped.
+- The packaging script now leaves `PluginData` (your own settings) out of release zips.
+
+### Known limitations
+- Craters are rebuilt per vertex across the whole terrain quad, so many craters on one body cost load time.
+- A fuze delay set on a weapon isn't restored with a cloud after loading.
+- In photo mode the fallout cloud and the fallout footprint can both dose the same kerbal.
 
 ## 1.1.0
 

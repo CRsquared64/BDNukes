@@ -186,7 +186,6 @@ namespace BDNukes
                         else if (savedTargetMode == FlightCamera.TargetMode.Vessel && savedVessel != null && savedVessel == av) fc.SetTargetVessel(savedVessel);
                         else if (savedTargetMode == FlightCamera.TargetMode.Transform && savedTarget != null) fc.SetTargetTransform(savedTarget);
                         else if (av != null) fc.SetTargetVessel(av);
-                        fc.setModeImmediate(savedMode);
                         fc.SetDistance(Mathf.Clamp(savedDist, fc.minDistance, fc.maxDistance));
                         fc.camPitch = savedPitch;
                         fc.camHdg = savedHdg;
@@ -197,6 +196,9 @@ namespace BDNukes
                         var av = FlightGlobals.ActiveVessel;
                         if (av != null) fc.SetTargetVessel(av);
                     }
+                    // the orbit runs in free mode: hand back the player's camera mode either way (also when the
+                    // vessel it was following has died and the camera fell back to the active one)
+                    fc.setModeImmediate(savedMode);
                 }
                 catch (System.Exception e) { Debug.LogWarning("[BDNukes]: Cinematic camera couldn't restore the camera: " + e.Message); }
             }

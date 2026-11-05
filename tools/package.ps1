@@ -31,6 +31,9 @@ $stageMod = Join-Path $stage "GameData\BDNukes"
 New-Item -ItemType Directory -Force $stageMod | Out-Null
 Copy-Item (Join-Path $modDir "*") $stageMod -Recurse -Exclude ".gitkeep"
 Get-ChildItem $stageMod -Recurse -Filter ".gitkeep" | Remove-Item -Force
+# PluginData holds the developer's own settings and logs: never ship it (it would overwrite players' settings)
+$pluginData = Join-Path $stageMod "PluginData"
+if (Test-Path $pluginData) { Remove-Item $pluginData -Recurse -Force }
 Copy-Item (Join-Path $repo "LICENSE") $stageMod
 Copy-Item (Join-Path $repo "README.md") $stageMod
 Copy-Item (Join-Path $repo "CHANGELOG.md") $stageMod

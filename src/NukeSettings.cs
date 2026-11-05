@@ -527,6 +527,12 @@ namespace BDNukes
         public void Validate()
         {
             sizeScale = Mathf.Max(0.05f, sizeScale);
+            cloudHeightScale = Mathf.Clamp(cloudHeightScale, 0.1f, 5f);
+            screenFlash = Mathf.Clamp(screenFlash, 0f, 2f);
+            screenTint = Mathf.Clamp(screenTint, 0f, 2f);
+            cameraShake = Mathf.Clamp(cameraShake, 0f, 3f);
+            volume = Mathf.Clamp(volume, 0f, 2f);
+            billowRotationSign = billowRotationSign < 0f ? -1f : 1f;
             cloudRiseTime = Mathf.Max(5f, cloudRiseTime);
             cloudLifetime = Mathf.Max(cloudRiseTime + 10f, cloudLifetime);
             glowTimeScale = Mathf.Max(0.1f, glowTimeScale);

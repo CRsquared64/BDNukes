@@ -276,7 +276,8 @@ namespace BDNukes
         void UpdateOverlay()
         {
             var v = FlightGlobals.ActiveVessel;
-            if (Time.unscaledTime >= nextFind || v != nukeVessel || nukePart == null || nukePart.vessel != v)
+            // no weapon aboard: look again once a second, not every frame
+            if (Time.unscaledTime >= nextFind || v != nukeVessel || (nukePart != null && nukePart.vessel != v))
             {
                 nextFind = Time.unscaledTime + 1f;
                 FindWeapon(v);
@@ -294,7 +295,7 @@ namespace BDNukes
             double lat = body.GetLatitude(aim), lon = body.GetLongitude(aim);
 
             // resample the terrain when the aim point or the yield moves (a few times a second at most)
-            float smallest = Mathf.Max(20f, 0.01f * r.fireball);
+            float smallest = Mathf.Max(20f, Mathf.Max(0.01f * r.fireball, 0.003f * r.thermalBD)); // a moving aircraft mustn't resample big rings every 0.2 s
             bool moved = body != ringBody || r.W != ranges.W || r.thermalBD != ranges.thermalBD || r.fireball != ranges.fireball
                 || SurfaceDistance(body, lat, lon, cLat, cLon) > smallest;
             if (moved && Time.unscaledTime >= nextResample)

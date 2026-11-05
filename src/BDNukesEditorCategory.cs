@@ -59,6 +59,8 @@ namespace BDNukes
         static bool IsNuke(AvailablePart ap)
         {
             if (ap == null || ap.partConfig == null) return false;
+            // the Orion pulse engine is propulsion, not a weapon: it lives in Engines
+            if (FindModule(ap, "ModuleOrionPulseEngine") != null) return false;
             if (ap.name.StartsWith("bdnukes", StringComparison.OrdinalIgnoreCase)) return true;
             return FindModule(ap, "BDModuleNuke") != null;
         }
