@@ -156,6 +156,18 @@ namespace BDNukes
             return Mathf.Clamp(Mathf.Pow(n, -s.lodStrength), s.minLODScale, 1f);
         }
 
+        /// <summary>A cloud (live, or restored after a scene change) drawn in this scene for a burst at world position pos.</summary>
+        public static bool HasCloudNear(CelestialBody body, Vector3d pos, double within)
+        {
+            if (instance == null) return false;
+            for (int i = 0; i < instance.active.Count; i++)
+            {
+                var c = instance.active[i];
+                if (c != null && c.Body == body && (c.BurstWorldPos - pos).sqrMagnitude < within * within) return true;
+            }
+            return false;
+        }
+
         /// <summary>Number of detonations still drawing their cloud.</summary>
         public int ActiveCount => active.Count;
 

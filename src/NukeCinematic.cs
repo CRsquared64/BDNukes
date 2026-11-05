@@ -41,6 +41,9 @@ namespace BDNukes
         float W;
         float delay;
         double spawnTime;   // NukeFXManager.FxTime at spawn (double: the clock runs for days of time warp)
+
+        /// <summary>Where the burst was, now (it turns with the planet).</summary>
+        internal Vector3d BurstWorldPos => body != null ? body.GetWorldSurfacePosition(lat, lon, alt) : Vector3d.zero;
         NukeSettings s;
         NukeCloudProfile prof;
         float lod = 1f;     // particle-count scale when many detonations are active

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace BDNukes
@@ -9,57 +8,46 @@ namespace BDNukes
     /// active vessel, so a burst on the Mun was invisible from Kerbin or from a satellite in orbit: nothing of it was
     /// drawn in scaled space, where KSP renders distant planets. This draws it there: a blinding flash, the fireball
     /// cooling from white through orange to a dull red glow, then the sunlit debris (or mushroom) cloud spreading and
-    /// fading over minutes. Planets in front hide it as they hide anything in scaled space. Each stage keeps a minimum
-    /// size on screen, so a burst a whole moon away is a visible point of light rather than a sub-pixel speck.
+    /// fading over minutes. Bursts out in space get the flash, the fireball and a fast, fading debris shell instead of
+    /// a cloud. Each stage keeps a minimum size on screen, so a burst a whole moon away is a visible point of light.
     ///
-    /// Drawn with Graphics.DrawMesh on the scaled-space layer (camera null), so the flight view's scaled camera and the
-    /// map view both show it. Bursts are kept in a static list (by UT), so they survive vessel switches and scene changes.
+    /// The bursts are NukeAlert's records, which are saved with the game: a quickload or another save shows exactly the
+    /// bursts that happened there, and a salvo is one burst. A burst is left to the real cloud whenever this scene draws
+    /// one for it within the flight cameras' reach; planets in front hide it (checked by hand, so the sprite can be
+    /// pulled toward the camera and never cut in half by the planet it sits on), and a body's shadow darkens the cloud.
+    /// Drawn with Graphics.DrawMesh on the scaled-space layer, to the scaled camera in flight and the planetarium camera
+    /// in map view and the tracking station.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.AllGameScenes, false)]
     public class NukeDistantView : MonoBehaviour
     {
-        class Burst
-        {
-            public CelestialBody body;
-            public double lat, lon, alt, ut;
-            public float W;
-            public bool airless;
-        }
-
-        static readonly List<Burst> bursts = new List<Burst>();
-        const int MaxBursts = 24;
         const int ScaledLayer = 10;
+        /// <summary>Closer than this (m) to the camera, a sprite would sit in the player's face: leave it.</summary>
+        const double MinRange = 20000d;
 
         static Mesh quad;
         static Material glowMat, dustMat;
         MaterialPropertyBlock block;
+        Camera cam;
         static readonly int TintID = Shader.PropertyToID("_TintColor");
         static readonly int ColorID = Shader.PropertyToID("_Color");
-
-        public static void OnDetonation(CelestialBody body, Vector3 pos, float W, float delay)
-        {
-            try
-            {
-                if (body == null || W <= 0f || Planetarium.fetch == null) return;
-                bursts.Add(new Burst
-                {
-                    body = body,
-                    lat = body.GetLatitude(pos), lon = body.GetLongitude(pos), alt = body.GetAltitude(pos),
-                    ut = Planetarium.GetUniversalTime() + Mathf.Max(0f, delay),
-                    W = W,
-                    airless = !body.atmosphere || body.GetAltitude(pos) >= body.atmosphereDepth,
-                });
-                while (bursts.Count > MaxBursts) bursts.RemoveAt(0);
-            }
-            catch (Exception e) { Debug.LogWarning("[BDNukes]: Distant view of a burst failed: " + e.Message); }
-        }
-
-        static float Life(Burst b) => 300f * Mathf.Pow(Mathf.Max(b.W, 0.01f), 0.2f) * (b.airless ? 0.5f : 1f);
+        static float warnAt;
 
         void Start()
         {
             block = new MaterialPropertyBlock();
         }
+
+        /// <summary>How long a burst stays visible from afar (s).</summary>
+        static float Life(NukeBurstRecord r, bool nearGround)
+        {
+            float W = Mathf.Max(r.W, 0.01f);
+            if (!nearGround && r.space) return Mathf.Max(GlowTime(r, nearGround), 25f * Mathf.Pow(W, 0.2f));
+            return 300f * Mathf.Pow(W, 0.2f) * (r.space ? 0.5f : 1f);
+        }
+
+        static float FlashTime(float W) => 0.25f + 0.12f * Mathf.Pow(W, 0.3f);
+        static float GlowTime(NukeBurstRecord r, bool nearGround) => 6f * Mathf.Pow(Mathf.Max(r.W, 0.01f), 0.3f) * (r.space ? 0.6f : 1f);
 
         static void EnsureAssets()
         {
@@ -76,95 +64,157 @@ namespace BDNukes
                 NukeAssets.Init();
                 NukeAssets.RebuildTextures();
                 if (NukeAssets.Glow == null || NukeAssets.Mist == null) return;
-                // own copies: scaled space draws in its own queue, after the planets so depth hides what is behind them
+                // own copies, drawn after the planets
                 glowMat = new Material(NukeAssets.Glow) { renderQueue = 3000 };
                 dustMat = new Material(NukeAssets.Mist) { renderQueue = 2999 };
                 // soft particles would fade against a depth the scaled camera may not have: keep them hard
-                foreach (var m in new[] { glowMat, dustMat }) if (m.HasProperty("_InvFade")) m.SetFloat("_InvFade", 100f);
+                if (glowMat.HasProperty("_InvFade")) glowMat.SetFloat("_InvFade", 100f);
+                if (dustMat.HasProperty("_InvFade")) dustMat.SetFloat("_InvFade", 100f);
             }
+        }
+
+        /// <summary>Furthest the flight scene's own cameras draw (m): beyond it the real cloud can't be seen.</summary>
+        static double LocalReach()
+        {
+            double reach = 0d;
+            var fc = FlightCamera.fetch;
+            if (fc != null && fc.cameras != null)
+                foreach (var c in fc.cameras) if (c != null) reach = Math.Max(reach, c.farClipPlane);
+            return reach > 0d ? reach : 750000d;
+        }
+
+        /// <summary>Does the segment from a to b (world) pass through any body other than skip and skip2?</summary>
+        static bool Blocked(Vector3d a, Vector3d b, CelestialBody skip, CelestialBody skip2, double margin)
+        {
+            Vector3d d = b - a;
+            double len = d.magnitude;
+            if (len <= 0d) return false;
+            d /= len;
+            foreach (var body in FlightGlobals.Bodies)
+            {
+                if (body == null || body == skip || body == skip2) continue;
+                Vector3d oc = a - body.position;
+                double t = -Vector3d.Dot(oc, d);
+                if (t <= 0d || t >= len) { if (oc.sqrMagnitude > body.Radius * body.Radius) continue; }
+                Vector3d closest = a + d * Math.Max(0d, Math.Min(len, t));
+                if ((closest - body.position).sqrMagnitude < (body.Radius - margin) * (body.Radius - margin)) return true;
+            }
+            return false;
         }
 
         void LateUpdate()
         {
-            if (bursts.Count == 0 || Planetarium.fetch == null) return;
-            if (!NukeSettings.Current.distantView) return;
+            var records = NukeAlert.Records;
+            if (records.Count == 0 || Planetarium.fetch == null || FlightGlobals.Bodies == null) return;
+            var s = NukeSettings.Current;
+            if (!s.distantView) return;
             try
             {
-                double now = Planetarium.GetUniversalTime();
-                bursts.RemoveAll(b => b.body == null || now - b.ut > Life(b));
-                if (bursts.Count == 0) return;
-                EnsureAssets();
-                if (glowMat == null || dustMat == null) return;
-
                 bool map = MapView.MapIsEnabled || HighLogic.LoadedScene == GameScenes.TRACKSTATION;
-                Camera cam = map ? (PlanetariumCamera.Camera) : (ScaledCamera.Instance != null ? ScaledCamera.Instance.cam : null);
+                cam = map ? PlanetariumCamera.Camera : (ScaledCamera.Instance != null ? ScaledCamera.Instance.cam : null);
                 if (cam == null) return;
+                double now = Planetarium.GetUniversalTime();
                 Vector3 camScaled = cam.transform.position;
+                Vector3d camWorld = ScaledSpace.ScaledToLocalSpace(camScaled);
+                bool flight = HighLogic.LoadedScene == GameScenes.FLIGHT && !map;
+                double reach = flight ? LocalReach() : 0d;
                 float pxAngle = cam.fieldOfView * Mathf.Deg2Rad / Mathf.Max(Screen.height, 1);
+                float scaledPerM = 1f / ScaledSpace.ScaleFactor;
                 CelestialBody sun = Planetarium.fetch.Sun;
 
-                foreach (var b in bursts)
+                for (int i = 0; i < records.Count; i++)
                 {
-                    float t = (float)(now - b.ut);
+                    var r = records[i];
+                    float t = (float)(now - r.ut);
                     if (t < 0f) continue;
-                    // the flight scene keeps the real cinematic for every burst on the body you're at (live, or restored
-                    // after a scene change): only bursts on other worlds need this stand-in there
-                    if (!map && b.body == FlightGlobals.currentMainBody) continue;
-                    Vector3d world = b.body.GetWorldSurfacePosition(b.lat, b.lon, b.alt);
-                    Vector3d up = (world - b.body.position).normalized;
-                    Vector3 sc = ScaledSpace.LocalToScaledSpace(world);
-                    float dist = (sc - camScaled).magnitude;
-                    if (dist <= 0f) continue;
-                    float px = dist * pxAngle;   // one screen pixel at the burst, in scaled units
+                    bool nearGround = r.NearGround;
+                    if (t > Life(r, nearGround)) continue;
+                    var body = FlightGlobals.GetBodyByName(r.body);
+                    if (body == null) continue;
 
-                    float W = Mathf.Max(b.W, 0.01f);
-                    float R = 70f * Mathf.Pow(W, 0.4f) * (b.airless ? 2.2f : 1f);   // fireball radius (m); bigger in vacuum
-                    float scaledPerM = 1f / ScaledSpace.ScaleFactor;
+                    // bursts on the ground turn with their world; bursts in space stay where they went off
+                    Vector3d world = nearGround || !r.space ? body.GetWorldSurfacePosition(r.lat, r.lon, r.alt) : r.WorldPos(body);
+                    double dist = (world - camWorld).magnitude;
+                    if (!map && dist < MinRange) continue;
+                    // the real cloud is drawn for it here, and the camera is close enough to see it
+                    if (flight && dist < reach && NukeFXManager.HasCloudNear(body, world, 50000d + 400d * t)) continue;
+
+                    Vector3d up = (world - body.position).normalized;
+                    // hidden behind a planet (its own included): tested from just above the burst point, or above the
+                    // body's datum sphere for a burst in a crater or valley below it
+                    double rad = Math.Max((world - body.position).magnitude, body.Radius) + Math.Max(50d, 0.0005d * body.Radius);
+                    Vector3d probe = body.position + up * rad;
+                    if (Blocked(camWorld, probe, null, null, 0d)) continue;
+
+                    Vector3 sc = ScaledSpace.LocalToScaledSpace(world);
+                    Vector3 toCam = camScaled - sc;
+                    float distS = toCam.magnitude;
+                    if (distS <= 0f) continue;
+                    toCam /= distS;
+                    float px = distS * pxAngle;   // one screen pixel at the burst, in scaled units
+
+                    float W = Mathf.Max(r.W, 0.01f);
+                    float R = 70f * Mathf.Pow(W, 0.4f) * (r.space ? 2.2f : 1f);   // fireball radius (m); bigger in vacuum
 
                     // flash: a blinding point for the first moments
-                    float tFlash = 0.25f + 0.12f * Mathf.Pow(W, 0.3f);
+                    float tFlash = FlashTime(W);
                     if (t < tFlash * 4f)
                     {
                         float k = Mathf.Exp(-t / tFlash);
                         float size = Mathf.Max(R * 2f * scaledPerM, (8f + 22f * k) * px);
-                        Draw(glowMat, sc + (Vector3)(up * (R * scaledPerM)), up, size, new Color(1f, 0.97f, 0.9f, 0.45f * k));
+                        Draw(glowMat, sc, up, size, toCam, distS, new Color(1f, 0.97f, 0.9f, 0.9f * k));
                     }
                     // fireball: white-hot, cooling through orange to a dull red as it rises and fades
-                    float tGlow = 6f * Mathf.Pow(W, 0.3f) * (b.airless ? 0.6f : 1f);
+                    float tGlow = GlowTime(r, nearGround);
                     if (t < tGlow)
                     {
                         float u = t / tGlow;
                         float heat = 1f - u;
                         Color c = Color.Lerp(new Color(0.55f, 0.12f, 0.03f), new Color(1f, 0.6f, 0.25f), Mathf.SmoothStep(0f, 1f, heat));
                         c = Color.Lerp(c, new Color(1f, 0.95f, 0.85f), Mathf.Clamp01(1f - t / Mathf.Max(tFlash * 3f, 0.5f)));
-                        float grow = Mathf.Lerp(1f, b.airless ? 3f : 2f, Mathf.Sqrt(u));
+                        float grow = Mathf.Lerp(1f, r.space ? 3f : 2f, Mathf.Sqrt(u));
                         float size = Mathf.Max(R * grow * scaledPerM, (3f + 4f * heat) * px);
-                        c.a = 0.35f * heat * heat + 0.03f;
-                        // rising with the fireball, not floating a whole glow-width above it
-                        Draw(glowMat, sc + (Vector3)(up * (R * grow * scaledPerM)), up, size, c);
+                        c.a = 0.7f * heat * heat + 0.06f;
+                        Vector3 rise = nearGround ? (Vector3)(up * (R * grow * scaledPerM)) : Vector3.zero;
+                        Draw(glowMat, sc + rise, up, size, toCam, distS, c);
                     }
+
+                    if (!nearGround && r.space)
+                    {
+                        // out in space: the debris shell races outward, glowing faintly as it thins
+                        float tShell = Life(r, false);
+                        float shellR = s.vacuumDebrisSpeed * t;
+                        float a = 0.25f * (1f - Mathf.SmoothStep(0f, 1f, t / tShell)) * Mathf.Clamp01(t / 0.5f);
+                        if (a > 0.002f)
+                            Draw(glowMat, sc, up, Mathf.Max(shellR * scaledPerM, 5f * px), toCam, distS, new Color(0.75f, 0.8f, 1f, a));
+                        continue;
+                    }
+
                     // the cloud: a mushroom where there is air, a spreading debris and dust plume on airless worlds,
-                    // lit by the sun (dark on the night side), thinning out over minutes
-                    float life = Life(b);
-                    if (t > 0.5f && t < life)
+                    // lit by the sun (dark on the night side and in another body's shadow), thinning out over minutes
+                    float life = Life(r, nearGround);
+                    if (t > 0.5f)
                     {
                         float u = t / life;
-                        float capR = b.airless ? 3000f * Mathf.Pow(W, 0.3f) * Mathf.Sqrt(Mathf.Clamp01(t / 40f))
-                                               : 2500f * Mathf.Pow(W, 0.3f) * Mathf.Clamp01(t / (30f * Mathf.Pow(W, 0.1f)) + 0.2f);
-                        float height = b.airless ? capR * 0.6f : 6000f * Mathf.Pow(W, 0.26f) * Mathf.Clamp01(t / 90f + 0.1f);
+                        float capR = r.space ? 3000f * Mathf.Pow(W, 0.3f) * Mathf.Sqrt(Mathf.Clamp01(t / 40f))
+                                             : 2500f * Mathf.Pow(W, 0.3f) * Mathf.Clamp01(t / (30f * Mathf.Pow(W, 0.1f)) + 0.2f);
+                        float height = !nearGround ? 0.3f * capR
+                                     : r.space ? capR * 0.6f : 6000f * Mathf.Pow(W, 0.26f) * Mathf.Clamp01(t / 90f + 0.1f);
                         Vector3d sunDir = (sun.position - world).normalized;
                         float lit = Mathf.Clamp01(0.15f + 1.2f * (float)Vector3d.Dot(up, sunDir));
-                        Color dust = b.airless ? new Color(0.62f, 0.58f, 0.54f) : new Color(0.72f, 0.62f, 0.55f);
+                        // eclipse: another body between the cloud and the sun (not the sun itself, nor its own world)
+                        if (lit > 0f && Blocked(world + up * height, sun.position, body, sun, 0d)) lit = 0f;
+                        Color dust = r.space ? new Color(0.62f, 0.58f, 0.54f) : new Color(0.72f, 0.62f, 0.55f);
                         Color c = dust * (0.12f + 0.88f * lit);
                         float fadeIn = Mathf.Clamp01((t - 0.5f) / 4f);
-                        c.a = 0.55f * fadeIn * (1f - Mathf.SmoothStep(0f, 1f, u));
+                        c.a = 0.9f * fadeIn * (1f - Mathf.SmoothStep(0f, 1f, u));
                         float size = Mathf.Max(capR * scaledPerM, 4f * px);
-                        Vector3 centre = sc + (Vector3)(up * (Mathf.Max(height * scaledPerM, size * 0.6f)));
-                        Draw(dustMat, centre, up, size, c);
+                        Vector3 centre = sc + (Vector3)(up * Mathf.Max(height * scaledPerM, nearGround ? size * 0.6f : 0f));
+                        Draw(dustMat, centre, up, size, toCam, distS, c);
                         // the fire's afterglow inside the cloud, just after the fireball fades
                         float ember = Mathf.Clamp01(1f - (t - 0.6f * tGlow) / (2f * tGlow));
                         if (ember > 0f && t > 0.6f * tGlow)
-                            Draw(glowMat, centre, up, size * 0.7f, new Color(0.9f, 0.35f, 0.08f, 0.12f * ember));
+                            Draw(glowMat, centre, up, size * 0.7f, toCam, distS, new Color(0.9f, 0.35f, 0.08f, 0.24f * ember));
                     }
                 }
             }
@@ -174,22 +224,22 @@ namespace BDNukes
             }
         }
 
-        static float warnAt;
-
-        void Draw(Material mat, Vector3 pos, Vector3d up, float size, Color c)
+        /// <summary>
+        /// A camera-facing sprite of radius size (scaled units). It is pulled toward the camera by its own size, so the
+        /// planet it sits on can't cut it in half (whether a planet hides it is decided by hand before this). c is the
+        /// intended colour and opacity: KSP's particle shaders double the tint, so it is halved here.
+        /// </summary>
+        void Draw(Material mat, Vector3 pos, Vector3d up, float size, Vector3 toCam, float distS, Color c)
         {
-            Camera cam = MapView.MapIsEnabled || HighLogic.LoadedScene == GameScenes.TRACKSTATION ? PlanetariumCamera.Camera
-                : ScaledCamera.Instance != null ? ScaledCamera.Instance.cam : null;
             if (cam == null) return;
-            // a billboard facing the camera
+            pos += toCam * Mathf.Min(size, 0.5f * distS);
             Quaternion rot = Quaternion.LookRotation(pos - cam.transform.position, cam.transform.up);
             var m = Matrix4x4.TRS(pos, rot, Vector3.one * size);
+            c *= 0.5f;
             block.Clear();
             block.SetColor(TintID, c);
             block.SetColor(ColorID, c);
             Graphics.DrawMesh(quad, m, mat, ScaledLayer, cam, 0, block, false, false);
         }
-
-        void OnDestroy() { }
     }
 }

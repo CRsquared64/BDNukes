@@ -14,6 +14,10 @@ namespace BDNukes
         public double ut;
         public float W;
         public bool space;             // above the atmosphere (or no atmosphere)
+        public double agl = -1d;       // height above the ground at the burst (-1: unknown, older saves)
+
+        /// <summary>On or near the ground (including airless worlds), as opposed to up in the sky or out in space.</summary>
+        public bool NearGround => agl >= 0d ? agl < 5d * 70d * Math.Pow(Math.Max(W, 0.01f), 0.4d) : !space || alt < 50d;
 
         static string F(double v) => v.ToString("R", CultureInfo.InvariantCulture);
 
@@ -23,7 +27,7 @@ namespace BDNukes
             n.AddValue("body", body);
             n.AddValue("lat", F(lat)); n.AddValue("lon", F(lon)); n.AddValue("alt", F(alt));
             n.AddValue("offset", ConfigNode.WriteVector(offset));
-            n.AddValue("ut", F(ut)); n.AddValue("W", F(W)); n.AddValue("space", space);
+            n.AddValue("ut", F(ut)); n.AddValue("W", F(W)); n.AddValue("space", space); n.AddValue("agl", F(agl));
             return n;
         }
 
@@ -34,6 +38,7 @@ namespace BDNukes
             n.TryGetValue("lat", ref r.lat); n.TryGetValue("lon", ref r.lon); n.TryGetValue("alt", ref r.alt);
             n.TryGetValue("offset", ref r.offset);
             n.TryGetValue("ut", ref r.ut); n.TryGetValue("W", ref r.W); n.TryGetValue("space", ref r.space);
+            if (!n.TryGetValue("agl", ref r.agl)) r.agl = -1d;
             return r;
         }
 
@@ -69,7 +74,9 @@ namespace BDNukes
             try
             {
                 var s = NukeSettings.Current;
-                if (!s.blastAlert || body == null || W <= 0f) return;
+                // every burst is recorded (and saved with the game): the long-range view and the map markers use the
+                // records too, so they're kept whether or not the alarm is on
+                if (body == null || W <= 0f) return;
                 double alt = body.GetAltitude(pos);
                 double ut = Now + Mathf.Max(0f, delay);
                 // MIRV warheads and salvos: one alert per salvo (same body, within 30 s), keeping the biggest yield
@@ -79,7 +86,7 @@ namespace BDNukes
                     if (o.body == body.bodyName && Math.Abs(o.ut - ut) < 30d && (o.WorldPos(body) - (Vector3d)pos).magnitude < 50000d)
                     {
                         if (W > o.W) o.W = W;
-                        return;
+                        return;   // a salvo is one burst, for the alarm and the long-range view alike
                     }
                 }
                 var r = new NukeBurstRecord
@@ -90,8 +97,11 @@ namespace BDNukes
                     ut = ut, W = W,
                     space = !body.atmosphere || alt >= body.atmosphereDepth,
                 };
+                try { r.agl = Math.Max(0d, alt - Math.Max(body.ocean ? 0d : double.MinValue, body.TerrainAltitude(r.lat, r.lon, true))); }
+                catch (Exception) { r.agl = -1d; }
                 records.Add(r);
                 while (records.Count > MaxRecords) records.RemoveAt(0);
+                if (!s.blastAlert) return;
                 Current = r;
                 AlertStarted = Time.unscaledTime;
                 // every radiation overlay shows on the map from now on

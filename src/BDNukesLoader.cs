@@ -77,7 +77,6 @@ namespace BDNukes
                 NukeRadiationBelt.OnDetonation(FlightGlobals.currentMainBody, position, Yield, delay); // radiation belt, HEMP
                 NukeRadiationWave.OnDetonation(FlightGlobals.currentMainBody, position, Yield, delay); // radiation front across the system
                 NukeAlert.OnDetonation(FlightGlobals.currentMainBody, position, Yield, delay); // alarm, warning window and map markers
-                if (settings.enabled) NukeDistantView.OnDetonation(FlightGlobals.currentMainBody, position, Yield, delay); // seen from far away
 
                 if (!settings.enabled) return;
 
