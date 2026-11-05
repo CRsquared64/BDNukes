@@ -14,7 +14,7 @@ namespace BDNukes
         /// <param name="groundAlt">ASL of the ground under the burst (0 over the sea)</param>
         /// <param name="airBurst">the burst is in air (not underwater, not a vacuum look)</param>
         public static void Detonation(CelestialBody body, double lat, double lon, double groundAlt, float W, float R, float hb,
-            bool overOcean, bool airBurst, float falloutK, float windHeading, NukeWind wind, float spawnTime, float delay)
+            bool overOcean, bool airBurst, float falloutK, float windHeading, NukeWind wind, double spawnTime, float delay)
         {
             var s = NukeSettings.Current;
             if (body == null) return;
@@ -52,7 +52,7 @@ namespace BDNukes
     public class NukeWorldScenario : ScenarioModule
     {
         static NukeWorldScenario instance;
-        static readonly List<KeyValuePair<float, Action>> due = new List<KeyValuePair<float, Action>>();
+        static readonly List<KeyValuePair<double, Action>> due = new List<KeyValuePair<double, Action>>();
         float nextTick;
 
         public override void OnAwake()
@@ -84,12 +84,12 @@ namespace BDNukes
         internal static void Schedule(float delay, Action a)
         {
             if (instance == null || delay <= 0f) { a(); return; }
-            due.Add(new KeyValuePair<float, Action>(NukeFXManager.FxTime + delay, a));
+            due.Add(new KeyValuePair<double, Action>(NukeFXManager.FxTime + delay, a));
         }
 
         void Update()
         {
-            float now = NukeFXManager.FxTime;
+            double now = NukeFXManager.FxTime;
             for (int i = due.Count - 1; i >= 0; i--)
             {
                 if (now < due[i].Key) continue;

@@ -9,7 +9,8 @@ namespace BDNukes
         public CelestialBody body;
         public double lat, lon, groundAlt;  // ground zero; groundAlt is ASL of the ground (0 over the sea)
         public float W, R, hb, yieldTimeScale;
-        public float spawnTime, delay;
+        public double spawnTime;
+        public float delay;
         public NukeWind wind;
         public float particleScale;         // density * burst LOD * particle budget
 
@@ -185,7 +186,7 @@ namespace BDNukes
             transform.rotation = Quaternion.LookRotation(north.normalized, up);
         }
 
-        float Now => NukeFXManager.FxTime - p.spawnTime - p.delay;
+        float Now => (float)(NukeFXManager.FxTime - p.spawnTime - p.delay);
 
         // ----------------------------------------------------------------------------------------
         // Radiation field

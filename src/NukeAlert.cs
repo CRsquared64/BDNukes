@@ -347,6 +347,8 @@ namespace BDNukes
         }
 
         /// <summary>Fallout footprints as outlines on the ground, in map view and the tracking station.</summary>
+        static float drawWarnAt;
+
         void DrawMap(Camera cam)
         {
             try
@@ -379,8 +381,8 @@ namespace BDNukes
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[BDNukes]: Couldn't draw the fallout overlay: " + e.Message);
-                NukeSettings.Current.showRadiationOverlays = false;
+                try { GL.End(); } catch { } try { GL.PopMatrix(); } catch { }
+                if (Time.unscaledTime > drawWarnAt) { drawWarnAt = Time.unscaledTime + 30f; Debug.LogWarning("[BDNukes]: Couldn't draw the fallout overlay: " + e.Message); }
             }
         }
 

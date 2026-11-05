@@ -250,7 +250,7 @@ namespace BDNukes
                 var drain = v.rootPart.FindModuleImplementing<ModuleDrainEC>();
                 if (drain == null) drain = (ModuleDrainEC)v.rootPart.AddModule("ModuleDrainEC");
                 if (drain == null) continue;
-                if (drain.incomingDamage <= 0f || !drain.softEMP) drain.softEMP = true;
+                if (drain.incomingDamage <= 0f) drain.softEMP = true;   // never downgrade a pending hard EMP
                 drain.incomingDamage = Mathf.Max(drain.incomingDamage, damage);
                 hit++;
                 if (BDArmorySettings.DEBUG_DAMAGE)
@@ -312,7 +312,7 @@ namespace BDNukes
             double sum = 0d, step = dt / n;
             for (int k = 0; k < n; k++)
             {
-                double t = now - dt + (k + 0.5d) * step;
+                double t = now - dt + (k + UnityEngine.Random.value) * step;   // jittered so high warp cannot lock onto one orbital phase
                 sum += DoseRate(body, v.orbit.getPositionAtUT(t), t);
             }
             return sum * step / 3600d;
@@ -482,6 +482,8 @@ namespace BDNukes
             return c;
         }
 
+        static float drawWarnAt;
+
         void DrawBelts(Camera cam)
         {
             try
@@ -512,8 +514,8 @@ namespace BDNukes
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[BDNukes]: Couldn't draw the radiation belts: " + e.Message);
-                NukeSettings.Current.showRadiationBelts = false;
+                try { GL.End(); } catch { } try { GL.PopMatrix(); } catch { }
+                if (Time.unscaledTime > drawWarnAt) { drawWarnAt = Time.unscaledTime + 30f; Debug.LogWarning("[BDNukes]: Couldn't draw the radiation belts: " + e.Message); }
             }
         }
 

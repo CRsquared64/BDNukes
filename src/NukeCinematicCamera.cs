@@ -8,7 +8,7 @@ namespace BDNukes
         internal CelestialBody Body => body;
 
         /// <summary>Seconds since the flash (negative during a fuze delay).</summary>
-        internal float Age => NukeFXManager.FxTime - spawnTime - delay;
+        internal float Age => (float)(NukeFXManager.FxTime - spawnTime - delay);
 
         internal float Life => life;
         internal float RiseTime => riseTime;

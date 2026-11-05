@@ -77,7 +77,6 @@ namespace BDNukes
         public static float ActiveRate { get; private set; }
 
         static double lastUT = -1d;
-        static Guid lastActive;
 
         static double Now => Planetarium.fetch != null ? Planetarium.GetUniversalTime() : 0d;
 
@@ -186,13 +185,12 @@ namespace BDNukes
             lastUT = now;
             fronts.RemoveAll(w => w.Radius(now) > w.maxRadius + w.speed * w.pulse);
             ActiveRate = 0f;
-            if (fronts.Count == 0 || !HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready) return;
+            if (fronts.Count == 0) return;
+            if (HighLogic.LoadedSceneIsFlight && !FlightGlobals.ready) return;
+            var vessels = FlightGlobals.Vessels;
+            if (vessels == null) return;
+            var active = HighLogic.LoadedSceneIsFlight ? FlightGlobals.ActiveVessel : null;
 
-            var s = NukeSettings.Current;
-            var active = FlightGlobals.ActiveVessel;
-            if (active != null && active.id != lastActive) { lastActive = active.id; }
-
-            var vessels = FlightGlobals.VesselsLoaded;
             foreach (var w in fronts)
             {
                 if (now < w.ut0) continue;
@@ -201,7 +199,9 @@ namespace BDNukes
                 {
                     var v = vessels[i];
                     if (v == null || v.state == Vessel.State.DEAD || v.mainBody == null) continue;
-                    Vector3d p = VesselPos(v, now);
+                    if (!v.loaded && v.GetCrewCount() == 0 && v != active) continue;   // unloaded and uncrewed: nothing to dose
+                    Vector3d p;
+                    try { p = VesselPos(v, now); } catch { continue; }
                     double r = (p - origin).magnitude;
                     double shield = Shielding(v.mainBody, p, origin);
                     bool isActive = v == active;
@@ -216,13 +216,22 @@ namespace BDNukes
                     if (frac <= 0d) continue;
                     double dose = PeakRate(w, r) * w.pulse / 3600d * frac * shield;
                     if (dose <= 0d) continue;
-                    for (int pi = 0; pi < v.parts.Count; pi++)
+                    if (v.loaded)
                     {
-                        var part = v.parts[pi];
-                        var crew = part.protoModuleCrew;
-                        if (crew == null) continue;
-                        for (int ci = crew.Count - 1; ci >= 0; ci--)
-                            NukeRadiation.AddDose(part, crew[ci], (float)dose, isActive);
+                        for (int pi = 0; pi < v.parts.Count; pi++)
+                        {
+                            var part = v.parts[pi];
+                            var crew = part.protoModuleCrew;
+                            if (crew == null) continue;
+                            for (int ci = crew.Count - 1; ci >= 0; ci--)
+                                NukeRadiation.AddDose(part, crew[ci], (float)dose, isActive);
+                        }
+                    }
+                    else if (v.protoVessel != null)
+                    {
+                        // unloaded craft anywhere in the system: their crew's dose builds up
+                        var crew = v.protoVessel.GetVesselCrew();
+                        for (int ci = 0; ci < crew.Count; ci++) NukeRadiation.AddDose(null, crew[ci], (float)dose, false);
                     }
                 }
             }
@@ -314,6 +323,8 @@ namespace BDNukes
             return lineMat;
         }
 
+        static float drawWarnAt;
+
         void Draw(Camera cam)
         {
             try
@@ -360,8 +371,8 @@ namespace BDNukes
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[BDNukes]: Couldn't draw the radiation fronts: " + e.Message);
-                NukeSettings.Current.showRadiationWaves = false;
+                try { GL.End(); } catch { } try { GL.PopMatrix(); } catch { }
+                if (Time.unscaledTime > drawWarnAt) { drawWarnAt = Time.unscaledTime + 30f; Debug.LogWarning("[BDNukes]: Couldn't draw the radiation fronts: " + e.Message); }
             }
         }
 

@@ -19,7 +19,8 @@ namespace BDNukes
 
         CelestialBody body;
         double lat, lon, groundAlt;
-        float spawnTime, delay, life, rG, t, daylight;
+        double spawnTime;
+        float delay, life, rG, t, daylight;
         NukeWind wind;
         NukeSettings s;
 
@@ -37,7 +38,7 @@ namespace BDNukes
         public static int BaseParticles() => MaxFires * (FlamesPerFire + 1 + PuffsPerColumn);
 
         public static void Spawn(CelestialBody body, double lat, double lon, double groundAlt, float W, float R, float hb,
-            NukeWind wind, float spawnTime, float delay)
+            NukeWind wind, double spawnTime, float delay)
         {
             var s = NukeSettings.Current;
             float rT = IgnitionRadius(W, s.sizeScale);
@@ -50,7 +51,7 @@ namespace BDNukes
             go.AddComponent<NukeFirestorm>().Setup(body, lat, lon, groundAlt, W, R, rGround, wind, spawnTime, delay);
         }
 
-        void Setup(CelestialBody b, double la, double lo, double gAlt, float W, float R, float rGround, NukeWind w, float sTime, float d)
+        void Setup(CelestialBody b, double la, double lo, double gAlt, float W, float R, float rGround, NukeWind w, double sTime, float d)
         {
             s = NukeSettings.Current;
             body = b; lat = la; lon = lo; groundAlt = gAlt;
@@ -159,7 +160,7 @@ namespace BDNukes
                 Destroy(gameObject);
                 return;
             }
-            t = NukeFXManager.FxTime - spawnTime - delay;
+            t = (float)(NukeFXManager.FxTime - spawnTime - delay);
             if (t > life)
             {
                 Destroy(gameObject);

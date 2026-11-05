@@ -25,7 +25,8 @@ namespace BDNukes
 
         CelestialBody body;
         double lat, lon, groundAlt;
-        float startTime, life, t, daylight;
+        double startTime;
+        float life, t, daylight;
 
         // per projectile
         int n, puffs;
@@ -49,7 +50,7 @@ namespace BDNukes
         /// <param name="startTime">NukeFXManager.FxTime of the detonation (after any fuze delay).</param>
         /// <param name="particleScale">Particle density x burst LOD x the detonation's budget.</param>
         public static void Spawn(CelestialBody body, double lat, double lon, double groundAlt, float W, float R,
-            float startTime, float particleScale)
+            double startTime, float particleScale)
         {
             var go = new GameObject("BDNukes_DebrisTrails");
             try
@@ -63,7 +64,7 @@ namespace BDNukes
             }
         }
 
-        void Setup(CelestialBody b, double la, double lo, double gAlt, float W, float R, float start, float particleScale)
+        void Setup(CelestialBody b, double la, double lo, double gAlt, float W, float R, double start, float particleScale)
         {
             var s = NukeSettings.Current;
             body = b; lat = la; lon = lo; groundAlt = gAlt; startTime = start;
@@ -158,7 +159,7 @@ namespace BDNukes
                 Destroy(gameObject);
                 return;
             }
-            t = NukeFXManager.FxTime - startTime;
+            t = (float)(NukeFXManager.FxTime - startTime);
             if (t < 0f) return;
             if (t > life)
             {

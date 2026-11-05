@@ -343,7 +343,7 @@ namespace BDNukes
                 Destroy(gameObject);
                 return;
             }
-            t = NukeFXManager.FxTime - p.spawnTime - p.delay;
+            t = (float)(NukeFXManager.FxTime - p.spawnTime - p.delay);
             if (t < 0f) return;
             if (t > life)
             {

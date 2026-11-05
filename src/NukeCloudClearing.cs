@@ -22,7 +22,7 @@ namespace BDNukes
         {
             public Vector2 uv;
             public float radiusUV;     // final radius, in v units
-            public float start, grow, hold, heal;
+            public double start; public float grow, hold, heal;
             public float seed;
         }
 
@@ -44,7 +44,7 @@ namespace BDNukes
         static readonly Vector4[] holeArr = new Vector4[MaxHoles];
         static readonly Vector4[] ringArr = new Vector4[MaxHoles];
         static Material holeMat;
-        static float nextRedraw;
+        static double nextRedraw;
 
         static void Init()
         {
@@ -160,7 +160,7 @@ namespace BDNukes
         public static void Update()
         {
             if (layers.Count == 0) return;
-            float now = NukeFXManager.FxTime;
+            double now = NukeFXManager.FxTime;
             // keep our maps bound every frame, but only redraw them a few times a second (a full-planet blit each)
             if (now < nextRedraw)
             {
@@ -182,7 +182,7 @@ namespace BDNukes
                 int n = 0;
                 foreach (var h in layer.holes)
                 {
-                    float age = now - h.start;
+                    float age = (float)(now - h.start);
                     float k = Mathf.Clamp01(age / h.grow);
                     float grow = 1f - (1f - k) * (1f - k);   // fast at first, easing as the shock weakens
                     float clear = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((age - h.hold) / h.heal));

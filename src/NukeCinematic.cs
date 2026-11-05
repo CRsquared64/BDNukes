@@ -40,7 +40,7 @@ namespace BDNukes
         double lat, lon, alt;
         float W;
         float delay;
-        float spawnTime;
+        double spawnTime;   // NukeFXManager.FxTime at spawn (double: the clock runs for days of time warp)
         NukeSettings s;
         NukeCloudProfile prof;
         float lod = 1f;     // particle-count scale when many detonations are active
@@ -214,7 +214,7 @@ namespace BDNukes
                 {
                     // pick up where it was: Time.time-based ages continue from the universal time since detonation
                     double age = NukePersistence.Now - record.ut;
-                    if (age >= 0d) spawnTime = NukeFXManager.FxTime - (float)age;
+                    if (age >= 0d) spawnTime = NukeFXManager.FxTime - age;
                     else delay = (float)-age;
                     soundPlayed = nearShakeDone = true;
                 }
@@ -728,7 +728,7 @@ namespace BDNukes
 
             UpdateAnchor();
             UpdateFxRateAudio();
-            t = NukeFXManager.FxTime - spawnTime - delay;
+            t = (float)(NukeFXManager.FxTime - spawnTime - delay);
             if (t < 0f) return;
             if (t > life)
             {

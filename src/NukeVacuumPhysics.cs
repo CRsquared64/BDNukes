@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using BDArmory.FX;
 using HarmonyLib;
@@ -73,9 +74,12 @@ namespace BDNukes
             return true;
         }
 
-        static void Postfix(float __state)
+        // A finalizer, not a postfix: it also runs when the original throws (a part destroyed mid-blast), so the
+        // global modifier can never be left scaled down.
+        static Exception Finalizer(Exception __exception, float __state)
         {
             if (!float.IsNaN(__state)) BDArmory.Settings.BDArmorySettings.EXP_IMP_MOD = __state;
+            return __exception;
         }
     }
 }

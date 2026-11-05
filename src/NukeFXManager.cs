@@ -133,7 +133,7 @@ namespace BDNukes
         /// Effects clock (seconds). Advances with game time scaled by FxRate, so detonation ages measured
         /// against it slow down or freeze in photo mode. Use it instead of Time.time for effect ages only.
         /// </summary>
-        public static float FxTime { get; private set; }
+        public static double FxTime { get; private set; }
 
         /// <summary>Effects speed: 1 normally, photoModeSlowRate in slow motion, 0 when frozen.</summary>
         public static float FxRate =>

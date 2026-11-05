@@ -27,6 +27,7 @@ namespace BDNukes
         public float ActiveRate { get; private set; }
 
         float nextTick;
+        double lastDoseUT = -1d;
         bool warnedRate;
         float nextClick;
         AudioSource geiger;
@@ -117,7 +118,10 @@ namespace BDNukes
             var s = NukeSettings.Current;
             if (Time.time >= nextTick)
             {
-                float dt = nextTick > 0f ? Mathf.Min(Time.time - nextTick + Tick, 2f) : Tick;
+                // dose over game time, so on-rails warp counts (Time.time doesn't speed up there)
+                double ut = Planetarium.GetUniversalTime();
+                float dt = lastDoseUT >= 0d && ut >= lastDoseUT ? (float)System.Math.Min(ut - lastDoseUT, 21600d) : 0f;
+                lastDoseUT = ut;
                 nextTick = Time.time + Tick;
                 ActiveRate = 0f;
                 if (s.falloutRadiation && (NukeFallout.Active.Count > 0 || NukeFootprint.AnyOn(FlightGlobals.currentMainBody))) TickDose(dt, s);
@@ -190,8 +194,7 @@ namespace BDNukes
                 else
                 {
                     part.RemoveCrewmember(c);
-                    c.Die();
-                    GameEvents.onCrewKilled.Fire(new EventReport(FlightEvents.CREW_KILLED, part, c.name, "radiation"));
+                    c.Die();   // sets the kerbal Dead and fires onCrewKilled itself
                     if (v != null)
                     {
                         v.CrewListSetDirty();
