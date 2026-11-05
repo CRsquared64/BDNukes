@@ -41,7 +41,8 @@ namespace BDNukes
         PartModule nuke;
         Vessel startVessel;
         MissileBase missile;
-        bool locked;
+        /// <summary>Set once the weapon has left its carrier; kept across save/load so a reload can't unlock it.</summary>
+        [KSPField(isPersistant = true)] public bool locked;
         int appliedIndex = -2;
 
         public override void OnLoad(ConfigNode node)
@@ -155,12 +156,12 @@ namespace BDNukes
             if (HighLogic.LoadedSceneIsFlight && lockAfterRelease && !locked && vessel != null)
             {
                 bool launched = (startVessel != null && vessel != startVessel) || (missile != null && missile.HasFired);
-                if (launched)
-                {
-                    locked = true;
-                    Fields["selectedYield"].guiActive = false;
-                    Fields["yieldReadout"].guiActive = true;
-                }
+                if (launched) locked = true;
+            }
+            if (locked && Fields["selectedYield"].guiActive)
+            {
+                Fields["selectedYield"].guiActive = false;
+                Fields["yieldReadout"].guiActive = true;
             }
             // Catches symmetry counterparts and any path that changed the label without a callback.
             if (!locked && (selectedYield != labels[Mathf.Clamp(yieldIndex, 0, labels.Length - 1)] || appliedIndex != yieldIndex))

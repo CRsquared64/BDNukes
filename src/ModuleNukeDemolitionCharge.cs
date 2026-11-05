@@ -255,9 +255,25 @@ namespace BDNukes
             CheckDetonate(Remaining);
         }
 
+        // A charge put back in an inventory comes out safe: an armed one would otherwise go off the moment it is placed.
+        public override void OnStoredInInventory(ModuleInventoryPart moduleInventoryPart)
+        {
+            armed = false;
+            detonateUT = -1d;
+        }
+
+        public override void OnPartCreatedFomInventory(ModuleInventoryPart moduleInventoryPart)
+        {
+            armed = false;
+            detonateUT = -1d;
+            UpdateUI();
+        }
+
         void CheckDetonate(double rem)
         {
             if (rem > 0d) return;
+            // BDArmory's blast needs the charge in physics
+            if (vessel == null || vessel.packed) return;
             // a charge loaded with its timer already run out waits a moment for the scene (and BDArmory) to settle
             if (Time.time < startTime + 1.5f || Time.time < retryTime) return;
             FireNuke();

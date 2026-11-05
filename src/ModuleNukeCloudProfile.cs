@@ -31,7 +31,7 @@ namespace BDNukes
         [KSPField] public float ballisticCutoffMargin = 1.05f;
 
         /// <summary>Set once the motor has been cut; it never relights.</summary>
-        internal bool ballisticCutoffDone;
+        [KSPField(isPersistant = true)] public bool ballisticCutoffDone;
 
         /// <summary>Snapshot of the requested profile, safe to keep after the part is destroyed.</summary>
         internal NukeCloudProfile ToProfile()

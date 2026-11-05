@@ -72,6 +72,12 @@ namespace BDNukes
         /// <summary>Remaining laydown countdown in seconds; negative while not counting down.</summary>
         [KSPField(isPersistant = true)] public float laydownRemaining = -1f;
 
+        /// <summary>Universal time the laydown countdown ends; negative while not counting down. Kept on UT so warp and reloads can't stretch it.</summary>
+        [KSPField(isPersistant = true)] public double laydownEndUT = -1d;
+
+        /// <summary>Physics range (m) a released weapon keeps, so its fuzes still run after the carrier flies off.</summary>
+        [KSPField] public float releasedLoadRange = 100000f;
+
         PartModule nukeModule;
         MethodInfo nukeDetonate;
         FieldInfo nukeHasDetonated;
@@ -82,6 +88,7 @@ namespace BDNukes
         Vessel lastVessel;
         bool wasAboveAirburst;
         float bottomedTime;
+        bool rangesExtended;
 
         bool LaydownActive => laydownDelay > 0f;
         bool Released => fuzeReleased || (vessel != null && sourcevessel != null && vessel != sourcevessel);
@@ -131,6 +138,8 @@ namespace BDNukes
             part.OnJustAboutToBeDestroyed = (Callback)Delegate.Combine(part.OnJustAboutToBeDestroyed, new Callback(OnPartDestroyed));
             armTime = Time.time + armingDelay;
             lastVessel = vessel;
+            // saves from before the UT countdown
+            if (laydownEndUT < 0d && laydownRemaining >= 0f) laydownEndUT = Planetarium.GetUniversalTime() + laydownRemaining;
         }
 
         protected override void WarheadSpecificSetup() { }
@@ -236,6 +245,7 @@ namespace BDNukes
                 armTime = Time.time + armingDelay;
             }
             if (!fuzeReleased && sourcevessel != null && vessel != sourcevessel) fuzeReleased = true;
+            if (Released && !rangesExtended) KeepLoaded();
 
             UpdateLaydown();
             if (hasDetonated) return;
@@ -282,23 +292,41 @@ namespace BDNukes
                 laydownRemaining = -1f;
                 return;
             }
-            if (laydownRemaining < 0f)
+            if (laydownEndUT < 0d)
             {
+                laydownRemaining = -1f;
                 if (!vessel.packed && Released && Time.time > armTime && vessel.LandedOrSplashed) StartLaydown();
                 return;
             }
-            laydownRemaining -= TimeWarp.fixedDeltaTime;
-            if (laydownRemaining <= 0f)
-            {
-                laydownRemaining = 0f;
-                Detonate();
-            }
+            laydownRemaining = Mathf.Max(0f, (float)(laydownEndUT - Planetarium.GetUniversalTime()));
+            if (laydownRemaining <= 0f && !vessel.packed) Detonate();
         }
 
         void StartLaydown()
         {
-            if (laydownRemaining >= 0f) return;
+            if (laydownEndUT >= 0d) return;
+            laydownEndUT = Planetarium.GetUniversalTime() + laydownDelay;
             laydownRemaining = laydownDelay;
+        }
+
+        /// <summary>
+        /// A dropped weapon is its own vessel and would be packed and unloaded (fuzes and all) once the carrier is
+        /// 2-22 km away. Widen its physics ranges, as BDArmory does for its missiles, so it stays live until it fires.
+        /// </summary>
+        void KeepLoaded()
+        {
+            rangesExtended = true;
+            if (vessel == null || vessel.vesselRanges == null || releasedLoadRange <= 0f) return;
+            if (!LaydownActive && airburstAltitude <= 0f && depthFuze <= 0f && !impactFuze) return;
+            float r = releasedLoadRange;
+            var sit = new VesselRanges.Situation(r, r * 1.05f, r * 1.1f, r * 0.95f);
+            var vr = vessel.vesselRanges;
+            vr.flying = sit;
+            vr.landed = new VesselRanges.Situation(r, r * 1.05f, r * 1.1f, r * 0.95f);
+            vr.splashed = new VesselRanges.Situation(r, r * 1.05f, r * 1.1f, r * 0.95f);
+            vr.subOrbital = new VesselRanges.Situation(r, r * 1.05f, r * 1.1f, r * 0.95f);
+            vr.orbit = new VesselRanges.Situation(r, r * 1.05f, r * 1.1f, r * 0.95f);
+            vr.escaping = new VesselRanges.Situation(r, r * 1.05f, r * 1.1f, r * 0.95f);
         }
 
         public override void OnUpdate()
@@ -310,7 +338,7 @@ namespace BDNukes
             if (!LaydownActive) return;
             if (hasDetonated) laydownStatus = fuseFailed ? "Dud" : "Detonated";
             else if (!Armed) laydownStatus = "Safe";
-            else if (laydownRemaining >= 0f) laydownStatus = $"Detonation in {laydownRemaining:0.0} s";
+            else if (laydownEndUT >= 0d) laydownStatus = $"Detonation in {laydownRemaining:0.0} s";
             else if (!Released) laydownStatus = "Awaiting release";
             else if (Time.time < armTime) laydownStatus = $"Arming ({armTime - Time.time:0.0} s)";
             else laydownStatus = "Awaiting touchdown";
@@ -322,6 +350,8 @@ namespace BDNukes
             if (vessel == null || vessel.packed || Time.time < armTime) return;
             Part other = col.collider != null ? col.collider.GetComponentInParent<Part>() : null;
             if (other != null && other.vessel == vessel) return;
+            // still on the aircraft: a hard landing or taxi bump is not an impact
+            if (OnCarrier()) return;
             float speed = col.relativeVelocity.magnitude;
 
             if (LaydownActive && Released)
