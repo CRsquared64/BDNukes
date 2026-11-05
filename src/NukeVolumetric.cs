@@ -114,6 +114,34 @@ namespace BDNukes
         // ---- reduced-resolution rendering: one command buffer, run by each flight camera ----
         static readonly System.Collections.Generic.List<NukeVolumeCompositor.Item> lowResItems = new System.Collections.Generic.List<NukeVolumeCompositor.Item>();
         static readonly System.Collections.Generic.List<Camera> lowResCams = new System.Collections.Generic.List<Camera>();
+        static readonly System.Collections.Generic.List<Camera> pausedCams = new System.Collections.Generic.List<Camera>();
+        static bool camHooks;
+
+        /// <summary>
+        /// Other mods sometimes render a flight camera into a depth or shadow-map texture (Unity logs "Depth|ShadowMap
+        /// RenderTexture requested without a depth buffer"). The buffer's frame copy (for the shock shells) and its
+        /// draws can't run on a target with no colour: Unity then logs "Invalid surface for grabbing pixels" every frame,
+        /// which preceded a crash. So the buffer is taken off a camera for any render into such a target, and put back
+        /// after it.
+        /// </summary>
+        static void OnAnyPreCull(Camera c)
+        {
+            if (c == null || lowResBuffer == null || !lowResCams.Contains(c)) return;
+            var t = c.targetTexture;
+            if (t == null) return;
+            var f = t.format;
+            if (f == RenderTextureFormat.Depth || f == RenderTextureFormat.Shadowmap)
+            {
+                c.RemoveCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
+                pausedCams.Add(c);
+            }
+        }
+
+        static void OnAnyPostRender(Camera c)
+        {
+            if (c == null || !pausedCams.Remove(c)) return;
+            if (lowResBuffer != null && lowResCams.Contains(c)) c.AddCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
+        }
         static readonly System.Collections.Generic.List<NukeVolumeCompositor.Shock> shockItems = new System.Collections.Generic.List<NukeVolumeCompositor.Shock>();
 
         /// <summary>Queues a refracting shock shell for this frame (drawn by the flight cameras only).</summary>
@@ -165,6 +193,12 @@ namespace BDNukes
                 EnableDepth();   // the pass rebuilds world positions from the depth, even with the sprite cloud
             }
             // ---- end fireball lighting ----
+            if (!camHooks)
+            {
+                camHooks = true;
+                Camera.onPreCull += OnAnyPreCull;
+                Camera.onPostRender += OnAnyPostRender;
+            }
             var cams = FlightCamera.fetch != null ? FlightCamera.fetch.cameras : null;
             lowResCams.RemoveAll(c => c == null);
             if (cams != null)
@@ -217,6 +251,7 @@ namespace BDNukes
         {
             foreach (var c in lowResCams) if (c != null && lowResBuffer != null) c.RemoveCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
             lowResCams.Clear();
+            pausedCams.Clear();
             lowResItems.Clear();
             shockItems.Clear();
             fireLights.Clear();   // fireball lighting

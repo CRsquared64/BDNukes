@@ -38,6 +38,7 @@
 - Explosion effects follow time warp, including on-rails warp. Clouds, fireballs, EVE cloud holes and debris age at the warped rate.
 
 ### Fixed
+- Fixed a likely crash, and an error logged every frame, when another mod renders a flight camera into a depth or shadow texture after a detonation. BDNukes no longer runs its drawing and frame copy on those renders.
 - Parallax scatters no longer float above or sink into fresh craters.
 - Effects kept a single-precision clock, so after a few hours of game time clouds stepped and jittered instead of moving smoothly.
 - Dropped bombs and released warheads were unloaded once the carrier flew 2–22 km away, taking their laydown, airburst and depth fuzes with them. They now stay in physics until they fire.
