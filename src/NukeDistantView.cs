@@ -29,8 +29,6 @@ namespace BDNukes
         static readonly List<Burst> bursts = new List<Burst>();
         const int MaxBursts = 24;
         const int ScaledLayer = 10;
-        /// <summary>Closer than this (m) the flight scene's own cinematic is drawn, not this stand-in.</summary>
-        const double NearRange = 120000d;
 
         static Mesh quad;
         static Material glowMat, dustMat;
@@ -102,9 +100,6 @@ namespace BDNukes
                 Camera cam = map ? (PlanetariumCamera.Camera) : (ScaledCamera.Instance != null ? ScaledCamera.Instance.cam : null);
                 if (cam == null) return;
                 Vector3 camScaled = cam.transform.position;
-                // the flight camera's place in the world, to leave nearby bursts to the cinematic
-                Vector3d viewWorld = !map && FlightCamera.fetch != null && FlightCamera.fetch.mainCamera != null
-                    ? (Vector3d)FlightCamera.fetch.mainCamera.transform.position : ScaledSpace.ScaledToLocalSpace(camScaled);
                 float pxAngle = cam.fieldOfView * Mathf.Deg2Rad / Mathf.Max(Screen.height, 1);
                 CelestialBody sun = Planetarium.fetch.Sun;
 
@@ -112,9 +107,10 @@ namespace BDNukes
                 {
                     float t = (float)(now - b.ut);
                     if (t < 0f) continue;
+                    // the flight scene keeps the real cinematic for every burst on the body you're at (live, or restored
+                    // after a scene change): only bursts on other worlds need this stand-in there
+                    if (!map && b.body == FlightGlobals.currentMainBody) continue;
                     Vector3d world = b.body.GetWorldSurfacePosition(b.lat, b.lon, b.alt);
-                    double dWorld = (world - viewWorld).magnitude;
-                    if (!map && dWorld < NearRange) continue;
                     Vector3d up = (world - b.body.position).normalized;
                     Vector3 sc = ScaledSpace.LocalToScaledSpace(world);
                     float dist = (sc - camScaled).magnitude;
@@ -130,8 +126,8 @@ namespace BDNukes
                     if (t < tFlash * 4f)
                     {
                         float k = Mathf.Exp(-t / tFlash);
-                        float size = Mathf.Max(R * 3f * scaledPerM, (18f + 30f * k) * px);
-                        Draw(glowMat, sc + (Vector3)(up * (size * 0.3f)), up, size, new Color(1f, 0.97f, 0.9f, 0.5f * k + 0.05f));
+                        float size = Mathf.Max(R * 2f * scaledPerM, (8f + 22f * k) * px);
+                        Draw(glowMat, sc + (Vector3)(up * (R * scaledPerM)), up, size, new Color(1f, 0.97f, 0.9f, 0.45f * k));
                     }
                     // fireball: white-hot, cooling through orange to a dull red as it rises and fades
                     float tGlow = 6f * Mathf.Pow(W, 0.3f) * (b.airless ? 0.6f : 1f);
@@ -142,9 +138,10 @@ namespace BDNukes
                         Color c = Color.Lerp(new Color(0.55f, 0.12f, 0.03f), new Color(1f, 0.6f, 0.25f), Mathf.SmoothStep(0f, 1f, heat));
                         c = Color.Lerp(c, new Color(1f, 0.95f, 0.85f), Mathf.Clamp01(1f - t / Mathf.Max(tFlash * 3f, 0.5f)));
                         float grow = Mathf.Lerp(1f, b.airless ? 3f : 2f, Mathf.Sqrt(u));
-                        float size = Mathf.Max(R * grow * scaledPerM, (6f + 6f * heat) * px);
-                        c.a = 0.45f * heat * heat + 0.04f;
-                        Draw(glowMat, sc + (Vector3)(up * (size * 0.5f)), up, size, c);
+                        float size = Mathf.Max(R * grow * scaledPerM, (3f + 4f * heat) * px);
+                        c.a = 0.35f * heat * heat + 0.03f;
+                        // rising with the fireball, not floating a whole glow-width above it
+                        Draw(glowMat, sc + (Vector3)(up * (R * grow * scaledPerM)), up, size, c);
                     }
                     // the cloud: a mushroom where there is air, a spreading debris and dust plume on airless worlds,
                     // lit by the sun (dark on the night side), thinning out over minutes
