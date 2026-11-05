@@ -54,6 +54,18 @@ namespace BDNukes
         [KSPField(guiActive = false, guiActiveEditor = false, guiName = "Laydown")]
         public string laydownStatus = "";
 
+        /// <summary>
+        /// Hydrostatic depth fuze (depth bombs): once released and armed, detonate when the warhead sinks below this
+        /// depth (m below sea level), or when it comes to rest on a shallower sea floor. 0 = off. Only shown, and only
+        /// active, on parts that set maxDepthFuze.
+        /// </summary>
+        [KSPField(isPersistant = true, guiActive = false, guiActiveEditor = false, guiName = "Depth Fuze", guiUnits = "m")]
+        [UI_FloatRange(minValue = 0f, maxValue = 1000f, stepIncrement = 10f, scene = UI_Scene.All, affectSymCounterparts = UI_Scene.All)]
+        public float depthFuze = 0f;
+
+        /// <summary>Upper limit for the depth fuze slider; 0 (the default) means the part has no depth fuze.</summary>
+        [KSPField] public float maxDepthFuze = 0f;
+
         /// <summary>Set once the weapon has left the vessel it started on (persists across save/load mid-fall).</summary>
         [KSPField(isPersistant = true)] public bool fuzeReleased;
 
@@ -69,6 +81,7 @@ namespace BDNukes
         float armTime;
         Vessel lastVessel;
         bool wasAboveAirburst;
+        float bottomedTime;
 
         bool LaydownActive => laydownDelay > 0f;
         bool Released => fuzeReleased || (vessel != null && sourcevessel != null && vessel != sourcevessel);
@@ -93,7 +106,21 @@ namespace BDNukes
                 if (ctrl is UI_FloatRange range)
                 {
                     range.maxValue = maxAirburstAltitude;
-                    range.stepIncrement = maxAirburstAltitude > 5000f ? 100f : 50f;
+                    range.stepIncrement = maxAirburstAltitude > 100000f ? 1000f : maxAirburstAltitude > 5000f ? 100f : 50f;
+                }
+            }
+
+            bool hasDepthFuze = maxDepthFuze > 0f;
+            Fields["depthFuze"].guiActive = Fields["depthFuze"].guiActiveEditor = hasDepthFuze;
+            if (hasDepthFuze)
+            {
+                foreach (var ctrl in new[] { Fields["depthFuze"].uiControlEditor, Fields["depthFuze"].uiControlFlight })
+                {
+                    if (ctrl is UI_FloatRange range)
+                    {
+                        range.maxValue = maxDepthFuze;
+                        range.stepIncrement = maxDepthFuze > 1000f ? 50f : 10f;
+                    }
                 }
             }
 
@@ -213,6 +240,9 @@ namespace BDNukes
             UpdateLaydown();
             if (hasDetonated) return;
 
+            UpdateDepthFuze();
+            if (hasDetonated) return;
+
             if (airburstAltitude <= 0f || vessel.packed) return;
 
             double ground = vessel.terrainAltitude;
@@ -224,6 +254,25 @@ namespace BDNukes
             {
                 Detonate();
             }
+        }
+
+        void UpdateDepthFuze()
+        {
+            if (maxDepthFuze <= 0f || depthFuze <= 0f || vessel.packed || vessel.mainBody == null || !vessel.mainBody.ocean) return;
+            if (!Released || Time.time < armTime || OnCarrier()) return;
+            double alt = FlightGlobals.getAltitudeAtPos(part.transform.position, vessel.mainBody);
+            if (alt <= -depthFuze)
+            {
+                Detonate();
+                return;
+            }
+            // Resting on a sea floor shallower than the set depth: fire there rather than never.
+            if (alt < -2d && Math.Abs(vessel.verticalSpeed) < 0.3d)
+            {
+                bottomedTime += TimeWarp.fixedDeltaTime;
+                if (bottomedTime > 3f) Detonate();
+            }
+            else bottomedTime = 0f;
         }
 
         void UpdateLaydown()
@@ -295,6 +344,7 @@ namespace BDNukes
             sb.AppendLine("Proximity fuze (toggle in flight/editor)");
             sb.AppendLine("Airburst altitude fuze");
             sb.AppendLine($"Laydown fuze: 0-120 s delay after touchdown (<{laydownMaxSpeed:0} m/s)");
+            if (maxDepthFuze > 0f) sb.AppendLine($"Depth fuze: 0-{maxDepthFuze:0} m below sea level (or on the sea floor)");
             sb.AppendLine("Detonate action group / button");
             if (detonateOnDestroyed) sb.AppendLine("Detonates if destroyed while armed");
             return sb.ToString();
