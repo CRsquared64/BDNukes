@@ -107,13 +107,15 @@ namespace BDNukes
                 min = Vector3.Min(min, new Vector3(-r, v.wilsonHemisphere ? v.groundY : -r, -r));
                 max = Vector3.Max(max, new Vector3(r, r, r));
             }
-            foreach (var rg in new[] { v.ring0, v.ring1, v.ring2 })
-                if (rg.w > 0.001f)
-                {
-                    float r = rg.y + rg.z * 1.5f;
-                    min = Vector3.Min(min, v.ringOffset + new Vector3(-r, rg.x - rg.z * 2f, -r));
-                    max = Vector3.Max(max, v.ringOffset + new Vector3(r, rg.x + rg.z * 2f, r));
-                }
+            RingBounds(v.ring0, v.ringOffset, ref min, ref max);
+            RingBounds(v.ring1, v.ringOffset, ref min, ref max);
+            RingBounds(v.ring2, v.ringOffset, ref min, ref max);
+            // condensation collars round the stem (centre xyz, radius, thickness, droop)
+            CollarBounds(v.collar0, v.collarS0, ref min, ref max);
+            CollarBounds(v.collar1, v.collarS1, ref min, ref max);
+            CollarBounds(v.collar2, v.collarS2, ref min, ref max);
+            CollarBounds(v.collar3, v.collarS3, ref min, ref max);
+            CollarBounds(v.collar4, v.collarS4, ref min, ref max);
             if (v.precursorDensity > 0.001f)
             {
                 float r = v.precursorR + v.precursorWidth;
@@ -135,11 +137,9 @@ namespace BDNukes
             if (v.plumeDensity > 0.001f)
             {
                 float r = Mathf.Max(v.plumeLowR, v.plumeTopR) * 1.3f;
-                foreach (var pt in new[] { v.plumeLow, v.plumeMid, v.plumeTop })
-                {
-                    min = Vector3.Min(min, pt - new Vector3(r, r * 0.2f, r));
-                    max = Vector3.Max(max, pt + new Vector3(r, r * 0.2f, r));
-                }
+                Vector3 e = new Vector3(r, r * 0.2f, r);
+                min = Vector3.Min(min, Vector3.Min(v.plumeLow, Vector3.Min(v.plumeMid, v.plumeTop)) - e);
+                max = Vector3.Max(max, Vector3.Max(v.plumeLow, Vector3.Max(v.plumeMid, v.plumeTop)) + e);
             }
             if (v.velumDensity > 0.001f)
             {
@@ -172,6 +172,24 @@ namespace BDNukes
                 max = Vector3.Max(max, v.stemMid + new Vector3(r, 0f, r));
             }
             min.y = Mathf.Min(min.y, v.groundY - 30f);
+        }
+
+        static void RingBounds(Vector4 rg, Vector3 offset, ref Vector3 min, ref Vector3 max)
+        {
+            if (rg.w <= 0.001f) return;
+            float r = rg.y + rg.z * 1.5f;
+            min = Vector3.Min(min, offset + new Vector3(-r, rg.x - rg.z * 2f, -r));
+            max = Vector3.Max(max, offset + new Vector3(r, rg.x + rg.z * 2f, r));
+        }
+
+        static void CollarBounds(Vector4 c, Vector4 shape, ref Vector3 min, ref Vector3 max)
+        {
+            if (c.w <= 0.001f) return;
+            float r = shape.x + shape.y * 1.5f;
+            float h = shape.y * 2f;
+            Vector3 ctr = new Vector3(c.x, c.y, c.z);
+            min = Vector3.Min(min, ctr - new Vector3(r, h + Mathf.Abs(shape.z), r));
+            max = Vector3.Max(max, ctr + new Vector3(r, h, r));
         }
 
         /// <summary>
@@ -423,6 +441,8 @@ namespace BDNukes
     /// </summary>
     public static class NukeVolumeCompositor
     {
+        static readonly List<Material> occluderMatScratch = new List<Material>();
+
         public struct Item
         {
             public Mesh mesh;
@@ -496,7 +516,8 @@ namespace BDNukes
                 foreach (var r in occluders)
                 {
                     if (r == null) continue;
-                    int subs = r.sharedMaterials.Length;
+                    r.GetSharedMaterials(occluderMatScratch);   // no per-renderer array allocation
+                    int subs = occluderMatScratch.Count;
                     for (int i = 0; i < Mathf.Max(1, subs); i++) cb.DrawRenderer(r, occluderMat, i, 0);
                 }
                 cb.SetGlobalTexture(PartDepth, PartDepth);

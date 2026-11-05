@@ -192,9 +192,12 @@ namespace BDNukes
                     if (p == null) continue;
                     var rs = p.FindModelRenderersCached();
                     if (rs == null) continue;
-                    foreach (var r in rs)
+                    for (int i = 0; i < rs.Count; i++)
+                    {
+                        var r = rs[i];
                         if (r != null && r.enabled && r.isVisible && r.gameObject.activeInHierarchy && (r is MeshRenderer || r is SkinnedMeshRenderer))
                             occluders.Add(r);
+                    }
                 }
             }
         }

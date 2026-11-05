@@ -22,7 +22,21 @@ namespace BDNukes
     {
         public NukeSimMeta meta;
         public Texture[] frames;
-        public bool Valid => meta != null && frames != null && frames.Length >= 2 && meta.times != null && meta.times.Length == frames.Length;
+        public bool Valid
+        {
+            get
+            {
+                if (meta == null || frames == null || frames.Length < 2 || meta.times == null || meta.times.Length != frames.Length) return false;
+                if (meta.resX <= 0 || meta.resY <= 0 || meta.resZ <= 0) return false;
+                for (int i = 0; i < frames.Length; i++)
+                {
+                    if (frames[i] == null) return false;
+                    // times must climb, or the frame search and blend divide by nothing
+                    if (i > 0 && !(meta.times[i] > meta.times[i - 1])) return false;
+                }
+                return meta.times[frames.Length - 1] > 0f;
+            }
+        }
     }
 
     public static class NukeSimPlayer
