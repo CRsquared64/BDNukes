@@ -335,7 +335,10 @@ namespace BDNukes
             v.extinction = 2f / R;
             v.rollRate = 0.35f * Mathf.Exp(-t / tauRise) + 0.03f;
             v.flowPeriod = 6f;
-            v.noiseScale = Mathf.Lerp(1f, 2.6f, SS(2.5f, 4.5f, Mathf.Log10(Mathf.Max(W, 1f)))) / (0.5f * Mathf.Max(capRadius, 3f * R));
+            v.noiseScale = Mathf.Lerp(1f, 1.8f, SS(2.5f, 4.5f, Mathf.Log10(Mathf.Max(W, 1f)))) / (0.5f * Mathf.Max(capRadius, 3f * R));
+            // optically thick: each billow goes opaque within a fraction of its own size, so the light stops at the
+            // first lumps instead of showing several layers of them blurred together (megaton caps were translucent mush)
+            v.extinction = Mathf.Max(2f / R, 20f * v.noiseScale);
 
             float start = 0.25f * tauG;
             if (t > start)

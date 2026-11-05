@@ -289,11 +289,23 @@ public static class BDNukesBuild
         Sheet(shader, noise, Path.Combine(outDir, "5_life_1Mt.png"), 2, Array.ConvertAll(mt, t => new Shot
         { W = 1000f, t = t, sunVis = 1f, haze = 0.1f, cam = new Vector3(0f, 500f, -30000f), lookFrac = 0.5f, fov = 40f }));
 
+        // from above, as a player flying over it sees the cap: megaton and 20 kt, full and half resolution
+        Sheet(shader, noise, Path.Combine(outDir, "13_from_above.png"), 2, new[]
+        {
+            new Shot { W = 1000f, t = 90f, sunVis = 1f, haze = 0.05f, cam = new Vector3(0f, 42000f, -30000f), lookFrac = 0.8f, fov = 50f },
+            new Shot { W = 1000f, t = 90f, sunVis = 1f, haze = 0.05f, cam = new Vector3(0f, 42000f, -30000f), lookFrac = 0.8f, fov = 50f, div = 2 },
+            new Shot { W = 20f, t = 60f, sunVis = 1f, haze = 0.03f, cam = new Vector3(0f, 9000f, -6000f), lookFrac = 0.8f, fov = 50f },
+            new Shot { W = 1000f, t = 90f, sunVis = 1f, haze = 0.05f, cam = new Vector3(0f, 26000f, -9000f), lookFrac = 0.95f, fov = 45f },
+        });
+
         Debug.Log("[BDNukesBuild] test renders written to " + outDir);
     }
 
     static void Sheet(Shader shader, Texture3D noise, string file, int cols, Shot[] shots)
     {
+        // BDNUKES_TESTS=13,5 renders only the sheets whose names start with those numbers (quicker iteration)
+        string only = Environment.GetEnvironmentVariable("BDNUKES_TESTS");
+        if (!string.IsNullOrEmpty(only) && Array.IndexOf(only.Split(','), Path.GetFileName(file).Split('_')[0]) < 0) return;
         const int W = 640, H = 400;
         int rows = (shots.Length + cols - 1) / cols;
         var sheet = new Texture2D(W * cols, H * rows, TextureFormat.RGB24, false);

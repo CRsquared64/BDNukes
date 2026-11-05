@@ -337,7 +337,8 @@ namespace BDNukes
             if (!restored) PlanCrater();
             // the blast blows a hole in EVE's cloud decks within reach of the shock
             if (airFx && body.atmosphere && !restored)
-                NukeCloudClearing.Blast(body, pos, alt, 4f * Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale),
+                // out to roughly the 1 psi ring, and always well past the cap so the shove shows around it
+                NukeCloudClearing.Blast(body, pos, alt, Mathf.Max(4f * Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale), 2.2f * capRadius),
                     c, 300f * yieldTimeScale);
             SpawnAftermath();
             if (!restored) NukeWorldEffects.Detonation(body, lat, lon, alt + groundY, W, R, hb, overOcean, airFx && !underwater, falloutK, windHeading, wind, spawnTime, delay);
@@ -956,7 +957,10 @@ namespace BDNukes
             // tens of fireball radii across, and fireball-sized billows would cover them in fur
             // megaton caps are tens of km across: billows sized to the whole cap blur into fog, so they get relatively
             // smaller, more numerous billows (the cauliflower texture of the big tests)
-            vs.noiseScale = Mathf.Lerp(1f, 2.6f, SS(2.5f, 4.5f, Mathf.Log10(Mathf.Max(W, 1f)))) / (0.5f * Mathf.Max(capRadius, 3f * R));
+            vs.noiseScale = Mathf.Lerp(1f, 1.8f, SS(2.5f, 4.5f, Mathf.Log10(Mathf.Max(W, 1f)))) / (0.5f * Mathf.Max(capRadius, 3f * R));
+            // optically thick: each billow goes opaque within a fraction of its own size, so the light stops at the
+            // first lumps instead of showing several layers of them blurred together (megaton caps were translucent mush)
+            vs.extinction = Mathf.Max(2f / R, 20f * vs.noiseScale);
             vs.flowPeriod = 6f;
 
             // ---- fireball and cap: a ball that rolls up into the toroidal cap ----

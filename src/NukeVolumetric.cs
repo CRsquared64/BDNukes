@@ -71,7 +71,16 @@ namespace BDNukes
                     if (meta == null || meta.times == null) continue;
                     var d = new NukeSimData { meta = meta, frames = new Texture[meta.times.Length] };
                     for (int i = 0; i < d.frames.Length; i++)
-                        simFrames.TryGetValue(meta.variant + "_" + i.ToString("00"), out d.frames[i]);
+                    {
+                        // Unity names each saved frame after its file (f00, f01...), the same in every variant, so
+                        // load it by its asset path; the name lookup is for bundles built with unique names
+                        string fname = "f" + i.ToString("00");
+                        d.frames[i] = bundle.LoadAsset<Texture3D>("assets/sim/" + meta.variant + "/" + fname + ".asset");
+                        if (d.frames[i] == null) simFrames.TryGetValue(meta.variant + "_" + i.ToString("00"), out d.frames[i]);
+                    }
+                    if (!d.Valid)
+                        Debug.LogWarning("[BDNukes]: Fireball simulation '" + meta.variant + "' is incomplete in the shader bundle ("
+                            + System.Array.FindAll(d.frames, f => f != null).Length + " of " + d.frames.Length + " frames).");
                     if (d.Valid && meta.variant == "ground") SimGround = d;
                     if (d.Valid && meta.variant == "air") SimAir = d;
                     if (d.Valid && meta.variant == "mushroom") SimMushroom = d;

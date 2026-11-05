@@ -30,6 +30,8 @@
 - **Replay last detonation** (settings window or Alt+F10): plays the last detonation or salvo again from the start, visuals and sound only, with no damage, crater, scorch or radiation.
 
 ### Changed
+- **Sharper, solid-looking clouds.** Caps are now optically thick, scaled to their billows: you see the first rounded lumps, not several translucent layers of them blurred into fuzz. This was worst on megaton caps seen from above. Billows have crisper edges, with a finer layer of lumps on top of them. The folds between lumps are shaded darker and the lump tops lighter, and each lump shades its own far side from the sun. The ray takes finer steps inside the cloud, and a new per-pixel jitter removes the crosshatch pattern. Megaton caps get bigger, fewer billows.
+- **The blast pushes EVE clouds aside.** The hole in the cloud deck now drags the cloud outward with the shock into a dense rim that travels with the front, and relaxes back as the hole heals. It reaches well past the cap, so it shows around big bursts, and the clouds are redrawn more often while the front is moving.
 - Explosion effects follow time warp, including on-rails warp. Clouds, fireballs, EVE cloud holes and debris age at the warped rate.
 
 ### Fixed
@@ -62,6 +64,9 @@
 - The Orion pulse drive was listed among the nuclear weapons in the editor.
 - Out-of-range values for cloud height, screen flash, tint, camera shake, volume and billow rotation in Settings.cfg are now clamped.
 - The packaging script now leaves `PluginData` (your own settings) out of release zips.
+
+- The baked fluid simulation of the fireball never played in game: its frames were looked up by names the shader bundle doesn't use.
+- When a blast clears no EVE clouds, the log now says why (no layers on the body, deck out of reach, or an unsupported coverage map).
 
 ### Known limitations
 - Craters are rebuilt per vertex across the whole terrain quad, so many craters on one body cost load time.

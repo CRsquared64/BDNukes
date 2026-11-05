@@ -145,11 +145,20 @@ float3 Stretch(float3 q, float k)
     return q;
 }
 
-// stable per-pixel jitter (interleaved gradient noise): no frame-to-frame shimmer without TAA
-float IGN(float2 pix)
+// stable per-pixel jitter: no frame-to-frame shimmer without TAA. Structured sequences (interleaved gradient
+// noise, R2) left diagonal hatching over thick, self-shadowed cloud; a plain integer hash has no direction to
+// show, and the compositor's filter averages its grain away
+float Hash12(float2 pix, uint salt)
 {
-    return frac(52.9829189 * frac(dot(pix, float2(0.06711056, 0.00583715))));
+    uint2 q = (uint2)(int2)floor(pix);
+    uint n = q.x * 1597334677u ^ q.y * 3812015801u ^ salt * 2654435769u;
+    n = (n ^ (n >> 16)) * 2246822519u;
+    n = (n ^ (n >> 13)) * 3266489917u;
+    n ^= n >> 16;
+    return (float)(n & 0x00FFFFFFu) / 16777216.0;
 }
+
+float IGN(float2 pix) { return Hash12(pix, 0u); }
 
 float HG(float c, float g)
 {
@@ -224,6 +233,7 @@ struct Sample
     float simHeat;   // baked fireball heat at this point (0 outside the sim)
     float cond;      // fraction of the density that is condensation (white vapour)
     float groundHeat; // ground fire temperature at this point (0 = none)
+    float billow;    // the cap's billow noise here: high on the tops of the lumps, low in the folds between them
 };
 
 // lobeMode: 0 = sample the lobe noise, 1 = most inflated (a cheap bound), 2 = average (cheap occluder)
@@ -246,7 +256,7 @@ float CapSDF(float3 p, float n, float lobeMode, out float3 q)
     // a few big lopsided lobes, so no two caps (and no two sides of one) are the same shape
     float lobe = lobeMode < 0.5 ? tex3Dlod(_Noise, float4(q * (_Density.w * 0.3) + float3(0.71, 0.29, 0.53), 0)).r
                                 : (lobeMode < 1.5 ? 0.9 : 0.62);
-    float lobes = (0.62 - lobe) * 0.8 * cs * rough;
+    float lobes = (0.62 - lobe) * 1.1 * cs * rough;
     return SMin(torus, dome, 0.25) * cs + lobes + (0.5 - n) * (0.62 + 0.45 * _Age.x) * cs * rough;
 }
 
@@ -295,7 +305,7 @@ Sample Cloud(float3 p, bool detail)
 {
     Sample s;
     s.density = 0.0; s.albedo = _CapAlbedo.rgb; s.cap = 0.0; s.core = 1.0; s.fireN = 0.5; s.hf = 0.0;
-    s.skip = 0.0; s.capY = 0.0; s.simHeat = 0.0; s.cond = 0.0; s.groundHeat = 0.0;
+    s.skip = 0.0; s.capY = 0.0; s.simHeat = 0.0; s.cond = 0.0; s.groundHeat = 0.0; s.billow = 0.6;
     float ns = _Density.w;
     float per = _Anim.w;
 
@@ -323,10 +333,17 @@ Sample Cloud(float3 p, bool detail)
         float big = FlowNoise(qw, vel, ns, per, float3(0.0, 0.0, 0.0), 0);
         // the mid billows ride the flow a little faster than the big ones: they boil against each other
         float mid = FlowNoise(qw, vel * 1.35, ns * 2.3, per * 0.7, float3(0.31, 0.17, 0.53), 0);
-        float n = smoothstep(0.38, 0.82, 0.9 * big + 0.1 * mid);
+        // cauliflower: billows on billows. The small lumps only matter where the ray is near the surface (the
+        // detailed sample), and ride the flow faster still, so the surface boils
+        float fine = detail ? FlowNoise(qw, vel * 1.7, ns * 5.2, per * 0.5, float3(0.77, 0.41, 0.09), 0) : 0.6;
+        float n = smoothstep(0.36, 0.84, 0.74 * big + 0.16 * mid + 0.10 * fine);
         float sdf = CapSDF(p, n, 0.0, q);
-        // ageing frays the edges, but not into fog: the billows stay readable to the end
-        float soft = 0.22 * _CapCenter.w * (1.0 + 0.8 * _Age.x);
+        // shading follows the big lopsided lobes as well as the billows on them, so the cap reads as a few great
+        // heaped masses, each lumpy, rather than one even carpet of lumps
+        float lobeN = tex3Dlod(_Noise, float4(q * (ns * 0.3) + float3(0.71, 0.29, 0.53), 0)).r;
+        s.billow = saturate(0.62 * n + 0.38 * smoothstep(0.3, 0.9, lobeN));
+        // a crisp edge, so the lumps read as solid rounded cloud rather than fuzz; ageing softens it a little
+        float soft = 0.11 * _CapCenter.w * (1.0 + 0.6 * _Age.x);
         // the downwind end is older, sheared-off cloud: thinner and more ragged
         float along = dot(q.xz, _Wind.xz) / (_CapCenter.w * (1.0 + _WindFlow.z));
         float tail = lerp(1.0, 0.3, saturate(along * 0.8) * saturate(_WindFlow.z));

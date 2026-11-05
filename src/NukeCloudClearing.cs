@@ -99,16 +99,21 @@ namespace BDNukes
             try
             {
                 Vector3 up = (worldPos - (Vector3)body.position).normalized;
+                int found = 0, onBody = 0, made = 0;
+                string why = "";
                 foreach (var o in UnityEngine.Object.FindObjectsOfType(cloudsObjectType))
                 {
                     if (o == null) continue;
+                    found++;
                     object vol = layerProp.GetValue(o, null);
-                    if (vol == null || !ReferenceEquals(bodyField.GetValue(vol), body)) continue;
+                    if (vol == null) continue;
+                    if (!ReferenceEquals(bodyField.GetValue(vol), body)) continue;
+                    onBody++;
                     float lo = (float)minAltField.GetValue(vol), hi = (float)maxAltField.GetValue(vol);
                     // the clearing sphere where it meets the deck (its nearest part to the burst)
                     float dz = Mathf.Max(0f, Mathf.Min(Mathf.Abs(lo - (float)burstAlt), Mathf.Abs(hi - (float)burstAlt)));
                     if (burstAlt >= lo && burstAlt <= hi) dz = 0f;
-                    if (dz >= clearRadius) continue;
+                    if (dz >= clearRadius) { why += string.Format(" deck {0:F0}-{1:F0} m out of reach;", lo, hi); continue; }
                     float r = Mathf.Sqrt(clearRadius * clearRadius - dz * dz);
                     double deckAlt = Math.Max(lo, Math.Min(hi, burstAlt));
                     Vector3 deckPoint = (Vector3)body.position + up * (float)(body.Radius + deckAlt);
@@ -119,10 +124,11 @@ namespace BDNukes
                     if (!layers.TryGetValue(vol, out var layer))
                     {
                         var mat = matField.GetValue(vol) as Material;
-                        if (mat == null || !mat.HasProperty(CoverageProp)) continue;
+                        if (mat == null || !mat.HasProperty(CoverageProp)) { why += " no " + CoverageProp + " on the cloud material;"; continue; }
                         var tex = mat.GetTexture(CoverageProp);
                         // EVE can use a cubemap coverage; the hole pass only knows 2D lat/long maps
-                        if (tex == null || tex.dimension != UnityEngine.Rendering.TextureDimension.Tex2D) continue;
+                        if (tex == null || tex.dimension != UnityEngine.Rendering.TextureDimension.Tex2D)
+                        { why += " coverage is " + (tex == null ? "missing" : tex.dimension.ToString()) + ";"; continue; }
                         layer = new Layer { volume = vol, mat = mat, original = tex };
                         // twice EVE's resolution (up to 8k): the hole and its ring are drawn far finer than one coverage
                         // texel (~2 km on Kerbin), so their edges don't show as blocks in the clouds
@@ -147,8 +153,12 @@ namespace BDNukes
                         heal = healTime,
                         seed = UnityEngine.Random.Range(0f, 6.28f),
                     });
+                    made++;
                     Debug.Log(string.Format("[BDNukes]: Blast clears a {0:F0} m hole in the EVE cloud deck at {1:F0}-{2:F0} m.", r, lo, hi));
                 }
+                if (made == 0)
+                    Debug.Log(string.Format("[BDNukes]: Blast cleared no EVE clouds ({0} cloud layers, {1} raymarched on {2}):{3}",
+                        found, onBody, body.bodyName, why == "" ? " none in range" : why));
             }
             catch (Exception e)
             {
@@ -170,7 +180,12 @@ namespace BDNukes
                     if (kv.Value.mat != null && kv.Value.mat.GetTexture(CoverageProp) != kv.Value.rt) kv.Value.mat.SetTexture(CoverageProp, kv.Value.rt);
                 return;
             }
-            nextRedraw = now + 0.2f;
+            // while a front is still sweeping the deck, redraw often enough for the push to move smoothly
+            bool sweeping = false;
+            foreach (var kv in layers)
+                foreach (var h in kv.Value.holes)
+                    if (now - h.start < h.grow * 1.2f) sweeping = true;
+            nextRedraw = now + (sweeping ? 0.05f : 0.25f);
             List<object> done = null;
             foreach (var kv in layers)
             {
@@ -190,7 +205,8 @@ namespace BDNukes
                     float clear = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((age - h.hold) / h.heal));
                     holeArr[n] = new Vector4(h.uv.x, h.uv.y, Mathf.Max(1e-6f, h.radiusUV * grow), clear);
                     // z: the condensation flash at the shock front, strong while the front is still crossing the deck
-                    ringArr[n] = new Vector4(0.45f * (1f - 0.6f * k) + 0.15f, h.seed, 1.2f * (1f - k) * Mathf.Clamp01(age / 0.3f), 0f);
+                    // w: the rim the swept cloud is squeezed into, widest while the front is young and pushing hardest
+                    ringArr[n] = new Vector4(0.7f * (1f - 0.5f * k) + 0.2f, h.seed, 1.0f * (1f - k) * Mathf.Clamp01(age / 0.3f), 0.55f - 0.2f * k);
                     n++;
                 }
                 for (int i = n; i < MaxHoles; i++) { holeArr[i] = Vector4.zero; ringArr[i] = Vector4.zero; }

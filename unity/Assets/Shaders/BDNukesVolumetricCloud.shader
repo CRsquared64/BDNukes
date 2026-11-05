@@ -109,6 +109,7 @@ Shader "BDNukes/VolumetricCloud"
                 int steps = (int)_March.x;
                 float dt = (t1 - t0) / steps;
                 float jitter = IGN(uv * _ScreenParams.xy);
+                float sJitter = Hash12(uv * _ScreenParams.xy, 7u);   // the shadow rays' own offset, uncorrelated
                 float t = t0 + dt * jitter;
 
                 float sigmaK = _Density.y;
@@ -120,20 +121,40 @@ Shader "BDNukes/VolumetricCloud"
 
                 float T = 1.0;
                 float3 col = 0.0;
+                // adaptive stepping: coarse steps through empty space, half-size steps once inside the cloud (backing
+                // up to the entry so the surface isn't stepped over), back to coarse after a few empty samples
+                float dtFine = dt * 0.5;
+                bool inCloud = false;
+                int empty = 0;
                 [loop]
-                for (int k = 0; k < 160; k++)
+                for (int k = 0; k < 200; k++)
                 {
                     if (t >= t1 || T < 0.015) break;
                     float3 p = ro + rd * t;
                     Sample sm = Cloud(p, true);
                     float d = sm.density;
+                    if (d > 0.002 && !inCloud)
+                    {
+                        inCloud = true;
+                        empty = 0;
+                        float back = dt - dtFine;
+                        if (k > 0 && back > 0.0)
+                        {
+                            t = max(t0, t - back);
+                            p = ro + rd * t;
+                            sm = Cloud(p, true);
+                            d = sm.density;
+                        }
+                    }
+                    float stepLen = inCloud ? dtFine : dt;
+                    if (d > 0.002) empty = 0;
                     if (_March.w > 0.5 && d > 0.002) return fixed4(sm.fireN, sm.fireN, sm.fireN, 1.0);
                     if (d > 0.002)
                     {
                         // sunlight through the cloud
                         float od = 0.0;
                         float sl = shadowLen / sSteps;
-                        float3 spos = p + sun * sl * jitter;
+                        float3 spos = p + sun * sl * frac(sJitter + 0.618034 * k);
                         [loop]
                         for (int j = 0; j < 8; j++)
                         {
@@ -143,6 +164,13 @@ Shader "BDNukes/VolumetricCloud"
                             // further out the smooth shape is enough
                             od += (j < 1 ? Cloud(spos, false).density : CloudCheap(spos)) * sl;
                             sl *= 1.55;
+                        }
+                        // each lump shades its own far side: a short probe toward the sun, finer than the shadow
+                        // march's first step, so billows read as round forms lit on one side
+                        if (sm.cap > 0.05)
+                        {
+                            float h = 0.05 * cs;
+                            od += Cloud(p + sun * h, false).density * h * 0.8 * sm.cap;
                         }
                         // multiple scattering: octaves of weaker extinction, softer phase, less energy
                         float3 ms = 0.0;
@@ -161,10 +189,18 @@ Shader "BDNukes/VolumetricCloud"
                         float occ = 2.0 * CloudCheap(p + float3(0.0, 0.5 * cs, 0.0));
                         float skyVis = exp(-sigmaK * occ * 0.3 * cs);
                         float3 amb = _Ambient.rgb * lerp(0.55, 1.15, skyVis) + _GroundCol.rgb * (1.0 - sm.hf) * 0.6;
+                        // cauliflower shading: the folds between the cap's lumps see little sky and bounce, the lump
+                        // tops see it all, so each billow reads as a rounded form (only where the cap is)
+                        float fold = smoothstep(0.15, 0.95, sm.billow);
+                        float ao = lerp(1.0, lerp(0.48, 1.12, fold), sm.cap);
+                        amb *= ao;
+                        direct *= lerp(1.0, lerp(0.72, 1.06, fold), sm.cap);
 
                         // soot on the burning shell (where the flicker noise is low), fresh debris colour elsewhere
                         float fireMask = smoothstep(0.3, 0.8, sm.fireN);
                         float3 alb = sm.albedo;
+                        // the lump tops are fresher, paler cloud; the folds hold darker dust
+                        alb *= lerp(1.0, lerp(0.82, 1.08, fold), sm.cap);
                         alb = lerp(alb, float3(0.07, 0.06, 0.055), _Fire.w * sm.cap * saturate(0.4 + sm.core) * (1.0 - 0.7 * fireMask));
                         float3 lit = alb * (direct + amb);
 
@@ -223,13 +259,18 @@ Shader "BDNukes/VolumetricCloud"
                         }
 
                         float sigma = d * sigmaK;
-                        float stepT = exp(-sigma * dt);
+                        float stepT = exp(-sigma * stepLen);
                         col += T * (1.0 - stepT) * lit;
                         T *= stepT;
-                        t += dt;
+                        t += stepLen;
+                    }
+                    else if (inCloud && ++empty < 4)
+                    {
+                        t += dtFine;                 // a gap between billows: keep the fine steps for a little
                     }
                     else
                     {
+                        inCloud = false;
                         t += max(dt * 1.6, sm.skip); // jump across empty space
                     }
                 }
