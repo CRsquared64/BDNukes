@@ -23,6 +23,9 @@ namespace BDNukes
         /// <summary>thermalRadius at the largest yield (m).</summary>
         [KSPField] public float thermalRadiusAtMax = 2400f;
 
+        /// <summary>Lock the yield once the weapon leaves its carrier. False for hand-placed charges (the SADM).</summary>
+        [KSPField] public bool lockAfterRelease = true;
+
         /// <summary>Selected index into yields; -1 means "use defaultIndex".</summary>
         [KSPField(isPersistant = true)] public int yieldIndex = -1;
 
@@ -149,7 +152,7 @@ namespace BDNukes
         public void Update()
         {
             if (values.Length == 0) return;
-            if (HighLogic.LoadedSceneIsFlight && !locked && vessel != null)
+            if (HighLogic.LoadedSceneIsFlight && lockAfterRelease && !locked && vessel != null)
             {
                 bool launched = (startVessel != null && vessel != startVessel) || (missile != null && missile.HasFired);
                 if (launched)
