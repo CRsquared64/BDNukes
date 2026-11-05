@@ -31,6 +31,7 @@
 
 ### Changed
 - **Sharper, solid-looking clouds.** Caps are now optically thick, scaled to their billows: you see the first rounded lumps, not several translucent layers of them blurred into fuzz. This was worst on megaton caps seen from above. Billows have crisper edges, with a finer layer of lumps on top of them. The folds between lumps are shaded darker and the lump tops lighter, and each lump shades its own far side from the sun. The ray takes finer steps inside the cloud, and a new per-pixel jitter removes the crosshatch pattern. Megaton caps get bigger, fewer billows.
+- **Bursts can be seen from far away.** A burst on the Mun (or anywhere out of the flight scene's reach) now shows from Kerbin, from orbit and in map view: a blinding flash, the fireball cooling to a red glow, then a sunlit cloud spreading and fading over minutes. Planets in front hide it. Before, nothing was drawn at all beyond the active vessel's surroundings. Setting `distantView`.
 - **The blast pushes EVE clouds aside.** The hole in the cloud deck now drags the cloud outward with the shock into a dense rim that travels with the front, and relaxes back as the hole heals. It reaches well past the cap, so it shows around big bursts, and the clouds are redrawn more often while the front is moving.
 - Explosion effects follow time warp, including on-rails warp. Clouds, fireballs, EVE cloud holes and debris age at the warped rate.
 
