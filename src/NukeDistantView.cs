@@ -32,6 +32,7 @@ namespace BDNukes
         static readonly int TintID = Shader.PropertyToID("_TintColor");
         static readonly int ColorID = Shader.PropertyToID("_Color");
         static float warnAt;
+        static readonly System.Collections.Generic.HashSet<NukeBurstRecord> seen = new System.Collections.Generic.HashSet<NukeBurstRecord>();
 
         void Start()
         {
@@ -42,7 +43,7 @@ namespace BDNukes
         static float Life(NukeBurstRecord r, bool nearGround)
         {
             float W = Mathf.Max(r.W, 0.01f);
-            if (!nearGround && r.space) return Mathf.Max(GlowTime(r, nearGround), 25f * Mathf.Pow(W, 0.2f));
+            if (!nearGround && r.space) return Mathf.Max(GlowTime(r, nearGround), 60f * Mathf.Pow(W, 0.2f));
             return 300f * Mathf.Pow(W, 0.2f) * (r.space ? 0.5f : 1f);
         }
 
@@ -121,20 +122,23 @@ namespace BDNukes
                 float pxAngle = cam.fieldOfView * Mathf.Deg2Rad / Mathf.Max(Screen.height, 1);
                 float scaledPerM = 1f / ScaledSpace.ScaleFactor;
                 CelestialBody sun = Planetarium.fetch.Sun;
+                double lightSpeed = Math.Max(1e5d, s.waveSpeed * 1000d);
 
                 for (int i = 0; i < records.Count; i++)
                 {
                     var r = records[i];
-                    float t = (float)(now - r.ut);
-                    if (t < 0f) continue;
+                    if (now - r.ut < 0d) continue;
                     bool nearGround = r.NearGround;
-                    if (t > Life(r, nearGround)) continue;
                     var body = FlightGlobals.GetBodyByName(r.body);
                     if (body == null) continue;
 
                     // bursts on the ground turn with their world; bursts in space stay where they went off
                     Vector3d world = nearGround || !r.space ? body.GetWorldSurfacePosition(r.lat, r.lon, r.alt) : r.WorldPos(body);
                     double dist = (world - camWorld).magnitude;
+                    // the light travels with the radiation front: a burst a planet away is seen when its radiation
+                    // gets here, not the instant it goes off
+                    float t = (float)(now - r.ut - dist / lightSpeed);
+                    if (t < 0f || t > Life(r, nearGround)) continue;
                     if (!map && dist < MinRange) continue;
                     // the real cloud is drawn for it here, and the camera is close enough to see it
                     if (flight && dist < reach && NukeFXManager.HasCloudNear(body, world, 50000d + 400d * t)) continue;
@@ -155,13 +159,18 @@ namespace BDNukes
 
                     float W = Mathf.Max(r.W, 0.01f);
                     float R = 70f * Mathf.Pow(W, 0.4f) * (r.space ? 2.2f : 1f);   // fireball radius (m); bigger in vacuum
+                    // however far away, a bigger burst is a bigger, brighter point of light (x1 at 1 kt, ~x3 at 1 Mt)
+                    float pxK = Mathf.Clamp(Mathf.Pow(W, 0.16f), 0.7f, 4f);
+                    if (seen.Add(r))
+                        Debug.Log(string.Format("[BDNukes]: Distant view: {0:0} kt burst at {1} seen from {2:0} km, {3:0.0} s after it went off.",
+                            r.W, r.body, dist / 1000d, now - r.ut));
 
                     // flash: a blinding point for the first moments
                     float tFlash = FlashTime(W);
                     if (t < tFlash * 4f)
                     {
                         float k = Mathf.Exp(-t / tFlash);
-                        float size = Mathf.Max(R * 2f * scaledPerM, (8f + 22f * k) * px);
+                        float size = Mathf.Max(R * 2f * scaledPerM, (8f + 22f * k) * pxK * px);
                         Draw(glowMat, sc, up, size, toCam, distS, new Color(1f, 0.97f, 0.9f, 0.9f * k));
                     }
                     // fireball: white-hot, cooling through orange to a dull red as it rises and fades
@@ -173,7 +182,7 @@ namespace BDNukes
                         Color c = Color.Lerp(new Color(0.55f, 0.12f, 0.03f), new Color(1f, 0.6f, 0.25f), Mathf.SmoothStep(0f, 1f, heat));
                         c = Color.Lerp(c, new Color(1f, 0.95f, 0.85f), Mathf.Clamp01(1f - t / Mathf.Max(tFlash * 3f, 0.5f)));
                         float grow = Mathf.Lerp(1f, r.space ? 3f : 2f, Mathf.Sqrt(u));
-                        float size = Mathf.Max(R * grow * scaledPerM, (3f + 4f * heat) * px);
+                        float size = Mathf.Max(R * grow * scaledPerM, (3f + 4f * heat) * pxK * px);
                         c.a = 0.7f * heat * heat + 0.06f;
                         Vector3 rise = nearGround ? (Vector3)(up * (R * grow * scaledPerM)) : Vector3.zero;
                         Draw(glowMat, sc + rise, up, size, toCam, distS, c);
@@ -184,9 +193,15 @@ namespace BDNukes
                         // out in space: the debris shell races outward, glowing faintly as it thins
                         float tShell = Life(r, false);
                         float shellR = s.vacuumDebrisSpeed * t;
-                        float a = 0.25f * (1f - Mathf.SmoothStep(0f, 1f, t / tShell)) * Mathf.Clamp01(t / 0.5f);
+                        float fade = 1f - Mathf.SmoothStep(0f, 1f, t / tShell);
+                        float a = 0.25f * fade * Mathf.Clamp01(t / 0.5f);
                         if (a > 0.002f)
-                            Draw(glowMat, sc, up, Mathf.Max(shellR * scaledPerM, 5f * px), toCam, distS, new Color(0.75f, 0.8f, 1f, a));
+                            Draw(glowMat, sc, up, Mathf.Max(shellR * scaledPerM, 5f * pxK * px), toCam, distS, new Color(0.75f, 0.8f, 1f, a));
+                        // the hot debris at its heart stays a point of light, slowly reddening, well after the flash
+                        float core = fade * Mathf.Clamp01(t / Mathf.Max(0.5f, tGlow * 0.5f));
+                        if (core > 0.01f)
+                            Draw(glowMat, sc, up, (2.5f + 1.5f * fade) * pxK * px, toCam, distS,
+                                Color.Lerp(new Color(1f, 0.45f, 0.2f), new Color(1f, 0.85f, 0.7f), fade) * new Color(1f, 1f, 1f, 0.55f * core));
                         continue;
                     }
 
