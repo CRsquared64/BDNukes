@@ -39,6 +39,7 @@ float4 _Planet;      // xyz planet centre (local), w radius below which nothing 
 float4 _Pileus;
 float4 _Velum;
 float4 _Precursor;
+float4 _MachStem;    // Mach stem dust ring under an air burst: x front radius (m), y height (m), z density, w ring width (m)
 float4 _GroundFire;  // fire burning on the ground under the fireball: x brightness, y radius (m), z flame height (m), w temperature   // thermal precursor: x radius (m), y height (m), z density, w ring width (m)
 float4 _PlumeA;      // fallout plume, far (lower, downwind) end: xyz, w radius
 float4 _PlumeM;      // plume bend control point: xyz, w density
@@ -496,6 +497,28 @@ Sample Cloud(float3 p, bool detail)
         float ring = 1.0 - saturate(abs(gr - _Precursor.x) / max(_Precursor.w, 1.0));
         float layer = 1.0 - saturate(gp.y / max(_Precursor.y * (0.5 + n), 1.0));
         dustDen = max(dustDen, ring * ring * layer * step(_GroundY.x, p.y) * _Precursor.z * n);
+    }
+    // Mach stem: under an air burst the reflected shock merges with the incident one into a front that runs out
+    // along the ground, raising a thin ring of dust with a sharp outer edge, thinning out behind it
+    if (_MachStem.z > 0.001)
+    {
+        float3 mp = p - float3(0.0, _GroundY.x, 0.0);
+        float mr = length(mp.xz);
+        float mw = max(_MachStem.w, 1.0), mh = max(_MachStem.y, 1.0);
+        // an annulus from a little past the front to ~1.3 ring widths behind it, up to twice the ring's height
+        float md = max(abs(mr - _MachStem.x + 0.5 * mw) - 0.8 * mw, mp.y - 2.0 * mh);
+        skip = min(skip, max(md, 0.0));
+        if (md < 0.0 && mp.y > 0.0)
+        {
+            float2 mdir = mr > 1e-3 ? mp.xz / mr : float2(1.0, 0.0);
+            float n = smoothstep(0.3, 0.8, FlowNoise(mp, float3(mdir.x, 0.15, mdir.y) * 80.0, ns * 2.5, per * 0.5, float3(0.71, 0.13, 0.47), 0));
+            float behind = (_MachStem.x - mr) / mw;   // 0 at the front, 1 one ring width behind it
+            float prof = behind < 0.0 ? saturate(1.0 + behind / 0.12) : exp(-2.5 * behind);
+            // tallest right at the front, a low layer settling behind it
+            float top = mh * lerp(1.0, 0.45, saturate(behind)) * (0.6 + 0.8 * n);
+            float layer = 1.0 - saturate(mp.y / max(top, 1.0));
+            dustDen = max(dustDen, prof * layer * _MachStem.z * (0.35 + 0.65 * n));
+        }
     }
 
     // ---- fallout plume: dust falling out of the cap, drifting downwind in long rain-out streaks ----

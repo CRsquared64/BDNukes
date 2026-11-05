@@ -49,6 +49,7 @@ namespace BDNukes
         public float pileusOffset, pileusThick, pileusDensity;   // ice-cap veil over the rising cap
         public float velumRadius, velumThick, velumDensity, velumHeight;   // the vast condensation veil (humid air)
         public float precursorR, precursorH, precursorDensity, precursorWidth;   // thermal precursor dust ring
+        public float machR, machH, machDensity, machWidth;   // Mach stem dust ring (air bursts), centred under the burst
         public float groundFire, groundFireR, groundFireH, groundFireTemp;      // fire burning on the ground
         public Vector3 plumeLow, plumeMid, plumeTop;   // fallout plume (low downwind end, bend, top under the cap)
         public float plumeLowR, plumeTopR, plumeDensity;
@@ -118,6 +119,12 @@ namespace BDNukes
                 float r = v.precursorR + v.precursorWidth;
                 min = Vector3.Min(min, v.skirtCenter + new Vector3(-r, 0f, -r));
                 max = Vector3.Max(max, v.skirtCenter + new Vector3(r, v.precursorH * 2f, r));
+            }
+            if (v.machDensity > 0.001f)
+            {
+                float r = v.machR + 0.5f * v.machWidth;
+                min = Vector3.Min(min, new Vector3(-r, v.groundY, -r));
+                max = Vector3.Max(max, new Vector3(r, v.groundY + v.machH * 2f, r));
             }
             if (v.groundFire > 0.001f)
             {
@@ -224,6 +231,7 @@ namespace BDNukes
             mat.SetVector("_Velum", new Vector4(v.velumRadius, v.velumThick, v.velumDensity, v.velumHeight));
             mat.SetVector("_GroundFire", new Vector4(v.groundFire, v.groundFireR, v.groundFireH, v.groundFireTemp));
             mat.SetVector("_Precursor", new Vector4(v.precursorR, v.precursorH, v.precursorDensity, v.precursorWidth));
+            mat.SetVector("_MachStem", new Vector4(v.machR, v.machH, v.machDensity, v.machWidth));
             mat.SetVector("_PlumeA", new Vector4(v.plumeLow.x, v.plumeLow.y, v.plumeLow.z, v.plumeLowR));
             mat.SetVector("_PlumeM", new Vector4(v.plumeMid.x, v.plumeMid.y, v.plumeMid.z, v.plumeDensity));
             mat.SetVector("_PlumeB", new Vector4(v.plumeTop.x, v.plumeTop.y, v.plumeTop.z, v.plumeTopR));
@@ -246,7 +254,7 @@ namespace BDNukes
 
         /// <summary>Anything left to draw in this state.</summary>
         public static bool Visible(ref NukeVolumeState v) =>
-            v.simMix > 0.003f || v.plumeDensity > 0.003f || v.precursorDensity > 0.003f || v.groundFire > 0.003f || v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
+            v.simMix > 0.003f || v.plumeDensity > 0.003f || v.precursorDensity > 0.003f || v.machDensity > 0.003f || v.groundFire > 0.003f || v.capDensity > 0.003f || v.stemDensity > 0.003f || v.skirtDensity > 0.003f || v.surgeDensity > 0.003f ||
             v.wilsonDensity > 0.003f || v.pileusDensity > 0.003f || v.velumDensity > 0.003f || v.ring0.w + v.ring1.w + v.ring2.w > 0.003f ||
             v.collar0.w + v.collar1.w + v.collar2.w + v.collar3.w + v.collar4.w > 0.003f;
     }
@@ -687,6 +695,28 @@ namespace BDNukes
             height = 0.12f * R;
             width = 0.35f * R + 0.05f * shockGround;
             density = 0.35f * groundFactor * SS(0.1f, 0.4f, t) * (1f - SS(0.4f * R / 100f + 1.5f, 0.4f * R / 100f + 4f, t));
+        }
+
+        /// <summary>
+        /// Mach stem: in an air burst the shock reflects off the ground, and beyond about one burst height the
+        /// reflected shock catches the incident one and merges into a near-vertical Mach stem that runs out along the
+        /// surface. It raises a thin, sharp-edged ring of dust ahead of the later base surge. hb = burst height (m),
+        /// shockR = the shock's radius from the burst now. Fades over ~15 s.
+        /// </summary>
+        public static void MachStem(float R, float hb, float shockR, float c, out float radius, out float height, out float density, out float width)
+        {
+            radius = Mathf.Min(Mathf.Sqrt(Mathf.Max(0f, shockR * shockR - hb * hb)), 60f * R);
+            // grows a little taller as the stem builds up beyond the regular-reflection zone
+            height = R * (0.15f + 0.15f * SS(0.5f * hb, 3f * hb + R, radius));
+            width = 0.3f * R + 0.03f * radius;
+            density = 0f;
+            if (shockR <= hb) return;
+            float age = (shockR - hb) / Mathf.Max(c, 1f);   // s since the shock first touched the ground
+            // only a burst high enough off the ground (0.5 R) to reflect the shock, and low enough (~8 R) for it to stay strong
+            float band = SS(0.4f * R, 0.7f * R, hb) * (1f - SS(6f * R, 9f * R, hb));
+            // weak while the reflection is still regular, the stem proper from about one burst height out
+            float stem = Mathf.Lerp(0.45f, 1f, SS(0.4f * hb, 1.2f * hb, radius));
+            density = 0.4f * band * stem * SS(0f, 0.25f, age) * (1f - SS(5f, 16f, age));
         }
 
         /// <summary>

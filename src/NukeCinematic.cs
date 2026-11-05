@@ -288,6 +288,7 @@ namespace BDNukes
             ringFx = airFx && s.condensationRings && densRatio > 0.2f && prof.lowYield < 0.01f;
             sparksFx = airFx && hb < 1.5f * R;
             SetupLightning();
+            SetupEarlyFx();
 
             // high-altitude fireball: thin air lets it grow far bigger, and it floats up fast with no mushroom
             Rh = R * Mathf.Clamp(0.8f * Mathf.Pow(1.225f / Mathf.Max(rho, 1e-4f), 1f / 3f), 1f, 8f);
@@ -463,6 +464,7 @@ namespace BDNukes
             GameEvents.onGameSceneLoadRequested.Remove(OnSceneChange);
             if (volume != null) volume.Destroy();
             if (shockMat != null) Destroy(shockMat);
+            DestroyEarlyFx();
             var manager = NukeFXManager.Existing;
             if (manager != null) manager.Unregister(this);
         }
@@ -503,6 +505,7 @@ namespace BDNukes
             planning = false;
             BuildLayers(seed);
             BuildLightning(seed);
+            BuildEarlyFx(seed);
             if (airFx && body.atmosphere && s.shockDistortion > 0f && NukeVolumetric.Available)
             {
                 shockMat = NukeVolumetric.MakeShockMaterial();
@@ -516,7 +519,7 @@ namespace BDNukes
             if (airFx && !underwater && s.volumetricClouds && NukeVolumetric.Available)
             {
                 volume = new NukeVolumetric(transform);
-                foreach (var l in new[] { capSmoke, capDetail, capUpper, fireCore, capGlow, skirt, stem, surge, collars, wilson })
+                foreach (var l in new[] { capSmoke, capDetail, capUpper, fireCore, capGlow, skirt, stem, surge, collars, wilson, machRing })
                     if (l != null) l.SetVisible(false);
                 if (ringLayers != null) foreach (var l in ringLayers) if (l != null) l.SetVisible(false);
             }
@@ -611,6 +614,7 @@ namespace BDNukes
                         collars = Make(ground, "StemCollars", NukeAssets.Mist, prof.stemCollars * 64, seed + 34, false);
                 }
                 if (sparksFx) sparks = Make(transform, "Ejecta", NukeAssets.Glow, 70, seed + 33, false);
+                if (machFx) machRing = Make(ground, "MachStemDust", NukeAssets.Smoke, 160, seed + 35, false);
             }
             if (airFx || underwater)
             {
@@ -787,6 +791,7 @@ namespace BDNukes
                 if (sparks != null) UpdateSparks();
                 if (lightningFx) UpdateLightning();
             }
+            UpdateEarlyFx();
             sunVis = sunVisLow;
             if (shockDome != null) UpdateShockDome();
             if (shock != null) UpdateShock();
@@ -1015,6 +1020,12 @@ namespace BDNukes
                 float rg0 = Mathf.Sqrt(Mathf.Max(0f, rs0 * rs0 - hb * hb));
                 NukeVolumeGround.Precursor(R, t, rg0, groundFactor * (1f - SS(0.3f * R, 1.2f * R, hb)), out vs.precursorR, out vs.precursorH, out vs.precursorDensity, out vs.precursorWidth);
                 vs.precursorDensity *= FadeOut;
+            }
+            vs.machDensity = 0f;
+            if (machFx)
+            {
+                NukeVolumeGround.MachStem(R, hb, ShockRadius(t), c, out vs.machR, out vs.machH, out vs.machDensity, out vs.machWidth);
+                vs.machDensity *= FadeOut;
             }
             vs.groundFire = 0f;
             if (groundFx && !overOcean && s.groundFire)

@@ -165,6 +165,11 @@ namespace BDNukes
         public bool cloudClearing = true;          // blasts blow holes in EVE's volumetric cloud decks, which heal over minutes
         public bool weatherLighting = true;        // EVE volumetric overcast blocks the sun on the cloud (if EVE is installed)
 
+        // early-time effects: rope tricks, Mach stem dust ring, cloud-deck flash
+        public bool ropeTricks = true;             // tower/low bursts under ~100 kt: bright spikes run down the guy wires for the first instant
+        public bool machStemDust = true;           // air bursts at 0.5-8 R: the Mach stem raises a thin, bright dust ring running out along the ground
+        public bool cloudDeckFlash = true;         // EVE cloud decks near the burst light up with the fireball (white, then orange)
+
         // terrain craters
         public bool craters = true;                // surface bursts on land leave a persistent crater in the terrain
         public float craterScale = 1f;             // multiplies crater radius and depth
@@ -320,6 +325,10 @@ namespace BDNukes
             n.TryGetValue("hazeVisibility", ref hazeVisibility);
             n.TryGetValue("weatherLighting", ref weatherLighting);
             n.TryGetValue("cloudClearing", ref cloudClearing);
+            // early-time effects
+            n.TryGetValue("ropeTricks", ref ropeTricks);
+            n.TryGetValue("machStemDust", ref machStemDust);
+            n.TryGetValue("cloudDeckFlash", ref cloudDeckFlash);
             n.TryGetValue("nukeImpulseScale", ref nukeImpulseScale);
             n.TryGetValue("nukeMaxDeltaV", ref nukeMaxDeltaV);
             n.TryGetValue("craters", ref craters);
@@ -510,6 +519,10 @@ namespace BDNukes
                 n.AddValue("hazeVisibility", F(hazeVisibility));
                 n.AddValue("weatherLighting", B(weatherLighting));
                 n.AddValue("cloudClearing", B(cloudClearing));
+                // early-time effects
+                n.AddValue("ropeTricks", B(ropeTricks));
+                n.AddValue("machStemDust", B(machStemDust));
+                n.AddValue("cloudDeckFlash", B(cloudDeckFlash));
                 n.AddValue("nukeImpulseScale", F(nukeImpulseScale));
                 n.AddValue("nukeMaxDeltaV", F(nukeMaxDeltaV));
                 n.AddValue("craters", B(craters));
