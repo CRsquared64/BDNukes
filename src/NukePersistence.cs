@@ -91,6 +91,35 @@ namespace BDNukes
             return r;
         }
 
+        // ---- detonation replay ----
+        // The last few detonations, kept in memory whether or not persistentClouds saves them (and after their
+        // cloud has gone), for "Replay last detonation" (NukeReplay.cs).
+        static readonly List<NukeRecord> recent = new List<NukeRecord>();
+
+        public static void RememberForReplay(NukeRecord r)
+        {
+            recent.Add(r);
+            while (recent.Count > 32) recent.RemoveAt(0);
+        }
+
+        /// <summary>
+        /// The most recent detonation and every other one on the same body within `window` s before it (a salvo
+        /// or a MIRV footprint), oldest first. Falls back on the saved records after a reload. Empty if none.
+        /// </summary>
+        public static List<NukeRecord> LastSalvo(float window)
+        {
+            var src = recent.Count > 0 ? recent : records;
+            var result = new List<NukeRecord>();
+            NukeRecord last = null;
+            foreach (var r in src) if (r != null && (last == null || r.ut >= last.ut)) last = r;
+            if (last == null) return result;
+            foreach (var r in src)
+                if (r != null && r.body == last.body && r.ut >= last.ut - window && r.ut <= last.ut) result.Add(r);
+            result.Sort((a, b) => a.ut.CompareTo(b.ut));
+            return result;
+        }
+        // ---- end detonation replay ----
+
         public static void Load(ConfigNode node)
         {
             records.Clear();

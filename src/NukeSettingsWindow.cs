@@ -206,6 +206,25 @@ namespace BDNukes
             s.Validate();
             DrawDosimeter(s);
 
+            // ---- player tools: range overlay, cinematic camera, replay ----
+            GUILayout.Space(6f);
+            GUILayout.Label("Player tools");
+            bool overlay = Toggle($"Effects-range overlay (Alt+{s.rangeOverlayKey})", NukeRangeOverlay.Shown);
+            if (overlay != NukeRangeOverlay.Shown) NukeRangeOverlay.Toggle();
+            s.cinematicCamera = Toggle($"Cinematic camera on nearby detonations (Alt+{s.cinematicCameraKey})", s.cinematicCamera);
+            s.cinematicCameraDistance = Slider("Camera distance (cloud sizes)", s.cinematicCameraDistance, 1.5f, 10f, "0.0");
+            s.cinematicCameraOrbitPeriod = Slider("Camera orbit period (s)", s.cinematicCameraOrbitPeriod, 20f, 900f, "0");
+            if (GUILayout.Button($"Replay last detonation (Alt+{s.replayKey}), visuals only"))
+            {
+                try { Status(NukeCinematic.ReplayLast()); }
+                catch (System.Exception e)
+                {
+                    Debug.LogError("[BDNukes]: Replay failed: " + e);
+                    Status("Replay failed (see the log)");
+                }
+            }
+            // ---- end player tools ----
+
             GUILayout.EndScrollView();
 
             GUILayout.BeginHorizontal();

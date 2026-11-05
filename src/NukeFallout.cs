@@ -24,6 +24,8 @@ namespace BDNukes
         // ground effects
         public bool scorch, fires, afterglow;
         public float rScorch, rOuter;       // burn scar and thermal-flash ring radii (m)
+
+        public bool visualOnly;             // a replayed detonation: the plume is drawn but carries no radiation
     }
 
     /// <summary>
@@ -196,7 +198,7 @@ namespace BDNukes
         /// </summary>
         public float DoseRate(Vector3 worldPos, float heightAboveGround)
         {
-            if (p == null || p.body != FlightGlobals.currentMainBody) return 0f;
+            if (p == null || p.visualOnly || p.body != FlightGlobals.currentMainBody) return 0f;
             float time = Now;
             if (time <= 0f || time > life) return 0f;
             Anchor(); // the floating origin may have moved since the last frame

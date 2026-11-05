@@ -149,6 +149,7 @@ namespace BDNukes
 
         NukeRecord record;      // this detonation in the save (null if persistence is off)
         bool restored;          // rebuilt after a scene change: visuals only, no blast, crater or sound
+        bool replay;            // a replay (NukeReplay.cs): restored's visuals-only path, but from t = 0 and with sound
 
         /// <summary>Rebuilds a recorded detonation at the age it has reached (after a scene change or a reload).</summary>
         public static void Restore(CelestialBody body, NukeRecord r)
@@ -209,11 +210,14 @@ namespace BDNukes
             if (restored)
             {
                 lat = record.lat; lon = record.lon; alt = record.alt;
-                // pick up where it was: Time.time-based ages continue from the universal time since detonation
-                double age = NukePersistence.Now - record.ut;
-                if (age >= 0d) spawnTime = NukeFXManager.FxTime - (float)age;
-                else delay = (float)-age;
-                soundPlayed = nearShakeDone = true;
+                if (!replay)
+                {
+                    // pick up where it was: Time.time-based ages continue from the universal time since detonation
+                    double age = NukePersistence.Now - record.ut;
+                    if (age >= 0d) spawnTime = NukeFXManager.FxTime - (float)age;
+                    else delay = (float)-age;
+                    soundPlayed = nearShakeDone = true;
+                }
             }
             double terrain = body.pqsController != null ? body.TerrainAltitude(lat, lon) : 0d;
             overOcean = body.ocean && terrain < 0d;
@@ -325,13 +329,18 @@ namespace BDNukes
             if (debrisFx) NukeDebrisTrails.Spawn(body, lat, lon, alt + groundY, W, R, spawnTime + delay, s.particleDensity * lod * budget);
             NukeFXManager.Instance.Register(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
-            if (!restored && s.persistentClouds)
-                record = NukePersistence.Add(new NukeRecord
+            if (!restored)
+            {
+                var rec = new NukeRecord
                 {
                     body = body.bodyName, lat = lat, lon = lon, alt = alt,
                     ut = NukePersistence.Now + delay, endUT = NukePersistence.Now + delay + life,
                     W = W, bulb = shapeBulb, windHeading = windHeading, windSeed = windSeed, profile = request, live = this,
-                });
+                };
+                NukePersistence.RememberForReplay(rec);    // kept for "Replay last detonation", saved or not
+                if (s.persistentClouds) record = NukePersistence.Add(rec);
+            }
+            if (!restored || replay) NukeCinematicCamera.OnDetonation(this);
         }
 
         /// <summary>
@@ -350,8 +359,14 @@ namespace BDNukes
             rOuter = Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale);
             scorchFx = s.scorchMarks && !overOcean && hb < 1.2f * R;
             firesFx = s.lingeringFires && !overOcean && airFx && body.atmosphereContainsOxygen && hb < 8f * R;
+            if (replay)
+            {
+                // a replay leaves no mark: no scorch or fires, and only the fallout plume's visuals (no dose)
+                scorchFx = firesFx = false;
+                if (!s.falloutCloud) falloutK = 0f;
+            }
             groundEffects = scorchFx || firesFx;
-            debrisFx = !restored && NukeDebrisTrails.Wanted(s, body, airFx, overOcean, hb, R);
+            debrisFx = (!restored || replay) && NukeDebrisTrails.Wanted(s, body, airFx, overOcean, hb, R);
         }
 
         /// <summary>
@@ -382,6 +397,7 @@ namespace BDNukes
                 dustTint = prof.dustTint,
                 scorch = scorchFx, fires = firesFx, afterglow = scorchFx && s.groundAfterglow,
                 rScorch = rScorch, rOuter = rOuter,
+                visualOnly = replay,
             };
             if (underwater)
             {

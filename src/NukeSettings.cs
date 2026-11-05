@@ -235,6 +235,49 @@ namespace BDNukes
             beltCrewShielding = Mathf.Clamp01(beltCrewShielding);
         }
         // ---- end high-altitude effects ----
+        // ---- player tools: range overlay, cinematic camera, replay ----
+        public bool cinematicCamera = false;         // the camera flies out to frame and orbit nearby detonations
+        public float cinematicCameraDistance = 3.5f; // camera distance in cloud sizes (the larger of cap radius and half the cloud height)
+        public float cinematicCameraOrbitPeriod = 240f; // s for one full orbit around the cloud
+        public float cinematicCameraRange = 60000f;  // m: detonations further than this (or 25 cloud sizes, if more) from the active vessel are ignored
+        public int rangeOverlayPoints = 128;         // points per effects-range ring
+        // hotkeys, all with Alt held (KeyCode names). Alt+F9 is stock KSP's "load a named save", so the camera is on F6.
+        public KeyCode rangeOverlayKey = KeyCode.F8;
+        public KeyCode cinematicCameraKey = KeyCode.F6;
+        public KeyCode replayKey = KeyCode.F10;
+
+        /// <summary>True on the frame Alt + key goes down.</summary>
+        public static bool AltKeyDown(KeyCode key) =>
+            key != KeyCode.None && Input.GetKeyDown(key) && (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt));
+
+        void ReadPlayerTools(ConfigNode n)
+        {
+            n.TryGetValue("cinematicCamera", ref cinematicCamera);
+            n.TryGetValue("cinematicCameraDistance", ref cinematicCameraDistance);
+            n.TryGetValue("cinematicCameraOrbitPeriod", ref cinematicCameraOrbitPeriod);
+            n.TryGetValue("cinematicCameraRange", ref cinematicCameraRange);
+            n.TryGetValue("rangeOverlayPoints", ref rangeOverlayPoints);
+            n.TryGetEnum("rangeOverlayKey", ref rangeOverlayKey, KeyCode.F8);
+            n.TryGetEnum("cinematicCameraKey", ref cinematicCameraKey, KeyCode.F6);
+            n.TryGetEnum("replayKey", ref replayKey, KeyCode.F10);
+            cinematicCameraDistance = Mathf.Clamp(cinematicCameraDistance, 1.5f, 10f);
+            cinematicCameraOrbitPeriod = Mathf.Clamp(cinematicCameraOrbitPeriod, 20f, 3600f);
+            cinematicCameraRange = Mathf.Clamp(cinematicCameraRange, 1000f, 1000000f);
+            rangeOverlayPoints = Mathf.Clamp(rangeOverlayPoints, 16, 512);
+        }
+
+        void SavePlayerTools(ConfigNode n)
+        {
+            n.AddValue("cinematicCamera", B(cinematicCamera));
+            n.AddValue("cinematicCameraDistance", F(cinematicCameraDistance));
+            n.AddValue("cinematicCameraOrbitPeriod", F(cinematicCameraOrbitPeriod));
+            n.AddValue("cinematicCameraRange", F(cinematicCameraRange));
+            n.AddValue("rangeOverlayPoints", rangeOverlayPoints.ToString(CultureInfo.InvariantCulture));
+            n.AddValue("rangeOverlayKey", rangeOverlayKey.ToString());
+            n.AddValue("cinematicCameraKey", cinematicCameraKey.ToString());
+            n.AddValue("replayKey", replayKey.ToString());
+        }
+        // ---- end player tools ----
 
         static NukeSettings current;
 
@@ -401,6 +444,7 @@ namespace BDNukes
             n.TryGetValue("targetFrameRate", ref targetFrameRate);
             n.TryGetValue("fireballLighting", ref fireballLighting);
             ReadBelts(n); // high-altitude effects
+            ReadPlayerTools(n);
         }
 
         /// <summary>The volumetric preset's steps, resolution divisor and shadows. False for Custom.</summary>
@@ -593,6 +637,7 @@ namespace BDNukes
                 // ---- fireball lighting ----
                 n.AddValue("fireballLighting", B(fireballLighting));
                 // ---- end fireball lighting ----
+                SavePlayerTools(n);
                 root.Save(path, "BDNukes user settings, written by the in-game settings window. Overrides GameData/BDNukes/Settings.cfg; delete this file to go back to the defaults.");
                 Debug.Log("[BDNukes]: Settings saved to " + path);
                 return true;
