@@ -13,7 +13,7 @@ namespace BDNukes
     internal class NukeVolumetric
     {
         static bool loadTried;
-        static Shader shader, holeShader, compositeShader, shadowShader, shockShader;
+        static Shader shader, holeShader, compositeShader, shadowShader, shockShader, waterShader;
         // ---- fireball lighting ----
         static Shader fireLightShader;
         // ---- end fireball lighting ----
@@ -53,6 +53,7 @@ namespace BDNukes
                     else if (sh.name == "BDNukes/VolumeComposite") compositeShader = sh;
                     else if (sh.name == "BDNukes/CloudShadow") shadowShader = sh;
                     else if (sh.name == "BDNukes/ShockDistortion") shockShader = sh;
+                    else if (sh.name == "BDNukes/WaterWave") waterShader = sh;
                     // ---- fireball lighting ----
                     else if (sh.name == "BDNukes/FireLight") fireLightShader = sh;
                     else if (sh.name == "BDNukes/PartDepth") partDepthShader = sh;
@@ -227,6 +228,13 @@ namespace BDNukes
         {
             if (!loadTried) Load();
             return shockShader != null && shockShader.isSupported ? new Material(shockShader) : null;
+        }
+
+        /// <summary>The raised-sea material for nuclear water waves (null without the bundle).</summary>
+        public static Material MakeWaterWaveMaterial()
+        {
+            if (!loadTried) Load();
+            return waterShader != null && waterShader.isSupported ? new Material(waterShader) : null;
         }
 
         static Mesh sphere;

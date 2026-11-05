@@ -345,6 +345,11 @@ namespace BDNukes
                     c, 300f * yieldTimeScale);
             SpawnAftermath();
             if (!restored) NukeWorldEffects.Detonation(body, lat, lon, alt + groundY, W, R, hb, overOcean, airFx && !underwater, falloutK, windHeading, wind, spawnTime, delay);
+            if (!restored)
+            {
+                try { NukeWaterWaves.Spawn(body, lat, lon, alt, W, R, c, spawnTime, delay); }
+                catch (System.Exception e) { Debug.LogWarning("[BDNukes]: Water waves failed: " + e.Message); }
+            }
             if (debrisFx) NukeDebrisTrails.Spawn(body, lat, lon, alt + groundY, W, R, spawnTime + delay, s.particleDensity * lod * budget);
             NukeFXManager.Instance.Register(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);

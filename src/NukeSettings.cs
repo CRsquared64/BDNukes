@@ -169,6 +169,7 @@ namespace BDNukes
         public bool ropeTricks = true;             // tower/low bursts under ~100 kt: bright spikes run down the guy wires for the first instant
         public bool machStemDust = true;           // air bursts at 0.5-8 R: the Mach stem raises a thin, bright dust ring running out along the ground
         public bool distantView = true;            // bursts far away (another moon, from orbit) show as a flash, glow and cloud in scaled space
+        public bool waterWaves = true;             // nuclear bursts at or over the sea raise real waves that run out and toss boats, and air bursts sweep a shock ring across the water
         public bool cloudDeckFlash = true;         // EVE cloud decks near the burst light up with the fireball (white, then orange)
 
         // terrain craters
@@ -470,6 +471,7 @@ namespace BDNukes
             n.TryGetValue("machStemDust", ref machStemDust);
             n.TryGetValue("cloudDeckFlash", ref cloudDeckFlash);
             n.TryGetValue("distantView", ref distantView);
+            n.TryGetValue("waterWaves", ref waterWaves);
             n.TryGetValue("nukeImpulseScale", ref nukeImpulseScale);
             n.TryGetValue("nukeMaxDeltaV", ref nukeMaxDeltaV);
             n.TryGetValue("craters", ref craters);
@@ -689,6 +691,7 @@ namespace BDNukes
                 n.AddValue("machStemDust", B(machStemDust));
                 n.AddValue("cloudDeckFlash", B(cloudDeckFlash));
                 n.AddValue("distantView", B(distantView));
+                n.AddValue("waterWaves", B(waterWaves));
                 n.AddValue("nukeImpulseScale", F(nukeImpulseScale));
                 n.AddValue("nukeMaxDeltaV", F(nukeMaxDeltaV));
                 n.AddValue("craters", B(craters));

@@ -143,6 +143,7 @@ namespace BDNukes
             s.debrisTrails = Toggle("Debris smoke trails", s.debrisTrails);
             s.craftScorch = Toggle("Flash scorches nearby craft", s.craftScorch);
             s.distantView = Toggle("Bursts visible from far away (other moons, orbit)", s.distantView);
+            s.waterWaves = Toggle("Waves on the sea (and a shock ring for air bursts)", s.waterWaves);
             s.sizeScale = Slider("Size scale", s.sizeScale, 0.25f, 3f, "0.00");
             s.cloudHeightScale = Slider("Cloud height scale", s.cloudHeightScale, 0.2f, 2f, "0.00");
             s.cloudRiseTime = Slider("Cloud rise time (s)", s.cloudRiseTime, 10f, 600f, "0");

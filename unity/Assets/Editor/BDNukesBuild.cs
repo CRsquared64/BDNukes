@@ -160,7 +160,7 @@ public static class BDNukesBuild
         LoadShader();
         string outDir = Path.Combine(RepoRoot, "unity", "Build");
         Directory.CreateDirectory(outDir);
-        var names = new System.Collections.Generic.List<string> { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", "Assets/Shaders/BDNukesVolumeComposite.shader", "Assets/Shaders/BDNukesCloudShadow.shader", "Assets/Shaders/BDNukesShockDistortion.shader", "Assets/Shaders/BDNukesFireLight.shader", "Assets/Shaders/BDNukesPartDepth.shader", NoisePath };
+        var names = new System.Collections.Generic.List<string> { ShaderPath, "Assets/Shaders/BDNukesCoverageHole.shader", "Assets/Shaders/BDNukesVolumeComposite.shader", "Assets/Shaders/BDNukesCloudShadow.shader", "Assets/Shaders/BDNukesShockDistortion.shader", "Assets/Shaders/BDNukesFireLight.shader", "Assets/Shaders/BDNukesPartDepth.shader", "Assets/Shaders/BDNukesWaterWave.shader", NoisePath };
         names.AddRange(BDNukesSimImport.ImportAll());
         var build = new AssetBundleBuild { assetBundleName = BundleName, assetNames = names.ToArray() };
         var manifest = BuildPipeline.BuildAssetBundles(outDir, new[] { build },
@@ -297,6 +297,8 @@ public static class BDNukesBuild
             new Shot { W = 20f, t = 60f, sunVis = 1f, haze = 0.03f, cam = new Vector3(0f, 9000f, -6000f), lookFrac = 0.8f, fov = 50f },
             new Shot { W = 1000f, t = 90f, sunVis = 1f, haze = 0.05f, cam = new Vector3(0f, 26000f, -9000f), lookFrac = 0.95f, fov = 45f },
         });
+
+        BDNukesWaterTest.Sheet(outDir);
 
         Debug.Log("[BDNukesBuild] test renders written to " + outDir);
     }
