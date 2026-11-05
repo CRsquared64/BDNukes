@@ -248,6 +248,16 @@ namespace BDNukes
         {
             if (cam == null) return;
             pos += toCam * Mathf.Min(size, 0.5f * distS);
+            // a burst at Moho seen from Kerbin is millions of scaled units off, past the camera's far plane: bring
+            // the sprite in along the same line and shrink it to match, so it covers the same patch of sky
+            Vector3 fromCam = pos - cam.transform.position;
+            float d = fromCam.magnitude, keep = 0.4f * cam.farClipPlane;
+            if (d > keep && d > 0f)
+            {
+                float k = keep / d;
+                pos = cam.transform.position + fromCam * k;
+                size *= k;
+            }
             Quaternion rot = Quaternion.LookRotation(pos - cam.transform.position, cam.transform.up);
             var m = Matrix4x4.TRS(pos, rot, Vector3.one * size);
             c *= 0.5f;
