@@ -163,7 +163,10 @@ namespace BDNukes
                     float pxK = Mathf.Clamp(Mathf.Pow(W, 0.16f), 0.7f, 4f);
                     if (seen.Add(r))
                         Debug.Log(string.Format("[BDNukes]: Distant view: {0:0} kt burst at {1} seen from {2:0} km, {3:0.0} s after it went off.",
-                            r.W, r.body, dist / 1000d, now - r.ut));
+                            r.W, r.body, dist / 1000d, now - r.ut)
+                            + string.Format(" Camera '{0}' (map {1}, far {2:0}, layer 10 drawn {3}, depth {4}), {5:0} scaled units off, a pixel there {6:0.0}; glow {7} ({8}).",
+                                cam.name, map, cam.farClipPlane, (cam.cullingMask & (1 << ScaledLayer)) != 0, cam.depth, distS, px,
+                                glowMat != null ? glowMat.shader.name : "missing", glowMat != null && glowMat.shader.isSupported ? "ok" : "unsupported"));
 
                     // flash: a blinding point for the first moments
                     float tFlash = FlashTime(W);
