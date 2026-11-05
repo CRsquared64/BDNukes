@@ -9,6 +9,7 @@ using UnityEngine;
 /// </summary>
 public static class BDNukesWaterTest
 {
+    static float lastG, lastB, lastA;   // the colour channels the last profile call set
     struct Shot { public float W, t, hb, depth; public Vector3 cam; public Vector3 look; public float fov; public float sunElev; }
 
     public static void Sheet(string outDir)
@@ -20,8 +21,8 @@ public static class BDNukesWaterTest
         var shots = new[]
         {
             // Baker (23 kt at 27 m): the wave train from a low boat, then from above
-            new Shot { W = 23f, t = 30f, depth = 27f, cam = new Vector3(0f, 80f, -2600f), look = new Vector3(0f, 0f, -900f), fov = 50f, sunElev = 0.5f },
-            new Shot { W = 23f, t = 60f, depth = 27f, cam = new Vector3(0f, 2500f, -4500f), look = Vector3.zero, fov = 50f, sunElev = 0.5f },
+            new Shot { W = 100f, t = 90f, depth = 0f, hb = 20f, cam = new Vector3(0f, 8f, -2600f), look = new Vector3(0f, 0f, -1200f), fov = 50f, sunElev = 0.25f },
+            new Shot { W = 100f, t = 120f, depth = 0f, hb = 20f, cam = new Vector3(0f, 2500f, -4500f), look = Vector3.zero, fov = 50f, sunElev = 0.25f },
             // a megaton at the surface, low evening sun
             new Shot { W = 1000f, t = 120f, depth = 0f, hb = 50f, cam = new Vector3(0f, 300f, -14000f), look = new Vector3(0f, 0f, -7000f), fov = 50f, sunElev = 0.12f },
             // a 20 kt air burst 600 m up: the shock ring on the water, from 3 km up
@@ -88,22 +89,28 @@ public static class BDNukesWaterTest
 
             if (waves)
             {
-                float rOut = front + 0.15f * lambda, rIn = Mathf.Max(0f, front - 4.8f * lambda);
-                AddBand(root, mat, 64, 360, j => Mathf.Lerp(rIn, rOut, j), (r, fj) =>
+                // the same spreading rings as NukeWaterWaves.Wave (Cauchy-Poisson, a band of wavenumbers around k0)
+                const float Spread = 0.55f;
+                float k0 = 2f * Mathf.PI / lambda, kMin = k0 * Mathf.Exp(-2.2f * Spread), kMax = k0 * Mathf.Exp(2.2f * Spread);
+                float rIn = Mathf.Max(5f, s.t * Mathf.Sqrt(g / (4f * kMax))), rOut = Mathf.Max(10f, s.t * Mathf.Sqrt(g / (4f * kMin)));
+                float g4 = g * s.t * s.t / 4f, phIn = g4 / rIn, phOut = g4 / rOut;
+                AddBand(root, mat, 180, 420, j => g4 / Mathf.Lerp(phIn, phOut, j), (r, fj) =>
                 {
-                    float xi = front - r, k = 2f * Mathf.PI / lambda;
-                    float A = Mathf.Min(0.08f * lambda * f, A0 / Mathf.Max(r, 0.5f * lambda));
-                    float env = xi <= 0f || xi > 5f * lambda ? 0f : Mathf.Exp(-xi / (1.6f * lambda)) * Mathf.Clamp01(1f - (xi - 4f * lambda) / lambda);
-                    env *= Mathf.Clamp01(s.t / (0.5f * lambda / cW));
-                    A *= env;
-                    float ph = k * xi;
-                    float eta = A * Mathf.Sin(ph), slope = -A * k * Mathf.Cos(ph);
+                    float k = g * s.t * s.t / (4f * r * r);
+                    float x = Mathf.Log(k / k0) / Spread;
+                    float weight = Mathf.Exp(-0.5f * x * x);
+                    float A = Mathf.Min(0.08f * lambda * f, A0 / Mathf.Max(r, 0.5f * lambda)) * weight;
+                    A *= Mathf.Clamp01(s.t / (0.5f * lambda / Mathf.Sqrt(g / k0)));
                     float steep = A * k;
-                    float foam = Mathf.Clamp01((steep - 0.08f) * 6f) * Mathf.Clamp01(Mathf.Sin(ph) * 1.5f);
-                    float Ar = Mathf.Min(0.08f * lambda * f, A0 / Mathf.Max(r, 0.5f * lambda));
-                    float show = Mathf.Clamp01(Mathf.Abs(slope) / Mathf.Max(0.004f, 0.55f * Ar * k)) * 0.7f + foam * 0.6f;
+                    if (steep > 0.14f) A = 0.14f / k;
+                    float ph = g4 / r;
+                    float c = Mathf.Cos(ph), sn = Mathf.Sin(ph);
+                    float eta = A * c, slope = A * k * sn;
+                    float foam = Mathf.Clamp01((steep - 0.07f) * 8f) * Mathf.Clamp01(c * 1.5f);
                     float edge = Mathf.Clamp01(fj * 6f) * Mathf.Clamp01((1f - fj) * 12f);
-                    return new Vector4(0.35f + Mathf.Max(eta, 0.12f * eta), slope, foam, Mathf.Clamp01(show) * edge) ;
+                    float amp = Mathf.Sqrt(eta * eta + slope * slope / (k * k));
+                    lastG = edge; lastB = 0f; lastA = Mathf.Clamp01(amp / 0.5f);
+                    return new Vector4(0.35f + Mathf.Max(eta, 0.12f * eta), slope, foam, 0f);
                 }, false);
             }
             if (ring)
@@ -121,7 +128,8 @@ public static class BDNukesWaterTest
                     float behind = d > 0f ? Mathf.Exp(-d / Mathf.Max(R, 3f * w)) * Mathf.Exp(-s.t / 60f) * 0.55f : 0f;
                     float slick = Mathf.Clamp01(strength * (frontK + behind) * 1.6f);
                     float foam = Mathf.Clamp01(strength * frontK * 1.5f - 0.1f);
-                    return new Vector4(0.3f, 0f, foam, Mathf.Clamp01(slick * 0.9f + foam)) ;
+                    lastG = 1f; lastB = slick; lastA = slick;
+                    return new Vector4(0.3f, 0f, foam, slick) ;
                 }, true, (r) =>
                 {
                     float d = rg - r;
@@ -155,6 +163,7 @@ public static class BDNukesWaterTest
     {
         int nv = (rows + 1) * (na + 1);
         var v = new Vector3[nv]; var n = new Vector3[nv]; var c = new Color[nv];
+        var flats = new System.Collections.Generic.List<Vector4>(nv);
         int idx = 0;
         for (int j = 0; j <= rows; j++)
         {
@@ -167,7 +176,8 @@ public static class BDNukesWaterTest
                 float cs = Mathf.Cos(th), sn = Mathf.Sin(th);
                 v[idx] = new Vector3(sn * r, p.x, cs * r);
                 n[idx] = (Vector3.up - new Vector3(sn, 0f, cs) * p.y).normalized;
-                c[idx] = new Color(p.z, 0f, slick, p.w);
+                c[idx] = new Color(p.z, lastG, lastB, lastA);
+                flats.Add(new Vector4(0f, 1f, 0f, p.x - 0.35f));
             }
         }
         var tri = new int[rows * na * 6];
@@ -182,6 +192,7 @@ public static class BDNukesWaterTest
         var m = new Mesh();
         if (nv > 65000) m.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         m.vertices = v; m.normals = n; m.colors = c; m.triangles = tri;
+        m.SetUVs(1, flats);
         var go = new GameObject("Band");
         go.transform.SetParent(root.transform);
         go.AddComponent<MeshFilter>().sharedMesh = m;

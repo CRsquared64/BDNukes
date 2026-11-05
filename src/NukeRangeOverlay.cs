@@ -369,7 +369,7 @@ namespace BDNukes
                     double lon2 = lam + Math.Atan2(Math.Sin(th) * Math.Sin(delta) * Math.Cos(phi), Math.Cos(delta) - Math.Sin(phi) * Math.Sin(lat2));
                     ring.lat[k] = lat2 / d2r;
                     ring.lon[k] = lon2 / d2r;
-                    double g = body.pqsController != null ? body.TerrainAltitude(ring.lat[k], ring.lon[k]) : 0d;
+                    double g = body.pqsController != null ? body.TerrainAltitude(ring.lat[k], ring.lon[k], true) : 0d;
                     if (body.ocean && g < 0d) g = 0d;
                     ring.alt[k] = g + lift;
                 }

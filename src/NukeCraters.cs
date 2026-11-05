@@ -232,6 +232,13 @@ namespace BDNukes
         {
             var s = NukeSettings.Current;
             if (!s.craters || body == null || body.pqsController == null) return null;
+            // over the sea the crater is dug in the seabed: the water above it counts as height above the ground, so a
+            // burst over deep water digs none (Baker, in a lagoon 55 m deep, barely marked its floor)
+            if (body.ocean)
+            {
+                double floor = body.TerrainAltitude(lat, lon, true);
+                if (floor < 0d) hb += (float)-floor;
+            }
             float big = Mathf.Clamp01(Mathf.Log10(Mathf.Max(W, 1f)) / 4f);   // 0 at 1 kt .. 1 at 10 Mt
             float reach = R * Mathf.Lerp(0.5f, 2.2f, big * big);              // highest burst that still craters
             float contact = 1f - Mathf.Clamp01((hb - 0.03f * R) / (reach - 0.03f * R));

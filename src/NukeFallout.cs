@@ -269,7 +269,7 @@ namespace BDNukes
                 int i = groundCursor = (groundCursor + 1) % n;
                 Vector3 w = transform.TransformPoint(new Vector3(plumePos[i].x, 0f, plumePos[i].z));
                 double la = body.GetLatitude(w), lo = body.GetLongitude(w);
-                double g = body.pqsController != null ? body.TerrainAltitude(la, lo) : 0d;
+                double g = body.pqsController != null ? body.TerrainAltitude(la, lo, true) : 0d;
                 if (body.ocean && g < 0d) g = 0d;
                 plumeGround[i] = transform.InverseTransformPoint(body.GetWorldSurfacePosition(la, lo, g)).y;
             }

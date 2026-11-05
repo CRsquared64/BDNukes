@@ -225,7 +225,7 @@ namespace BDNukes
                     soundPlayed = nearShakeDone = true;
                 }
             }
-            double terrain = body.pqsController != null ? body.TerrainAltitude(lat, lon) : 0d;
+            double terrain = body.pqsController != null ? body.TerrainAltitude(lat, lon, true) : 0d;
             overOcean = body.ocean && terrain < 0d;
             double groundAlt = overOcean ? 0d : terrain;
             // a restored cloud stands on the ground it went off over, not the crater floor it dug
@@ -669,7 +669,7 @@ namespace BDNukes
                 waterSpray = Make(ground, "WaterSpray", NukeAssets.Smoke, 300, seed + 51, false);
                 waterSurge = Make(ground, "WaterBaseSurge", NukeAssets.Smoke, 380, seed + 52, false);
             }
-            if (waterFx) ringWave = Make(ground, "RingWaves", NukeAssets.Mist, 240, seed + 53, false);
+            if (waterFx && !s.waterWaves) ringWave = Make(ground, "RingWaves", NukeAssets.Mist, 240, seed + 53, false);
             if (lightningFx) boltGlow = Make(transform, "LightningGlow", NukeAssets.Glow, BoltPool, seed + 60, false, false);
         }
 

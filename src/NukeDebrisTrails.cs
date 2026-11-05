@@ -147,7 +147,7 @@ namespace BDNukes
         {
             Vector3 w = transform.TransformPoint(local);
             double la = body.GetLatitude(w), lo = body.GetLongitude(w);
-            double g = body.pqsController != null ? body.TerrainAltitude(la, lo) : groundAlt;
+            double g = body.pqsController != null ? body.TerrainAltitude(la, lo, true) : groundAlt;
             if (body.ocean && g < 0d) g = 0d;
             return body.GetAltitude(w) <= g;
         }

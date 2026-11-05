@@ -250,7 +250,7 @@ namespace BDNukes
             Vector3 w = transform.TransformPoint(new Vector3(x, 0f, z));
             double la = body.GetLatitude(w), lo = body.GetLongitude(w);
             // TerrainAltitude: PQS.GetSurfaceHeight under it, craters included
-            double g = body.pqsController != null ? body.TerrainAltitude(la, lo) : 0d;
+            double g = body.pqsController != null ? body.TerrainAltitude(la, lo, true) : 0d;
             water = body.ocean && g < 0d;
             if (water) g = 0d;
             return transform.InverseTransformPoint(body.GetWorldSurfacePosition(la, lo, g));

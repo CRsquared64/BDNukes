@@ -20,8 +20,8 @@ namespace BDNukes
     /// </summary>
     internal class NukeWaterWaves : MonoBehaviour
     {
-        const int NA = 360;           // segments around
-        const int NRW = 64;           // rows across the wave band
+        const int NA = 420;           // segments around
+        const int NRW = 180;          // rows across the wave band
         const int NRS = 24;           // rows across the shock ring band
         const int GA = 256, GR = 160; // sea-depth grid (around x out)
         const float MaxLife = 900f;
@@ -33,7 +33,7 @@ namespace BDNukes
         float t;
         float W, R, hb, cSound;
         bool waves, shockRing;
-        float lambda, cWave, f, rMax, life, A0;
+        float lambda, cFront, k0, kMin, kMax, f, rMax, life, A0;
         float bodyR, gee;
 
         // sea depth around the burst (m, negative over land), filled a few rows a frame; then "open": 1 where the
@@ -45,6 +45,7 @@ namespace BDNukes
 
         Mesh waveMesh, shockMesh;
         Vector3[] wv, wn, sv, sn;
+        readonly List<Vector4> wf = new List<Vector4>(), sf = new List<Vector4>();   // the flat sea's normals and the height above it (uv2)
         Color[] wc, sc;
         Material mat;
         GameObject waveGo, shockGo;
@@ -87,13 +88,17 @@ namespace BDNukes
             lambda = lam; f = ff; waves = wav; shockRing = ring; spawnTime = sTime; delay = d;
             bodyR = (float)body.Radius;
             gee = (float)(body.GeeASL * 9.80665);
-            cWave = Mathf.Sqrt(gee * lambda / (2f * Mathf.PI));
+            // the cavity makes waves around its own size; longer ones lead, shorter ones follow (see Wave)
+            k0 = 2f * Mathf.PI / lambda;
+            kMin = k0 * Mathf.Exp(-2.2f * Spread);
+            kMax = k0 * Mathf.Exp(2.2f * Spread);
+            cFront = Mathf.Sqrt(gee / (4f * kMin));                 // the leading edge's speed (the longest waves' group speed)
             A0 = f * 1550f * Mathf.Pow(W, 0.54f);
             float rFade = A0 / 0.25f;                               // where the waves are down to a quarter metre
-            life = waves ? Mathf.Min(MaxLife, rFade / cWave) : 0f;
+            life = waves ? Mathf.Min(MaxLife, rFade / cFront) : 0f;
             float ringEnd = shockRing ? RingEnd() : 0f;
             if (shockRing) life = Mathf.Max(life, ringEnd / cSound + 40f);
-            rMax = Mathf.Max(waves ? Mathf.Min(rFade, lambda * 0.5f + cWave * life) + 5f * lambda : 0f, ringEnd + 2f * R);
+            rMax = Mathf.Max(waves ? Mathf.Min(rFade, cFront * life) + lambda : 0f, ringEnd + 2f * R);
             rMax = Mathf.Min(rMax, 0.4f * bodyR);
             gridStep = rMax / GR;
             depthGrid = new float[GA * GR];
@@ -110,7 +115,7 @@ namespace BDNukes
             Anchor();
             active.Add(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
-            Debug.Log($"[BDNukes]: Sea {(waves ? $"waves: {A0 / lambda:F1} m high a wavelength ({lambda:F0} m) out, running at {cWave:F0} m/s" : "")}{(waves && shockRing ? "; " : "")}{(shockRing ? "shock ring on the water" : "")}.");
+            Debug.Log($"[BDNukes]: Sea {(waves ? $"waves: {A0 / lambda:F1} m high a wavelength ({lambda:F0} m) out, leading edge at {cFront:F0} m/s" : "")}{(waves && shockRing ? "; " : "")}{(shockRing ? "shock ring on the water" : "")}.");
         }
 
         /// <summary>How far out the shock still visibly marks the water.</summary>
@@ -130,6 +135,9 @@ namespace BDNukes
             int nv = (rows + 1) * (NA + 1);
             if (nv > 65000) m.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
             v = new Vector3[nv]; n = new Vector3[nv]; c = new Color[nv];
+            var flats = rows == NRW ? wf : sf;
+            flats.Clear();
+            for (int i = 0; i < nv; i++) flats.Add(new Vector4(0f, 1f, 0f, 0f));
             var tri = new int[rows * NA * 6];
             int k = 0;
             for (int j = 0; j < rows; j++)
@@ -140,6 +148,7 @@ namespace BDNukes
                     tri[k++] = a + 1; tri[k++] = b; tri[k++] = b + 1;
                 }
             m.vertices = v; m.normals = n; m.colors = c;
+            m.SetUVs(1, flats);
             m.triangles = tri;
             m.bounds = new Bounds(Vector3.zero, Vector3.one * 2f * rMax);
             go.AddComponent<MeshFilter>().sharedMesh = m;
@@ -235,35 +244,45 @@ namespace BDNukes
 
         // ---------------------------------------------------------------- the wave train
 
-        float Front => 0.5f * lambda + cWave * Mathf.Max(0f, t);
+        // The waves of a sudden disturbance in deep water (Cauchy-Poisson): at distance r and time t the sea there
+        // carries waves of wavenumber k = g t^2 / (4 r^2), with phase g t^2 / (4 r). The longest waves run out first;
+        // behind them come shorter, steeper and slower ones, so the rings multiply and tighten toward the middle as they
+        // spread. Which of them are strong depends on the cavity that made them: a band of wavenumbers around k0.
+        const float Spread = 0.55f;   // width of that band (in ln k)
+
+        float RIn => Mathf.Max(5f, t * Mathf.Sqrt(gee / (4f * kMax)));
+        float ROut => Mathf.Max(10f, t * Mathf.Sqrt(gee / (4f * kMin)));
 
         /// <summary>Sea surface height (m), its rate of rise (m/s), its slope outward, and the outward speed of the
         /// water at the surface (m/s), r from the burst. "open"/"depth" from SampleSea.</summary>
         void Wave(float r, float depth, float open, out float eta, out float etaT, out float slope, out float u, out float foam)
         {
             eta = etaT = slope = u = foam = 0f;
-            if (!waves || t <= 0f || open <= 0f) return;
-            float xi = Front - r;
-            if (xi <= 0f || xi > 5f * lambda) return;
-            float k = 2f * Mathf.PI / lambda;
-            float A = Mathf.Min(0.08f * lambda * f, A0 / Mathf.Max(r, 0.5f * lambda));
-            // the train spreads out behind its first crest, which stays the highest
-            float env = Mathf.Exp(-xi / (1.6f * lambda)) * Mathf.Clamp01(1f - (xi - 4f * lambda) / lambda);
-            // the cavity's own first seconds: the wave rises as it forms
-            env *= Mathf.Clamp01(t / (0.5f * lambda / cWave));
+            if (!waves || t <= 0.5f || open <= 0f || r <= 1f) return;
+            float k = gee * t * t / (4f * r * r);
+            float x = Mathf.Log(k / k0) / Spread;
+            if (x * x > 4.84f * 1.3f) return;
+            float weight = Mathf.Exp(-0.5f * x * x);
+            float A = Mathf.Min(0.08f * lambda * f, A0 / Mathf.Max(r, 0.5f * lambda)) * weight * open;
+            // the cavity's own first seconds: the waves rise as it forms
+            A *= Mathf.Clamp01(t / (0.5f * lambda / Mathf.Sqrt(gee / k0)));
             // shoaling: once the sea is shallower than half a wavelength the wave slows, bunches up and grows
             float dpt = Mathf.Max(depth, 0.5f);
-            float shoal = dpt < 0.5f * lambda ? Mathf.Min(Mathf.Pow(0.5f * lambda / dpt, 0.25f), 2.5f) : 1f;
-            A *= env * shoal * open;
-            float ph = k * xi;
-            eta = A * Mathf.Sin(ph);
-            float omega = k * cWave;
-            etaT = A * omega * Mathf.Cos(ph);
-            slope = -A * k * Mathf.Cos(ph);
-            u = A * omega * Mathf.Sin(ph);   // orbital velocity at the surface (deep water)
-            // whitecaps on steep crests; surf where the wave breaks on a shelving shore (a crest higher than ~0.78 x depth)
+            float half = Mathf.PI / k;
+            float shoal = dpt < half ? Mathf.Min(Mathf.Pow(half / dpt, 0.25f), 2.5f) : 1f;
+            A *= shoal;
+            // water can't stand steeper than this: the rest breaks (whitecaps)
             float steep = A * k;
-            foam = Mathf.Clamp01((steep - 0.08f) * 6f) * Mathf.Clamp01(Mathf.Sin(ph) * 1.5f);
+            if (steep > 0.14f) { A = 0.14f / k; }
+            float ph = gee * t * t / (4f * r);
+            float c = Mathf.Cos(ph), sn = Mathf.Sin(ph);
+            float omega = Mathf.Sqrt(gee * k);
+            eta = A * c;
+            etaT = -A * omega * sn;
+            slope = A * k * sn;
+            u = A * omega * c;   // orbital velocity at the surface (deep water)
+            // whitecaps on steep crests; surf where the wave breaks on a shelving shore (a crest higher than ~0.78 x depth)
+            foam = Mathf.Clamp01((steep - 0.07f) * 8f) * Mathf.Clamp01(c * 1.5f);
             if (eta > 0.78f * dpt) { foam = 1f; eta = 0.78f * dpt + 0.3f * (eta - 0.78f * dpt); }
             foam = Mathf.Max(foam, Mathf.Clamp01(1f - dpt / 6f) * Mathf.Clamp01(Mathf.Abs(eta) / 0.5f));
         }
@@ -333,13 +352,15 @@ namespace BDNukes
 
         void BuildWave()
         {
-            float rOut = Front + 0.15f * lambda;
-            float rIn = Mathf.Max(0f, Front - 4.8f * lambda);
+            // rows evenly spaced in the waves' phase, so every crest gets the same number of rows however tight
+            float rOut = ROut, rIn = RIn;
+            float g4 = gee * t * t / 4f;
+            float phOut = g4 / rOut, phIn = g4 / rIn;
             int idx = 0;
             for (int j = 0; j <= NRW; j++)
             {
                 float fj = j / (float)NRW;
-                float r = Mathf.Lerp(rIn, rOut, fj);
+                float r = g4 / Mathf.Lerp(phIn, phOut, fj);
                 float edge = Mathf.Clamp01(fj * 6f) * Mathf.Clamp01((1f - fj) * 12f);
                 for (int i = 0; i <= NA; i++, idx++)
                 {
@@ -353,13 +374,16 @@ namespace BDNukes
                     Vector3 outward = new Vector3(s, 0f, c);
                     wv[idx] = p;
                     wn[idx] = (nUp - outward * slope).normalized;
-                    float A = Mathf.Min(0.08f * lambda * f, A0 / Mathf.Max(r, 0.5f * lambda));
-                    float show = Mathf.Clamp01(Mathf.Abs(slope) / Mathf.Max(0.004f, 0.55f * A * 2f * Mathf.PI / lambda)) * 0.7f + foam * 0.6f;
+                    wf[idx] = new Vector4(nUp.x, nUp.y, nUp.z, eta);
+                    // the wave's local height (its envelope, not the height at this phase): how strongly it shades
+                    float kk = Mathf.Max(1e-5f, gee * t * t / (4f * r * r));
+                    float amp = Mathf.Sqrt(eta * eta + slope * slope / (kk * kk));
+                    float shade = Mathf.Clamp01(amp / 0.5f);
                     float sea = depth > 0f ? 1f : 0f;
-                    wc[idx] = new Color(foam, 0f, 0f, Mathf.Clamp01(show) * edge * sea * Mathf.Clamp01(t / 2f));
+                    wc[idx] = new Color(foam, edge * sea * Mathf.Clamp01(t / 2f), 0f, shade);
                 }
             }
-            waveMesh.vertices = wv; waveMesh.normals = wn; waveMesh.colors = wc;
+            waveMesh.vertices = wv; waveMesh.normals = wn; waveMesh.colors = wc; waveMesh.SetUVs(1, wf);
         }
 
         void BuildRing()
@@ -385,11 +409,12 @@ namespace BDNukes
                     Vector3 p = SpherePoint(r, c, s, 0.3f, out Vector3 nUp);
                     sv[idx] = p;
                     sn[idx] = nUp;
+                    sf[idx] = new Vector4(nUp.x, nUp.y, nUp.z, 0f);
                     float sea = depth > 0f ? 1f : 0f;
-                    sc[idx] = new Color(foam, 0f, slick, Mathf.Clamp01(slick * 0.9f + foam) * sea);
+                    sc[idx] = new Color(foam, sea, slick, slick);
                 }
             }
-            shockMesh.vertices = sv; shockMesh.normals = sn; shockMesh.colors = sc;
+            shockMesh.vertices = sv; shockMesh.normals = sn; shockMesh.colors = sc; shockMesh.SetUVs(1, sf);
         }
 
         // ---------------------------------------------------------------- what floats
@@ -400,7 +425,7 @@ namespace BDNukes
             if (FlightGlobals.VesselsLoaded == null) return;
             Vector3d center = body.position;
             Vector3 up0 = transform.up, north0 = transform.forward, east0 = transform.right;
-            float front = Front;
+            float rOutP = ROut + 0.1f * lambda, rInP = RIn;
             for (int vi = 0; vi < FlightGlobals.VesselsLoaded.Count; vi++)
             {
                 Vessel v = FlightGlobals.VesselsLoaded[vi];
@@ -415,7 +440,7 @@ namespace BDNukes
                     Vector3 pUp = rel.normalized;
                     float ang = Mathf.Acos(Mathf.Clamp(Vector3.Dot(pUp, up0), -1f, 1f));
                     float r = ang * bodyR;
-                    if (r > front + 0.2f * lambda || r < front - 5f * lambda) continue;
+                    if (r > rOutP || r < rInP) continue;
                     Vector3 flat = Vector3.ProjectOnPlane(pUp, up0);
                     float c = Vector3.Dot(flat, north0), s = Vector3.Dot(flat, east0);
                     float m = Mathf.Sqrt(c * c + s * s);

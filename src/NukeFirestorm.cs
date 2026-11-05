@@ -136,7 +136,7 @@ namespace BDNukes
         {
             Vector3 w = transform.TransformPoint(new Vector3(x, 0f, z));
             double la = body.GetLatitude(w), lo = body.GetLongitude(w);
-            double g = body.pqsController != null ? body.TerrainAltitude(la, lo) : groundAlt;
+            double g = body.pqsController != null ? body.TerrainAltitude(la, lo, true) : groundAlt;
             water = body.ocean && g < 0d;
             if (water) g = 0d;
             return transform.InverseTransformPoint(body.GetWorldSurfacePosition(la, lo, g));

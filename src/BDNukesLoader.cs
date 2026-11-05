@@ -136,7 +136,7 @@ namespace BDNukes
 
         static double GroundAlt(CelestialBody body, double lat, double lon)
         {
-            double g = body.pqsController != null ? body.TerrainAltitude(lat, lon) : 0d;
+            double g = body.pqsController != null ? body.TerrainAltitude(lat, lon, true) : 0d;
             if (body.ocean && g < 0d) g = 0d;
             return g;
         }
