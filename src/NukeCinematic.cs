@@ -2390,7 +2390,7 @@ namespace BDNukes
             public int Begin()
             {
                 // photo mode: the particles are placed analytically, but keep Unity's own clock in step too
-                float rate = NukeFXManager.FxRate;
+                float rate = NukeFXManager.ParticleRate;
                 if (rate != simRate) { simRate = rate; var main = ps.main; main.simulationSpeed = rate; }
                 if (!spawned)
                 {

@@ -185,6 +185,7 @@ namespace BDNukes
         void Awake()
         {
             photoMode = PhotoMode.Normal; // a new flight scene never starts frozen
+            lastUT = -1d;
             noiseSeed = Random.value * 100f;
             WindHeading = Random.Range(0f, 360f);
             white = Texture2D.whiteTexture;
@@ -246,7 +247,37 @@ namespace BDNukes
         {
             if (Input.GetKeyDown(KeyCode.F7) && (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)))
                 CyclePhotoMode();
-            FxTime += Time.deltaTime * FxRate;
+            FxTime += GameDeltaTime() * FxRate;
+        }
+
+        static double lastUT = -1d;
+
+        /// <summary>How much faster than Unity's own clock the game is running (on-rails warp); 1 otherwise.</summary>
+        public static float WarpFactor { get; private set; } = 1f;
+
+        /// <summary>Speed for Unity particle systems tied to the effects clock: photo mode and on-rails warp.</summary>
+        public static float ParticleRate => FxRate * Mathf.Min(WarpFactor, 100f);
+
+        /// <summary>
+        /// Game seconds since last frame, following time warp of both kinds: physics warp scales Time.deltaTime,
+        /// but on-rails warp doesn't, so use the universal-time step instead. Clamped so a jump (load, warp-to)
+        /// can't skip a whole cloud in one frame by accident; long warps still age clouds out quickly.
+        /// </summary>
+        static float GameDeltaTime()
+        {
+            float dt = Time.deltaTime;
+            if (Planetarium.fetch != null)
+            {
+                double ut = Planetarium.GetUniversalTime();
+                if (lastUT >= 0d && ut >= lastUT)
+                {
+                    double d = ut - lastUT;
+                    if (TimeWarp.fetch != null && TimeWarp.CurrentRate > 1f && d > dt) dt = (float)System.Math.Min(d, 600d);
+                }
+                lastUT = ut;
+            }
+            WarpFactor = Time.deltaTime > 1e-5f ? Mathf.Clamp(dt / Time.deltaTime, 1f, 100000f) : 1f;
+            return dt;
         }
 
         static void CyclePhotoMode()
