@@ -80,6 +80,7 @@ namespace BDNukes
     internal static class NukeFootprint
     {
         static readonly List<NukeFootprintRecord> records = new List<NukeFootprintRecord>();
+        internal static IList<NukeFootprintRecord> Records => records;
         const int MaxRecords = 64;
         const float RefTime = 60f;
 

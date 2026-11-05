@@ -213,6 +213,12 @@ namespace BDNukes
         public float waveSurfaceShielding = 0.1f;  // fraction that reaches the ground through an atmosphere
         public bool waveStopWarp = true;           // drop out of time warp just before a front reaches the active vessel
 
+        // ---- detonation alert ----
+        public bool blastAlert = true;             // alarm and warning window for every detonation anywhere in the system
+        public bool blastAlertSound = true;
+        public bool showRadiationOverlays = true;  // burst sites and fallout footprints in map view (belts and fronts have their own)
+        public float blastMarkerDays = 1f;         // Kerbin days a burst site stays marked (x3 for atmospheric bursts)
+
         void ReadBelts(ConfigNode n)
         {
             n.TryGetValue("radiationBelts", ref radiationBelts);
@@ -239,6 +245,10 @@ namespace BDNukes
             n.TryGetValue("waveMinYield", ref waveMinYield);
             n.TryGetValue("waveSurfaceShielding", ref waveSurfaceShielding);
             n.TryGetValue("waveStopWarp", ref waveStopWarp);
+            n.TryGetValue("blastAlert", ref blastAlert);
+            n.TryGetValue("blastAlertSound", ref blastAlertSound);
+            n.TryGetValue("showRadiationOverlays", ref showRadiationOverlays);
+            n.TryGetValue("blastMarkerDays", ref blastMarkerDays);
         }
 
         void ValidateBelts()
