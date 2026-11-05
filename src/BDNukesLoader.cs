@@ -75,6 +75,7 @@ namespace BDNukes
                 }
 
                 NukeRadiationBelt.OnDetonation(FlightGlobals.currentMainBody, position, Yield, delay); // radiation belt, HEMP
+                NukeRadiationWave.OnDetonation(FlightGlobals.currentMainBody, position, Yield, delay); // radiation front across the system
 
                 if (!settings.enabled) return;
 

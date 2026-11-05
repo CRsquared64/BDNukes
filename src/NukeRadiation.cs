@@ -210,9 +210,11 @@ namespace BDNukes
         /// <summary>A faint Geiger crackle: random (Poisson) clicks, faster in hotter fallout.</summary>
         void UpdateGeiger(NukeSettings s)
         {
-            if (!s.geigerCounter || !s.falloutRadiation || ActiveRate < 0.005f || NukeAssets.Geiger == null) return;
+            // fallout and footprints, plus any radiation front from a burst in space passing over
+            float rate = (s.falloutRadiation ? ActiveRate : 0f) + NukeRadiationWave.ActiveRate;
+            if (!s.geigerCounter || rate < 0.005f || NukeAssets.Geiger == null) return;
             if (Time.time < nextClick) return;
-            float cps = Mathf.Clamp(4f * Mathf.Sqrt(ActiveRate * 20f), 0.5f, 60f);
+            float cps = Mathf.Clamp(4f * Mathf.Sqrt(rate * 20f), 0.5f, 60f);
             nextClick = Time.time + -Mathf.Log(Mathf.Max(1e-3f, Random.value)) / cps;
             geiger.PlayOneShot(NukeAssets.Geiger, 0.25f * s.volume * GameSettings.SHIP_VOLUME * Random.Range(0.6f, 1f));
         }

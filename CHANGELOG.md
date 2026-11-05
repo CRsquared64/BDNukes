@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- **New weapons:**
+  - **AIR-2 Genie** (W25, 1.5 kt): an unguided air-to-air rocket with a proximity burst and a 12 s time fuze.
+  - **Mk 45 ASTOR** (W34, 11 kt): a nuclear torpedo, steered by the launching boat's sonar or radar lock.
+  - **B57** (5–20 kt): a nuclear depth bomb that sinks and fires at a set depth (or on a shallower sea floor); over land it is an ordinary tactical bomb. `ModuleNukeFuze` has a new optional depth fuze for it.
+  - **UGM-133 Trident II D5** (8x W76, 100 kt): fired from under water it is ejected first and lights its motor only once clear of the surface (new `ModuleColdLaunch`).
+  - **MGM-31C Pershing II** (W85, 5–80 kt) and **RSD-10 Pioneer / SS-20** (3x 150 kt MIRV): road-mobile intermediate-range missiles.
+  - **Starfish Prime test package** (W49, 1.4 Mt): a stack warhead for your own rocket with a burst-altitude fuze that goes up to 1,000 km.
+- **Radiation fronts across the system:** a burst in space sends its radiation out as a sphere across the whole system, drawn growing in map view and the tracking station. It travels at `waveSpeed` (20,000 km/s by default, slower than light so you can watch it). Every craft it passes gets a short pulse of dose falling off with distance; planets shade their far side and an atmosphere shields the ground. Time warp drops to 1x as a front reaches you, and the dosimeter clicks as it passes. Settings `radiationWaves`, `showRadiationWaves`, `waveSpeed`, `wavePulse`, `waveDoseRate`, `waveSurfaceShielding`, `waveStopWarp`.
 - **W54 SADM "backpack nuke"** (0.01–1 kt dial-a-yield): carry it in an inventory, place it on EVA, set a 10 s – 10 min timer and arm it from the part menu, the EVA kerbal's menu or an action group. The countdown is shown in the menu and on screen and survives save/load.
 - **Project Orion nuclear pulse drive:** a 10 m pusher-plate engine that burns Nuclear Pulse Units (a new resource). The throttle sets the pulse rate. Each pulse gives a cushioned kick with a bright flash, a plasma disc in vacuum and a thump in air.
 - **Rope tricks:** tower and low bursts under about 100 kt shoot thin, bright spikes down the guy wires from the fireball's underside for the first fraction of a second. Setting `ropeTricks`.

@@ -202,6 +202,17 @@ namespace BDNukes
         public bool hemp = true;                   // bursts at 30-400 km over an atmosphere EMP craft low down within the horizon circle
         public bool showRadiationBelts = true;     // draw the belts in map view and the tracking station
 
+        // ---- radiation fronts from bursts in space ----
+        public bool radiationWaves = true;         // a burst in vacuum sends a radiation front out across the whole system
+        public bool showRadiationWaves = true;     // draw the fronts in map view and the tracking station
+        public float waveSpeed = 20000f;           // km/s; slower than light so you can watch it cross the system
+        public float wavePulse = 60f;              // s for the front to pass a point
+        public float waveDoseRate = 1f;            // Sv/h mean over the pulse, per Mt, at 1 Gm from the burst (1/r^2)
+        public float waveMinDistance = 50000f;     // km; closer than this the dose stops climbing (local effects take over)
+        public float waveMinYield = 1f;            // kt
+        public float waveSurfaceShielding = 0.1f;  // fraction that reaches the ground through an atmosphere
+        public bool waveStopWarp = true;           // drop out of time warp just before a front reaches the active vessel
+
         void ReadBelts(ConfigNode n)
         {
             n.TryGetValue("radiationBelts", ref radiationBelts);
@@ -219,10 +230,25 @@ namespace BDNukes
             n.TryGetValue("beltCrewShielding", ref beltCrewShielding);
             n.TryGetValue("hemp", ref hemp);
             n.TryGetValue("showRadiationBelts", ref showRadiationBelts);
+            n.TryGetValue("radiationWaves", ref radiationWaves);
+            n.TryGetValue("showRadiationWaves", ref showRadiationWaves);
+            n.TryGetValue("waveSpeed", ref waveSpeed);
+            n.TryGetValue("wavePulse", ref wavePulse);
+            n.TryGetValue("waveDoseRate", ref waveDoseRate);
+            n.TryGetValue("waveMinDistance", ref waveMinDistance);
+            n.TryGetValue("waveMinYield", ref waveMinYield);
+            n.TryGetValue("waveSurfaceShielding", ref waveSurfaceShielding);
+            n.TryGetValue("waveStopWarp", ref waveStopWarp);
         }
 
         void ValidateBelts()
         {
+            waveSpeed = Mathf.Clamp(waveSpeed, 100f, 299792f);
+            wavePulse = Mathf.Clamp(wavePulse, 5f, 3600f);
+            waveDoseRate = Mathf.Max(0f, waveDoseRate);
+            waveMinDistance = Mathf.Max(1000f, waveMinDistance);
+            waveMinYield = Mathf.Max(0f, waveMinYield);
+            waveSurfaceShielding = Mathf.Clamp01(waveSurfaceShielding);
             if (beltBodies == null) beltBodies = "";
             beltMinAltitude = Mathf.Max(0f, beltMinAltitude);
             beltHalfLifeDays = Mathf.Clamp(beltHalfLifeDays, 0.1f, 100000f);
