@@ -14,6 +14,8 @@ namespace BDNukes
         public float W, bulb, windHeading;
         public int windSeed;
         public NukeCloudProfile profile;
+        public bool hasGround, overOcean;   // the ground under it at detonation, before any crater it dug
+        public double groundAlt;
         public NukeCinematic live;     // the running cinematic in this scene (Unity-null once it is destroyed)
 
         static string F(double v) => v.ToString("R", CultureInfo.InvariantCulture);
@@ -27,6 +29,7 @@ namespace BDNukes
             n.AddValue("ut", F(ut)); n.AddValue("endUT", F(endUT));
             n.AddValue("W", F(W)); n.AddValue("bulb", F(bulb)); n.AddValue("windHeading", F(windHeading));
             n.AddValue("windSeed", windSeed);
+            if (hasGround) { n.AddValue("groundAlt", F(groundAlt)); n.AddValue("overOcean", overOcean); }
             if (profile != null)
             {
                 var p = n.AddNode("PROFILE");
@@ -51,6 +54,8 @@ namespace BDNukes
             n.TryGetValue("ut", ref r.ut); n.TryGetValue("endUT", ref r.endUT);
             n.TryGetValue("W", ref r.W); n.TryGetValue("bulb", ref r.bulb); n.TryGetValue("windHeading", ref r.windHeading);
             n.TryGetValue("windSeed", ref r.windSeed);
+            r.hasGround = n.TryGetValue("groundAlt", ref r.groundAlt);
+            n.TryGetValue("overOcean", ref r.overOcean);
             var p = n.GetNode("PROFILE");
             if (p != null)
             {
@@ -123,6 +128,7 @@ namespace BDNukes
         public static void Load(ConfigNode node)
         {
             records.Clear();
+            recent.Clear();   // a replay must never bring back a detonation from another save
             double now = Now;
             foreach (var cn in node.GetNodes("DETONATION"))
             {

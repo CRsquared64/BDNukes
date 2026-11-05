@@ -30,7 +30,7 @@ namespace BDNukes
             float rFull = 0.3f * rMax;
             float kFull = (rMax / rFull) * (rMax / rFull) - 1f;
             float ramp = Mathf.Clamp(0.25f * Mathf.Pow(W, 0.3f), 0.2f, 4f); // thermal pulse length
-            float start = Time.time + delay;
+            double start = NukeFXManager.FxTime + delay;   // the effects clock: photo mode freezes the char with the flash
             var hits = new RaycastHit[32];
 
             for (int v = 0; v < vessels.Count; v++)
@@ -132,9 +132,10 @@ namespace BDNukes
         MaterialPropertyBlock block;
         float prev;     // scorch already reached before the newest flash
         float target;   // scorch after the newest flash
-        float start, ramp;
+        double start;
+        float ramp;
 
-        internal void Add(Part p, List<Renderer> r, float fluence, float startTime, float rampTime)
+        internal void Add(Part p, List<Renderer> r, float fluence, double startTime, float rampTime)
         {
             part = p;
             if (rends == null || rends.Length != r.Count)
@@ -150,7 +151,7 @@ namespace BDNukes
             ramp = rampTime;
         }
 
-        float Current() => Mathf.Lerp(prev, target, ramp > 0f ? Mathf.Clamp01((Time.time - start) / ramp) : 1f);
+        float Current() => Mathf.Lerp(prev, target, ramp > 0f ? Mathf.Clamp01((float)(NukeFXManager.FxTime - start) / ramp) : 1f);
 
         void LateUpdate()
         {

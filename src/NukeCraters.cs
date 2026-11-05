@@ -116,15 +116,22 @@ namespace BDNukes
             if (h == 0d) return;
             // inside a protected site the crater fades out: buildings stay on their own ground, not buried under a
             // rim or left floating over a bowl
+            data.vertHeight += h * SiteFade(v);
+        }
+
+        /// <summary>1 away from protected sites, falling to 0 inside them.</summary>
+        public double SiteFade(Vector3d v)
+        {
+            double f = 1d;
             for (int i = 0; i < siteDirs.Count; i++)
             {
                 double c = Vector3d.Dot(v, siteDirs[i]);
                 if (c <= siteCosOut[i]) continue;
-                if (c >= siteCosIn[i]) return;
+                if (c >= siteCosIn[i]) return 0d;
                 double k = (c - siteCosOut[i]) / (siteCosIn[i] - siteCosOut[i]);
-                h *= 1d - k * k * (3d - 2d * k);
+                f *= 1d - k * k * (3d - 2d * k);
             }
-            data.vertHeight += h;
+            return f;
         }
 
         /// <summary>Finds the body's built-up sites: PQSCity (the space centre and its like) and PQSCity2 (Kerbal Konstructs, stock monuments).</summary>
@@ -143,7 +150,7 @@ namespace BDNukes
             foreach (var city in sphere.GetComponentsInChildren<PQSCity>(true))
             {
                 bool ksc = city.name == "KSC" || city.name.StartsWith("KSC");
-                Add((Vector3d)city.repositionRadial, ksc ? 1300d : 250d, ksc ? 2000d : 450d);
+                Add((Vector3d)city.repositionRadial, ksc ? 1300d : 1000d, ksc ? 2000d : 1500d);   // airfields have km-long runways
             }
             foreach (var city in sphere.GetComponentsInChildren<PQSCity2>(true))
                 Add(body.GetRelSurfaceNVector(city.lat, city.lon), 200d, 380d);
@@ -171,6 +178,8 @@ namespace BDNukes
         static readonly object[] quadArg = new object[1];
 
         internal static string lastRebuild = "none yet";
+        /// <summary>The crater the last rebuild was for (null for a full rebuild), so scatters refresh only around it.</summary>
+        internal static NukeCrater lastRebuildCrater;
 
         public static int Count
         {
@@ -269,11 +278,42 @@ namespace BDNukes
         {
             if (pending.TryGetValue(c.body, out int p)) pending[c.body] = Math.Max(0, p - 1);
             if (body == null || FlightGlobals.currentMainBody != body) return;
+            lastRebuildCrater = c;
             Rebuild(body);
+            ShiftLanded(body, c);
+        }
+
+        /// <summary>
+        /// Craft standing on the ground the crater just reshaped would be launched by a rim rising under them or drop
+        /// into the bowl: move each landed, unpacked vessel by the crater's height change at its position.
+        /// </summary>
+        static void ShiftLanded(CelestialBody body, NukeCrater c)
+        {
+            try
+            {
+                if (!mods.TryGetValue(body.bodyName, out var mod) || mod == null) return;
+                double R = body.pqsController != null ? body.pqsController.radius : body.Radius;
+                foreach (var v in FlightGlobals.VesselsLoaded)
+                {
+                    if (v == null || v.packed || !v.LandedOrSplashed || v.mainBody != body) continue;
+                    Vector3d dir = body.GetRelSurfaceNVector(v.latitude, v.longitude);
+                    double dh = c.Offset(dir, R) * mod.SiteFade(dir);
+                    if (Math.Abs(dh) < 0.05d) continue;
+                    Vector3d up = (v.GetWorldPos3D() - body.position).normalized;
+                    v.SetPosition(v.transform.position + (Vector3)(up * dh));
+                    v.IgnoreGForces(60);
+                    Debug.Log(string.Format(CultureInfo.InvariantCulture, "[BDNukes]: Moved {0} {1:F1} m with the new crater ground.", v.vesselName, dh));
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[BDNukes]: Couldn't move landed vessels onto the crater: " + e.Message);
+            }
         }
 
         public static void ClearAll()
         {
+            lastRebuildCrater = null;
             foreach (var l in byBody.Values) l.Clear();
             var body = FlightGlobals.currentMainBody;
             if (body != null) Rebuild(body);
@@ -443,6 +483,11 @@ namespace BDNukes
                 Ensure(body);
                 n++;
             }
+            int max = NukeSettings.Current.maxCraters;
+            foreach (var l in byBody.Values) while (l.Count > max) l.RemoveAt(0);
+            // the protectSites setting, or statics placed since, may have changed
+            foreach (var m in mods.Values) if (m != null) m.FindSites();
+            lastRebuildCrater = null;
             if (n > 0) Debug.Log("[BDNukes]: Loaded " + n + " terrain craters.");
         }
 

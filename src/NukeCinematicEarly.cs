@@ -55,9 +55,12 @@ namespace BDNukes
             if (deckDiscs != null) UpdateDeckFlash();
         }
 
+        Mesh deckMesh;
+
         void DestroyEarlyFx()
         {
             if (deckMats != null) foreach (var m in deckMats) if (m != null) Destroy(m);
+            if (deckMesh != null) Destroy(deckMesh);
         }
 
         // ----------------------------------------------------------------------------------------
@@ -171,7 +174,7 @@ namespace BDNukes
         void BuildDeckDiscs()
         {
             // a flat, two-sided unit quad in the local horizontal plane, white vertex colours for the particle shader
-            var mesh = new Mesh { name = "BDNukesDeckFlash" };
+            var mesh = deckMesh = new Mesh { name = "BDNukesDeckFlash" };
             mesh.vertices = new[] { new Vector3(-0.5f, 0f, -0.5f), new Vector3(0.5f, 0f, -0.5f), new Vector3(0.5f, 0f, 0.5f), new Vector3(-0.5f, 0f, 0.5f) };
             mesh.uv = new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(0f, 1f) };
             mesh.colors = new[] { Color.white, Color.white, Color.white, Color.white };
@@ -198,7 +201,7 @@ namespace BDNukes
         {
             if (t > deckFlashEnd)
             {
-                foreach (var go in deckDiscs) if (go != null) Destroy(go.GetComponent<MeshFilter>().sharedMesh);
+                if (deckMesh != null) { Destroy(deckMesh); deckMesh = null; }
                 foreach (var go in deckDiscs) if (go != null) Destroy(go);
                 deckDiscs = null;
                 return;

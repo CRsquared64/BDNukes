@@ -357,7 +357,7 @@ namespace BDNukes
             };
             f.Prepare(body);
             sites.Add(f);
-            while (sites.Count > MaxSites) sites.RemoveAt(0);
+            while (sites.Count > MaxSites) { DropHolders(sites[0]); sites.RemoveAt(0); }   // releases its Parallax masks too
             Ensure(body);
             Debug.Log(string.Format(CultureInfo.InvariantCulture, "[BDNukes]: Trees flattened on {0} at {1:F4},{2:F4} out to {3:F0} m (crater {4:F0} m).",
                 f.body, lat, lon, killRadius, craterRadius));
@@ -369,7 +369,7 @@ namespace BDNukes
         /// the mask up when Parallax next builds their scatters). Also redoes scatters over a crater rebuild: Parallax
         /// copies a quad's mesh when it builds its scatters, so after a crater reshapes the ground they would float.
         /// </summary>
-        public static void Refresh(CelestialBody body, NukeFlattenSite only)
+        public static void Refresh(CelestialBody body, NukeFlattenSite only, NukeCrater onlyCrater = null)
         {
             if (!available || body == null || body.pqsController == null || !body.pqsController.isActive) return;
             if (FlightGlobals.currentMainBody != body) return;
@@ -380,10 +380,11 @@ namespace BDNukes
             foreach (var q in pqs.quads) if (q != null) stack.Push(q);
             int masked = 0, rebuilt = 0;
             var crs = NukeCraters.For(body.bodyName);
+            if (onlyCrater != null) crs = new List<NukeCrater> { onlyCrater };
             while (stack.Count > 0)
             {
                 var q = stack.Pop();
-                if (!Touches(q, body.bodyName, only, crs)) continue;
+                if (!Touches(q, body.bodyName, only, crs, onlyCrater != null)) continue;
                 if (q.subNodes != null) foreach (var sub in q.subNodes) if (sub != null) stack.Push(sub);
                 if (!q.isBuilt) continue;
                 try
@@ -415,12 +416,13 @@ namespace BDNukes
             if (masked + rebuilt > 0) Debug.Log("[BDNukes]: Scatter mask refresh on " + body.bodyName + ": " + masked + " quads masked, " + rebuilt + " scatter sets rebuilt.");
         }
 
-        static bool Touches(PQ q, string bodyName, NukeFlattenSite only, List<NukeCrater> craters)
+        static bool Touches(PQ q, string bodyName, NukeFlattenSite only, List<NukeCrater> craters, bool cratersOnly = false)
         {
             double half = HalfAngle(q);
             Vector3d qd = q.positionPlanet.normalized;
             bool Near(Vector3d d, double a) => Math.Acos(Math.Max(-1d, Math.Min(1d, Vector3d.Dot(qd, d)))) <= half + a;
             if (only != null) return Near(only.dir, only.killAngle);
+            if (!cratersOnly)
             for (int i = 0; i < sites.Count; i++)
                 if (sites[i].body == bodyName && Near(sites[i].dir, sites[i].killAngle)) return true;
             if (craters != null)
@@ -453,7 +455,10 @@ namespace BDNukes
             if (seenRebuild != NukeCraters.lastRebuild)
             {
                 seenRebuild = NukeCraters.lastRebuild;
-                Refresh(body, null);
+                // only the ground around the crater that was just dug changed
+                var c = NukeCraters.lastRebuildCrater;
+                if (c != null && c.body == body.bodyName) Refresh(body, null, c);
+                else Refresh(body, null);
             }
         }
 
@@ -470,6 +475,7 @@ namespace BDNukes
                 f.Prepare(body);
                 sites.Add(f);
             }
+            while (sites.Count > MaxSites) sites.RemoveAt(0);   // nothing is masked yet, so no holders to drop
             if (sites.Count == 0) return;
             Resolve();
             if (!available) return;

@@ -72,6 +72,8 @@ namespace BDNukes
         float groundY;      // ground (or sea surface) height relative to the burst point (m)
         float c;            // speed of sound
         float life, lifeAir, lifeVac, lifeHi, lifeWater;
+        bool expired;   // a restore found the cloud already gone
+        double setupGroundAlt;
         float groundFactor; // 1 = surface burst, 0 = no ground interaction
         bool groundFx, stemFx, ringFx, sparksFx;
 
@@ -164,6 +166,7 @@ namespace BDNukes
                 r.live = cin;
                 Vector3 pos = body.GetWorldSurfacePosition(r.lat, r.lon, r.alt);
                 cin.Setup(body, pos, Mathf.Max(r.W, 0.001f), 0f, r.profile, NukeFXManager.LODScale());
+                if (cin.expired) Destroy(go);
             }
             catch
             {
@@ -222,6 +225,9 @@ namespace BDNukes
             double terrain = body.pqsController != null ? body.TerrainAltitude(lat, lon) : 0d;
             overOcean = body.ocean && terrain < 0d;
             double groundAlt = overOcean ? 0d : terrain;
+            // a restored cloud stands on the ground it went off over, not the crater floor it dug
+            if (restored && record != null && record.hasGround) { overOcean = record.overOcean; groundAlt = record.groundAlt; }
+            else { setupGroundAlt = groundAlt; }
             hb = Mathf.Max(0f, (float)(alt - groundAlt));
             groundY = (float)(groundAlt - alt);
 
@@ -303,6 +309,14 @@ namespace BDNukes
             lifeVac = 25f;
             if (vacFx || hiFx) SetupField(pos);
             life = Mathf.Max(Mathf.Max(airFx ? lifeAir : 0f, vacFx ? lifeVac : 0f), Mathf.Max(hiFx ? Mathf.Max(lifeHi, auroraFootL != null ? lifeVac : 0f) : 0f, waterFx ? lifeWater : 0f));
+            // a restored cloud that has already run its course (settings changed since, say) is dropped, not rebuilt
+            // and destroyed again every persistence tick with a fresh fallout plume each time
+            if (restored && !replay && NukeFXManager.FxTime - spawnTime - delay > life)
+            {
+                if (record != null) record.endUT = 0d;
+                expired = true;
+                return;
+            }
 
             int windSeed = restored ? record.windSeed : Random.Range(0, 100000);
             // every mushroom is a little different: somewhere between a wide rolling cap and a tight bulbous head,
@@ -337,6 +351,7 @@ namespace BDNukes
                     body = body.bodyName, lat = lat, lon = lon, alt = alt,
                     ut = NukePersistence.Now + delay, endUT = NukePersistence.Now + delay + life,
                     W = W, bulb = shapeBulb, windHeading = windHeading, windSeed = windSeed, profile = request, live = this,
+                    hasGround = true, groundAlt = setupGroundAlt, overOcean = overOcean,
                 };
                 NukePersistence.RememberForReplay(rec);    // kept for "Replay last detonation", saved or not
                 if (s.persistentClouds) record = NukePersistence.Add(rec);
@@ -2300,17 +2315,21 @@ namespace BDNukes
             FxRateAudio(crackSrc, rate, freeze, wasFrozen);
             FxRateAudio(rumbleSrc, rate, freeze, wasFrozen);
             FxRateAudio(boomSrc, rate, freeze, wasFrozen);
+            FxRateAudio(roarSrc, rate, freeze, wasFrozen);
         }
 
         float audioRate = 1f;
 
-        static void FxRateAudio(AudioSource a, float rate, bool freeze, bool wasFrozen)
+        readonly Dictionary<AudioSource, float> basePitch = new Dictionary<AudioSource, float>();
+
+        void FxRateAudio(AudioSource a, float rate, bool freeze, bool wasFrozen)
         {
             if (a == null) return;
+            if (!basePitch.TryGetValue(a, out float p0)) basePitch[a] = p0 = a.pitch;   // the yield-scaled pitch
             if (freeze) { if (a.isPlaying) a.Pause(); }
             else
             {
-                a.pitch = rate;
+                a.pitch = p0 * rate;
                 if (wasFrozen) a.UnPause();
             }
         }
