@@ -271,6 +271,7 @@ namespace BDNukes
             fireLight.range = 1.5f * p.rOuter;
             fireLight.intensity = 0f;
             fireLight.shadows = LightShadows.None;
+            NukeLightBudget.Register(fireLight);
         }
 
         float FireLevel(int i)

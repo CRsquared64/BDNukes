@@ -573,6 +573,7 @@ namespace BDNukes
             lightFx.range = Mathf.Clamp(80f * R, 3000f, 80000f);
             lightFx.intensity = 0f;
             lightFx.shadows = s.lightShadows ? LightShadows.Soft : LightShadows.None;
+            NukeLightBudget.Register(lightFx);
 
             var audioGo = new GameObject("NukeAudio");
             audioGo.transform.SetParent(transform, false);

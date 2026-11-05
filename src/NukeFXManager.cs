@@ -307,6 +307,7 @@ namespace BDNukes
             NukeCloudClearing.Update();
             UpdateAdaptive(NukeVolumetric.QueuedClouds > 0);
             NukeVolumetric.UpdateCompositor();
+            NukeLightBudget.Apply();   // after every effect has set its lights this frame
             float amp = 0f;
             for (int i = shakes.Count - 1; i >= 0; i--)
             {

@@ -108,6 +108,7 @@ namespace BDNukes
             light.range = 2f * rG;
             light.intensity = 0f;
             light.shadows = LightShadows.None;
+            NukeLightBudget.Register(light);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);
             Debug.Log("[BDNukes]: Firestorm: " + land + " fires out to " + rG.ToString("F0") + " m, " + life.ToString("F0") + " s.");
         }

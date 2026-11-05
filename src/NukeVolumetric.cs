@@ -208,12 +208,28 @@ namespace BDNukes
                         c.AddCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
                         lowResCams.Add(c);
                     }
+            if (lowResItems.Count > 1) SortFarToNear();
             if (lowResItems.Count > 0) GatherOccluders();
             else occluders.Clear();
             NukeVolumeCompositor.Build(lowResBuffer, lowResItems, compositeMat, Divisor, shockItems, fireLights, fireLightMat, occluders, partDepthMat);
             lowResItems.Clear();
             shockItems.Clear();
             fireLights.Clear();   // fireball lighting
+        }
+
+        /// <summary>
+        /// Each cloud is raymarched on its own and blended over what's drawn, so several clouds have to be drawn from
+        /// the farthest in: drawn in the order they went off, a later burst's cloud covered an earlier one in front of
+        /// it, pasting its cap over the nearer cloud's stem. (Where two clouds really interpenetrate, the nearer centre
+        /// wins the overlap.)
+        /// </summary>
+        static void SortFarToNear()
+        {
+            var cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : Camera.main;
+            if (cam == null) return;
+            Vector3 eye = cam.transform.position;
+            lowResItems.Sort((a, b) =>
+                ((Vector3)b.matrix.GetColumn(3) - eye).sqrMagnitude.CompareTo(((Vector3)a.matrix.GetColumn(3) - eye).sqrMagnitude));
         }
 
         static Shader partDepthShader;
