@@ -278,6 +278,15 @@ namespace BDNukes
             n.AddValue("replayKey", replayKey.ToString());
         }
         // ---- end player tools ----
+        // ---- world effects: flattened forests, fallout footprint, firestorm ----
+        public bool flattenTrees = true;           // blasts flatten Parallax trees and bushes out to ~5 psi (all scatters over the crater); needs Parallax
+        public bool falloutFootprint = true;       // ground bursts leave a downwind fallout hot zone: a faint ground tint and a slow dose, kept in the save
+        public float footprintDays = 20f;          // game days the footprint takes to fade away
+        public float footprintDose = 1f;           // multiplies the footprint's dose rate (0 = cosmetic only)
+        public bool firestorm = true;              // big bursts over land start a firestorm within the thermal radius
+        public float firestormMinYield = 10f;      // kt; smaller bursts only get the lingering fires
+        public float firestormDuration = 600f;     // s the firestorm burns (yield-scaled)
+        // ---- end world effects ----
 
         static NukeSettings current;
 
@@ -445,6 +454,15 @@ namespace BDNukes
             n.TryGetValue("fireballLighting", ref fireballLighting);
             ReadBelts(n); // high-altitude effects
             ReadPlayerTools(n);
+            // ---- world effects ----
+            n.TryGetValue("flattenTrees", ref flattenTrees);
+            n.TryGetValue("falloutFootprint", ref falloutFootprint);
+            n.TryGetValue("footprintDays", ref footprintDays);
+            n.TryGetValue("footprintDose", ref footprintDose);
+            n.TryGetValue("firestorm", ref firestorm);
+            n.TryGetValue("firestormMinYield", ref firestormMinYield);
+            n.TryGetValue("firestormDuration", ref firestormDuration);
+            // ---- end world effects ----
         }
 
         /// <summary>The volumetric preset's steps, resolution divisor and shadows. False for Custom.</summary>
@@ -510,6 +528,12 @@ namespace BDNukes
             targetFrameRate = Mathf.Clamp(targetFrameRate, 15f, 240f);
             photoModeSlowRate = Mathf.Clamp(photoModeSlowRate, 0.01f, 1f);
             ValidateBelts(); // high-altitude effects
+            // ---- world effects ----
+            footprintDays = Mathf.Clamp(footprintDays, 0.1f, 1000f);
+            footprintDose = Mathf.Clamp(footprintDose, 0f, 10f);
+            firestormMinYield = Mathf.Max(0f, firestormMinYield);
+            firestormDuration = Mathf.Clamp(firestormDuration, 30f, 3600f);
+            // ---- end world effects ----
         }
 
         static void ValidateQuality(NukeQualityValues q)
@@ -638,6 +662,15 @@ namespace BDNukes
                 n.AddValue("fireballLighting", B(fireballLighting));
                 // ---- end fireball lighting ----
                 SavePlayerTools(n);
+                // ---- world effects ----
+                n.AddValue("flattenTrees", B(flattenTrees));
+                n.AddValue("falloutFootprint", B(falloutFootprint));
+                n.AddValue("footprintDays", F(footprintDays));
+                n.AddValue("footprintDose", F(footprintDose));
+                n.AddValue("firestorm", B(firestorm));
+                n.AddValue("firestormMinYield", F(firestormMinYield));
+                n.AddValue("firestormDuration", F(firestormDuration));
+                // ---- end world effects ----
                 root.Save(path, "BDNukes user settings, written by the in-game settings window. Overrides GameData/BDNukes/Settings.cfg; delete this file to go back to the defaults.");
                 Debug.Log("[BDNukes]: Settings saved to " + path);
                 return true;

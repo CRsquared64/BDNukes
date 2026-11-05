@@ -326,6 +326,7 @@ namespace BDNukes
                 NukeCloudClearing.Blast(body, pos, alt, 4f * Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale),
                     c, 300f * yieldTimeScale);
             SpawnAftermath();
+            if (!restored) NukeWorldEffects.Detonation(body, lat, lon, alt + groundY, W, R, hb, overOcean, airFx && !underwater, falloutK, windHeading, wind, spawnTime, delay);
             if (debrisFx) NukeDebrisTrails.Spawn(body, lat, lon, alt + groundY, W, R, spawnTime + delay, s.particleDensity * lod * budget);
             NukeFXManager.Instance.Register(this);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneChange);

@@ -107,6 +107,8 @@ namespace BDNukes
             var list = NukeFallout.Active;
             for (int i = 0; i < list.Count; i++)
                 if (list[i] != null) rate += list[i].DoseRate(pos, Mathf.Max(0f, h));
+            // the ground shine of old fallout footprints, long after their airborne fields have gone
+            rate += NukeFootprint.DoseRate(v, Mathf.Max(0f, h));
             return rate;
         }
 
@@ -118,7 +120,7 @@ namespace BDNukes
                 float dt = nextTick > 0f ? Mathf.Min(Time.time - nextTick + Tick, 2f) : Tick;
                 nextTick = Time.time + Tick;
                 ActiveRate = 0f;
-                if (s.falloutRadiation && NukeFallout.Active.Count > 0) TickDose(dt, s);
+                if (s.falloutRadiation && (NukeFallout.Active.Count > 0 || NukeFootprint.AnyOn(FlightGlobals.currentMainBody))) TickDose(dt, s);
             }
             UpdateGeiger(s);
         }

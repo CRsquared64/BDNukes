@@ -188,6 +188,9 @@ namespace BDNukes
             return l;
         }
 
+        /// <summary>The body's craters (read-only use: the scatter refresh redoes Parallax scatters over them).</summary>
+        internal static List<NukeCrater> For(string body) => byBody.TryGetValue(body, out var l) ? l : null;
+
         /// <summary>Craters added or removed since the body's terrain was last built (by seed).</summary>
         static List<NukeCrater> Changed(string body)
         {
