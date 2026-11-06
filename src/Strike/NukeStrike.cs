@@ -48,10 +48,20 @@ namespace BDNukes
         {
             Instance = this;
             bdaPlans.Clear();
+            NukeStrikeGuidance.Clear();
+            LastPlan = null;
+            GameEvents.onVesselChange.Add(OnVesselChange);
+        }
+
+        void OnVesselChange(Vessel vessel)
+        {
+            if (followed != null && vessel != followed) ClearPivot();
         }
 
         void OnDestroy()
         {
+            GameEvents.onVesselChange.Remove(OnVesselChange);
+            ClearPivot();
             if (Instance == this) Instance = null;
             if (pivot != null) Destroy(pivot);
             bdaPlans.Clear();
@@ -107,13 +117,13 @@ namespace BDNukes
         internal void Follow(Vessel v, Plan plan)
         {
             ClearPivot();
-            followed = v;
-            followedPlan = plan;
             if (FlightGlobals.ActiveVessel != v)
             {
                 try { FlightGlobals.ForceSetActiveVessel(v); }
                 catch (Exception e) { Debug.LogWarning("[BDNukes]: Couldn't follow the missile: " + e.Message); return; }
             }
+            followed = v;
+            followedPlan = plan;
             KeepLoaded(v);
         }
 
@@ -186,6 +196,8 @@ namespace BDNukes
 
         internal void ClearPivot()
         {
+            if (pivot != null && FlightCamera.fetch != null && FlightGlobals.ActiveVessel != null)
+                FlightCamera.fetch.SetTargetTransform(FlightGlobals.ActiveVessel.transform);
             if (pivot != null) Destroy(pivot);
             pivot = null;
             followed = null;

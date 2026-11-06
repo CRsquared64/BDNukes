@@ -223,7 +223,7 @@ namespace BDNukes
             retryAt = Time.time + 0.5f;
             try
             {
-                nuke.GetType().GetField("Sourcevessel", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(nuke, launcher);
+                nuke.GetType().GetField("Sourcevessel", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(nuke, launcher != null ? launcher.vesselName : "Orbital strike");
                 detonate.Invoke(nuke, null);
                 if (detonated == null || detonated.GetValue(nuke) is bool done && done) phase = "Detonated";
             }

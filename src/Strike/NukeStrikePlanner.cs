@@ -133,7 +133,8 @@ namespace BDNukes
             if (w == null || v == null) return list;
             if (w.icbm != null) { list.Add(v.mainBody); return list; }
             foreach (var b in FlightGlobals.Bodies)
-                if (b != null && b.Radius > 0 && b != Planetarium.fetch.Sun) list.Add(b);
+                if (b != null && b.Radius > 0 && b != Planetarium.fetch.Sun &&
+                    (w.vehicle is IStrikeBodyFilter filter ? filter.CanTargetBody(b) : b == v.mainBody || b.referenceBody == v.mainBody)) list.Add(b);
             return list;
         }
 
@@ -166,9 +167,12 @@ namespace BDNukes
             if (Read(setup, "SpaceCenterFacilities") is System.Collections.IEnumerable facilities)
                 foreach (var site in facilities)
                 {
-                    var siteBody = Read(site, "Body") ?? Read(site, "body");
+                    var siteBody = Read(site, "hostBody") ?? Read(site, "Body") ?? Read(site, "body");
                     if (!ReferenceEquals(siteBody, b) && Convert.ToString(siteBody) != b.bodyName) continue;
-                    AddPoi(Convert.ToString(Read(site, "name")), b, Read(site, "latitude"), Read(site, "longitude"));
+                    if (!(Read(site, "spawnPoints") is System.Collections.IEnumerable points)) continue;
+                    foreach (var point in points)
+                        AddPoi(Convert.ToString(Read(site, "facilityDisplayName") ?? Read(site, "name")), b,
+                            Read(point, "latitude"), Read(point, "longitude"));
                 }
         }
 
@@ -420,6 +424,18 @@ namespace BDNukes
             GUILayout.EndHorizontal();
             w = Current;
             if (w.vehicle != null) GUILayout.Label(w.vehicle.StrikeDescription);
+            if (w.vehicle is IStrikeWarheadCarrier carrier && carrier.ReleasedWarheads > 0)
+            {
+                GUILayout.Label("Released warheads:");
+                GUILayout.BeginHorizontal();
+                for (int i = 0; i < carrier.ReleasedWarheads; i++)
+                    if (GUILayout.Button((i + 1).ToString()))
+                    {
+                        var rv = carrier.FollowWarhead(i);
+                        if (rv != null) NukeStrike.SwitchTo(rv);
+                    }
+                GUILayout.EndHorizontal();
+            }
 
             // body
             var bodies = Bodies(w);

@@ -1,5 +1,14 @@
 namespace BDNukes
 {
+    internal interface IStrikeBodyFilter
+    {
+        bool CanTargetBody(CelestialBody body);
+    }
+    internal interface IStrikeWarheadCarrier
+    {
+        int ReleasedWarheads { get; }
+        Vessel FollowWarhead(int index);
+    }
     /// <summary>
     /// A weapon the strike planner window can list, check and launch: implemented by the part modules of BDNukes'
     /// strike vehicles (orbit-to-ground, interplanetary). BDArmory GPS ballistic missiles are wrapped separately by

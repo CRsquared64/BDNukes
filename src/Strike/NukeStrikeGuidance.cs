@@ -23,6 +23,7 @@ namespace BDNukes
     {
         /// <summary>Planned missiles without a BDNukes profile, whose motor this has cut.</summary>
         static readonly HashSet<MissileBase> cut = new HashSet<MissileBase>();
+        internal static void Clear() { cut.Clear(); }
         const double HandBackRange = 80000d;   // m from the target: BDArmory's own terminal guidance from here
 
         internal static bool Planned(MissileBase m, out NukeStrike.Plan plan)
