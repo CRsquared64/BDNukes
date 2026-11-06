@@ -61,6 +61,26 @@ float4 _CondAlbedo;  // rgb condensation colour
 float4 _Glow;        // rgb fireball light (x strength), a falloff radius (m)
 float4 _HazeCol;     // rgb haze colour, a haze amount
 float4 _March;       // x steps, y shadow steps, z overall fade, w debug (1 = show noise)
+float4 _Deck;        // EVE cloud deck: x base, y top (radius from the planet centre, m), z opacity (0 = none), w cleared hole radius round the burst (m)
+
+// How much of a point on the cloud the camera sees past the EVE cloud deck: the deck hides whatever lies on its far
+// side (a stem under the overcast seen from above, a cap above it seen from below), except through the hole the blast
+// has cleared in it. EVE's clouds leave no depth, so this is the only way the cloud knows they are there.
+float DeckT(float3 ro, float3 p)
+{
+    if (_Deck.z <= 0.001) return 1.0;
+    float hc = length(ro - _Planet.xyz), hp = length(p - _Planet.xyz);
+    float lo = min(hc, hp), hi = max(hc, hp);
+    float th = max(_Deck.y - _Deck.x, 1.0);
+    float f = saturate((min(hi, _Deck.y) - max(lo, _Deck.x)) / th);
+    if (f <= 0.0) return 1.0;
+    // where the line of sight crosses the middle of the deck: inside the cleared hole there's nothing to hide it
+    float mid = clamp(0.5 * (_Deck.x + _Deck.y), lo, hi);
+    float u = abs(hc - hp) > 1.0 ? saturate((mid - hp) / (hc - hp)) : 0.0;
+    float3 q = lerp(p, ro, u);
+    float outside = smoothstep(0.75 * _Deck.w, _Deck.w + 1.0, length(q.xz));
+    return 1.0 - _Deck.z * saturate(f * 3.0) * outside;
+}
 
 
 float2 BoxHit(float3 ro, float3 rd)

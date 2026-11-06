@@ -76,6 +76,9 @@ Shader "BDNukes/CloudShadow"
                 float T = exp(-_Density.y * od * 0.7);
                 // no direct sun under an overcast deck, no shadow either
                 float shade = lerp(1.0, T, _ShadowParams.x * saturate(_SunDir.w * 2.0) * _SunLow.x);
+                // a shadow on the ground under the overcast isn't seen from above it (EVE's clouds leave no depth, so
+                // this pixel's depth is the ground even where the deck covers it)
+                shade = lerp(1.0, shade, DeckT(mul(_WorldToCloud, float4(camW, 1.0)).xyz, p));
                 return fixed4(shade, shade, shade, 1.0);
             }
             ENDCG

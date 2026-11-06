@@ -120,6 +120,7 @@ Shader "BDNukes/VolumetricCloud"
                 int sSteps = (int)_March.y;
 
                 float T = 1.0;
+                float A = 0.0;   // coverage as seen past the EVE deck
                 float3 col = 0.0;
                 // adaptive stepping: coarse steps through empty space, half-size steps once inside the cloud (backing
                 // up to the entry so the surface isn't stepped over), back to coarse after a few empty samples
@@ -280,7 +281,9 @@ Shader "BDNukes/VolumetricCloud"
 
                         float sigma = d * sigmaK;
                         float stepT = exp(-sigma * stepLen);
-                        col += T * (1.0 - stepT) * lit;
+                        float dk = DeckT(ro, p);
+                        col += T * (1.0 - stepT) * lit * dk;
+                        A += T * (1.0 - stepT) * dk;
                         T *= stepT;
                         t += stepLen;
                     }
@@ -295,7 +298,7 @@ Shader "BDNukes/VolumetricCloud"
                     }
                 }
 
-                float a = (1.0 - T) * _March.z;
+                float a = A * _March.z;
                 col *= _March.z;
                 col = lerp(col, _HazeCol.rgb * a, _HazeCol.a);
                 // hue-preserving shoulder: the white-hot core keeps its gradient instead of clipping

@@ -104,6 +104,32 @@ namespace BDNukes
         /// A detonation at worldPos (burst altitude ASL) clears cloud out to clearRadius metres from the burst,
         /// the clearing front racing out at shockSpeed.
         /// </summary>
+        /// <summary>A cleared hole in surface terms, for the nuke clouds to see through.</summary>
+        struct WorldHole { public CelestialBody body; public Vector3d up; public float r; public double start; public float grow, hold, heal; }
+        static readonly List<WorldHole> worldHoles = new List<WorldHole>();
+
+        /// <summary>
+        /// Radius (m) of the clear circle round a surface point (up: unit vector from the body's centre) inside the
+        /// holes blasts have opened in the decks right now; 0 if it is under cloud.
+        /// </summary>
+        public static float ClearedRadius(CelestialBody body, Vector3d up)
+        {
+            float best = 0f;
+            double now = NukeFXManager.FxTime;
+            worldHoles.RemoveAll(h => h.body == null || now - h.start > h.hold + h.heal);
+            foreach (var h in worldHoles)
+            {
+                if (h.body != body) continue;
+                float age = (float)(now - h.start);
+                float k = Mathf.Clamp01(age / h.grow);
+                float clear = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((age - h.hold) / h.heal));
+                float r = h.r * (1f - (1f - k) * (1f - k)) * clear;
+                double dist = Math.Acos(Math.Max(-1d, Math.Min(1d, Vector3d.Dot(h.up, up)))) * body.Radius;
+                best = Mathf.Max(best, r - (float)dist);
+            }
+            return best;
+        }
+
         public static void Blast(CelestialBody body, Vector3 worldPos, double burstAlt, float clearRadius, float shockSpeed, float healTime)
         {
             if (!NukeSettings.Current.cloudClearing || body == null || clearRadius <= 0f) return;
@@ -170,6 +196,11 @@ namespace BDNukes
                         seed = UnityEngine.Random.Range(0f, 6.28f),
                     });
                     made++;
+                    worldHoles.Add(new WorldHole
+                    {
+                        body = body, up = ((Vector3d)worldPos - body.position).normalized, r = r, start = NukeFXManager.FxTime,
+                        grow = Mathf.Max(0.5f, Mathf.Sqrt(r * r + dz * dz) / Mathf.Max(50f, shockSpeed)), hold = 0.4f * healTime, heal = healTime,
+                    });
                     Debug.Log(string.Format("[BDNukes]: Blast clears a {0:F0} m hole in the EVE cloud deck at {1:F0}-{2:F0} m.", r, lo, hi));
                 }
                 if (made == 0)

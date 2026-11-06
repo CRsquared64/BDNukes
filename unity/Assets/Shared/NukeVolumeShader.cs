@@ -38,6 +38,8 @@ namespace BDNukes
 
         // the planet, which hides the cloud from orbit (scaled-space views leave no depth buffer)
         public Vector3 planetCenter; public float planetRadius;
+        // the EVE cloud deck: x base, y top (radius from the planet centre, m), z opacity (0 = none), w cleared hole radius (m)
+        public Vector4 deck;
 
         // skirt and base surge
         public Vector3 skirtCenter;
@@ -242,6 +244,7 @@ namespace BDNukes
             mat.SetVector("_Age", new Vector4(v.dissipation, 0f, 0f, 0f));
             mat.SetVector("_Ember", new Vector4(v.ember, v.emberTemp, v.emberWidth, 0f));
             mat.SetVector("_Planet", new Vector4(v.planetCenter.x, v.planetCenter.y, v.planetCenter.z, v.planetRadius));
+            mat.SetVector("_Deck", v.deck);
             bool sim = v.simMix > 0.001f && v.simA != null && v.simB != null;
             if (sim) { mat.SetTexture("_SimA", v.simA); mat.SetTexture("_SimB", v.simB); }
             mat.SetVector("_Sim", new Vector4(v.simBlend, sim ? v.simMix : 0f, v.simFire, v.simDensity));

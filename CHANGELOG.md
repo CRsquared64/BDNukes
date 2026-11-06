@@ -10,6 +10,8 @@
 - ICBMs fell short or long: the motor cut now counts BDArmory's own missile drag (stock drag reads zero on BDArmory missiles), so the drag-aware cut actually allows for drag.
 - A motor cut during the boost phase left the booster attached: BDArmory's boost only ends when its fuel is burnt, which never happened at zero throttle. The cut now ends the boost (and the cruise) so the first stage separates.
 - Big surface bursts' caps were charcoal-black from above; a large cap is now pale grey-white, with the dust kept in the stem and underside.
+- Mushroom clouds and their ground shadows showed through EVE cloud decks they hadn't risen through: the volumetric cloud now hides behind the overcast (a stem below it seen from above, a cap above it seen from below), except through the hole the blast has cleared.
+- Firestorm smoke columns read as dotted lines from a distance; their puffs now overlap into a continuous plume.
 - The volumetric cloud's dust skirt was sliced off with a flat edge on hillsides: the ground cut-off now sits at the lowest ground round the burst.
 
 ## 1.3.0 - the ICBM update

@@ -1259,6 +1259,7 @@ namespace BDNukes
             // the sphere is at the lowest ground round the burst, not ground zero's, or the dust over lower ground
             // around it would be sliced off flat
             vs.planetRadius = (float)(body.Radius + System.Math.Max(0d, System.Math.Min(alt + groundY, LowestGroundAround()))) - 8f;
+            vs.deck = DeckForShader();
 
             // quality where it shows: a cloud that's a speck on screen, or one of a salvo, gets fewer steps
             Camera cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
@@ -1276,6 +1277,53 @@ namespace BDNukes
         }
 
         double lowestGround = double.NaN;
+        readonly List<NukeWeather.Deck> ringDecks = new List<NukeWeather.Deck>(), ringTmp = new List<NukeWeather.Deck>();
+
+        /// <summary>
+        /// The decks' cover round the burst, beyond the hole it clears (what the deck looks like where it still stands):
+        /// the most cover of each deck over four points on a ring, the decks sampled with the weather.
+        /// </summary>
+        void SampleDeckRing()
+        {
+            ringDecks.Clear();
+            if (decks.Count == 0) return;
+            double reach = System.Math.Max(20000d, 1.6d * 4d * capRadius);
+            double d = reach / body.Radius * 180d / System.Math.PI;
+            double cosLat = System.Math.Max(0.05d, System.Math.Cos(lat * System.Math.PI / 180d));
+            foreach (var dk in decks) ringDecks.Add(new NukeWeather.Deck { baseAlt = dk.baseAlt, topAlt = dk.topAlt, coverage = dk.coverage });
+            for (int k = 0; k < 4; k++)
+            {
+                double a = k * System.Math.PI / 2d + 0.4d;
+                if (!NukeWeather.Sample(body, lat + d * System.Math.Cos(a), lon + d * System.Math.Sin(a) / cosLat, ringTmp)) return;
+                for (int i = 0; i < ringTmp.Count && i < ringDecks.Count; i++)
+                {
+                    var r = ringDecks[i];
+                    if (ringTmp[i].coverage > r.coverage) { r.coverage = ringTmp[i].coverage; ringDecks[i] = r; }
+                }
+            }
+        }
+
+        /// <summary>
+        /// The EVE decks over ground zero as one layer for the volumetric cloud to hide behind: from the lowest base
+        /// to the highest top of the decks with real cover, as opaque as they are together, open where the blast
+        /// has cleared them. Zero (no deck) without EVE or with weather lighting off.
+        /// </summary>
+        Vector4 DeckForShader()
+        {
+            float lo = float.MaxValue, hi = float.MinValue, clearT = 1f;
+            foreach (var d in ringDecks)
+            {
+                if (d.coverage < 0.15f) continue;
+                lo = Mathf.Min(lo, d.baseAlt);
+                hi = Mathf.Max(hi, d.topAlt);
+                clearT *= 1f - 0.97f * d.coverage;
+            }
+            if (hi <= lo) return Vector4.zero;
+            Vector3d up = (transform.position - (Vector3)body.position);
+            up = up.normalized;
+            float hole = NukeCloudClearing.ClearedRadius(body, up);
+            return new Vector4((float)(body.Radius + lo), (float)(body.Radius + hi), 1f - clearT, hole);
+        }
 
         /// <summary>
         /// The lowest ground (or sea) altitude within the dust's reach of ground zero, sampled once: the volumetric
@@ -1317,6 +1365,7 @@ namespace BDNukes
                 nextWeatherSample = Time.time + 1f;
                 if (s.weatherLighting && body.atmosphere) NukeWeather.Sample(body, lat, lon, decks);
                 else decks.Clear();
+                SampleDeckRing();
             }
             float groundASL = (float)(alt + groundY);
             float capASL = (float)alt + capPosL.y;

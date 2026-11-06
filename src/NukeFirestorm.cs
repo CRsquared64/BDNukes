@@ -245,6 +245,11 @@ namespace BDNukes
                 float sz = Grown(c);
                 float h = colH[c];
                 float psize = Mathf.Max(60f, sz * 0.9f) * (0.5f + 1.8f * u) * (0.8f + 0.4f * r2);
+                // a tall column has only a handful of puffs: they must overlap, or from afar it is a dotted line
+                float spacing = h / PuffsPerColumn;
+                float minSize = 2.4f * spacing * (0.6f + 0.8f * u) * (0.8f + 0.4f * r2);
+                float thin = psize < minSize ? Mathf.Lerp(1f, 0.55f, Mathf.Clamp01(minSize / Mathf.Max(1f, psize) / 6f)) : 1f;
+                psize = Mathf.Max(psize, minSize);
                 float ang = r1 * 2f * Mathf.PI;
                 // the columns are drawn in toward the middle as they climb (the firestorm's own updraft), and the
                 // puff at height u left the fire u * SmokeRiseTime ago, so the wind there has carried it that far
@@ -253,7 +258,7 @@ namespace BDNukes
                 Vector3 p = basePos + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * (0.3f * psize * u)
                             + new Vector3(0f, u * h + 0.2f * sz, 0f) + drift;
                 Color col = new Color(0.17f, 0.16f, 0.15f) * light + new Color(1f, 0.4f, 0.12f) * (0.5f * lv * Mathf.Pow(1f - u, 3f) * night);
-                col.a = Mathf.Clamp01(0.6f * lv * SS(0f, 0.06f, u) * (1f - SS(0.65f, 1f, u)));
+                col.a = Mathf.Clamp01(0.6f * thin * lv * SS(0f, 0.06f, u) * (1f - SS(0.65f, 1f, u)));
                 smoke.Set(i, p, psize, col, r3 * 360f);
             }
             smoke.End(m);
