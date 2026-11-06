@@ -32,7 +32,7 @@ namespace BDNukes
         static readonly Color DustDark = new Color(0.46f, 0.37f, 0.30f);
         static readonly Color DustLight = new Color(0.80f, 0.77f, 0.74f);
         static readonly Color CondWhite = new Color(0.96f, 0.96f, 0.98f);
-        static readonly Color Nox = new Color(0.62f, 0.42f, 0.32f);     // nitrogen oxides tint the young cloud red-brown
+        static readonly Color Nox = new Color(0.55f, 0.46f, 0.39f);     // nitrogen oxides tint the young cloud red-brown
         static readonly Color RimCol = new Color(1f, 0.93f, 0.8f);
 
         // --- inputs ---
@@ -995,10 +995,12 @@ namespace BDNukes
             vs.flicker = Mathf.Lerp(0.25f, 1f, vs.roughness);
             vs.soot = Mathf.Lerp(1f, 0.25f, column) * 0.8f * SS(0.3f * tauG, 1.2f * tauG, t) * (1f - SS(3f * tauG, 6f * tauG, t)) * Mathf.Lerp(1f, 0.5f, prof.humidity);
             // the burning ring inside the vortex outlives the fireball by many seconds, even for small yields
-            vs.ember = 3.2f * Mathf.Exp(-t / (3f * tauG + 15f)) * SS(0.2f * tauG, tauG, t) * FadeOut * flashK;
+            vs.ember = 2.2f * Mathf.Exp(-t / (2f * tauG + 8f)) * SS(0.2f * tauG, tauG, t) * FadeOut * flashK;
             vs.emberTemp = 0.64f;
             vs.emberWidth = 0.6f;
-            vs.glow = Ember * ((2.5f * glow + 0.9f * vs.ember) * FadeOut);
+            // the fire lights its own smoke strongly while it burns; the ember ring inside the cap only glows faintly
+            // on it (it used to light the whole cap brighter than the sun for many seconds: a pink-orange cloud)
+            vs.glow = Ember * ((2.5f * glow + 0.25f * vs.ember) * FadeOut);
             vs.glowRadius = 0.9f * vs.capScale;
 
             // ---- stem: dust column climbing from the ground to meet the trail hanging under the cap ----
@@ -1168,10 +1170,13 @@ namespace BDNukes
             vs.daylight = daylight;
             float low = Mathf.Clamp01(1f - sunL.y * 4f);
             vs.sunCol = Color.Lerp(new Color(1.0f, 0.97f, 0.92f), new Color(1.05f, 0.66f, 0.4f), low);
+            // the scene's own sunlight (Scatterer reddens it through the air): the cloud is lit like the clouds round it
+            Color scene = SceneSunColor();
+            if (scene.maxColorComponent > 0.01f) vs.sunCol = Color.Lerp(vs.sunCol, scene, 0.7f);
             vs.sunVisCap = sunVisCap;
             vs.sunVisLow = sunVisLow;
             float overcast = Mathf.Clamp01((1f - sunVisCam) / NukeWeather.DeckOpacity);
-            vs.ambient = Color.Lerp(new Color(0.46f, 0.55f, 0.7f), new Color(0.55f, 0.57f, 0.6f), overcast) * Mathf.Lerp(0.05f, 1f, daylight);
+            vs.ambient = Color.Lerp(new Color(0.5f, 0.56f, 0.66f), new Color(0.56f, 0.58f, 0.61f), overcast) * Mathf.Lerp(0.05f, 1f, daylight);
             vs.groundCol = new Color(0.16f, 0.15f, 0.11f) * Mathf.Lerp(0.05f, 1f, daylight) * Mathf.Lerp(1f, 0.5f, overcast);
             // dusty clouds (low yields, surface bursts) are dark grey-brown smoke, not pale cotton
             vs.capAlbedo = CapColor(0f) * 0.8f * Mathf.Lerp(1f, 0.6f, prof.dustiness * groundFactor);
@@ -1468,6 +1473,17 @@ namespace BDNukes
         }
 
         /// <summary>Base cap colour over time: young debris colour to the mature cloud, whitening if it pancakes.</summary>
+        /// <summary>The flight scene's sunlight colour, brightest channel 1 (black if there's none).</summary>
+        static Color SceneSunColor()
+        {
+            var sun = Sun.Instance;
+            var l = sun != null ? sun.sunLight : null;
+            if (l == null || !l.enabled) return Color.black;
+            Color c = l.color;
+            float m = c.maxColorComponent;
+            return m > 0.01f ? new Color(c.r / m, c.g / m, c.b / m) : Color.black;
+        }
+
         Color CapColor(float tint)
         {
             Color col = Color.Lerp(colEarly, colLate, SS(0.5f * riseTime, 2f * riseTime, t));

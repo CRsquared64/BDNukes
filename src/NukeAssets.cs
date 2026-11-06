@@ -92,6 +92,42 @@ namespace BDNukes
             return Shader.Find("Sprites/Default");
         }
 
+        static Shader plumeShader;
+        static bool plumeTried;
+
+        /// <summary>
+        /// The BDNukes/Plume exhaust shader from the shader bundle, or null without it (bundle missing, not built for
+        /// this platform, or unsupported GPU). The bundle itself is loaded by NukeVolumetric.
+        /// </summary>
+        public static Shader PlumeShader
+        {
+            get
+            {
+                if (plumeTried) return plumeShader;
+                plumeTried = true;
+                try
+                {
+                    if (!NukeVolumetric.Available) { } // loads the bundle (and its shaders) on first use
+                    plumeShader = Shader.Find("BDNukes/Plume");
+                    if (plumeShader == null)
+                        foreach (var b in AssetBundle.GetAllLoadedAssetBundles())
+                        {
+                            if (b == null || !b.name.StartsWith("bdnukes")) continue;
+                            foreach (var sh in b.LoadAllAssets<Shader>())
+                                if (sh.name == "BDNukes/Plume") { plumeShader = sh; break; }
+                            if (plumeShader != null) break;
+                        }
+                    if (plumeShader != null && !plumeShader.isSupported) plumeShader = null;
+                }
+                catch (System.Exception e)
+                {
+                    plumeShader = null;
+                    Debug.LogWarning("[BDNukes]: Couldn't load the plume shader: " + e.Message);
+                }
+                return plumeShader;
+            }
+        }
+
         static Material MakeMaterial(Shader shader, Texture2D tex, int queue)
         {
             var m = new Material(shader) { mainTexture = tex, renderQueue = queue };

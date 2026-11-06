@@ -413,17 +413,17 @@ namespace BDNukes
             v.flicker = Mathf.Lerp(0.25f, 1f, v.roughness);
             v.soot = Mathf.Lerp(1f, 0.25f, column) * 0.8f * SS(0.3f * tauG, 1.2f * tauG, t) * (1f - SS(3f * tauG, 6f * tauG, t));
             float glow = Mathf.Exp(-t / tauG);
-            v.ember = 3.2f * Mathf.Exp(-t / (3f * tauG + 15f)) * SS(0.2f * tauG, 1.0f * tauG, t);
+            v.ember = 2.2f * Mathf.Exp(-t / (2f * tauG + 8f)) * SS(0.2f * tauG, 1.0f * tauG, t);
             v.emberTemp = 0.64f;
             v.emberWidth = 0.6f;
-            v.glow = new Color(1f, 0.52f, 0.16f) * (2.5f * glow + 0.9f * v.ember);
+            v.glow = new Color(1f, 0.52f, 0.16f) * (2.5f * glow + 0.25f * v.ember);
             v.glowRadius = 0.9f * capScale;
 
             v.sunDir = new Vector3(-0.5f, 0.6f, 0.45f).normalized;
             v.daylight = 1f;
             v.sunCol = new Color(1.0f, 0.97f, 0.92f);
             v.sunVisCap = sunVis; v.sunVisLow = sunVis;
-            v.ambient = Color.Lerp(new Color(0.46f, 0.55f, 0.7f), new Color(0.55f, 0.57f, 0.6f), 1f - sunVis);
+            v.ambient = Color.Lerp(new Color(0.5f, 0.56f, 0.66f), new Color(0.56f, 0.58f, 0.61f), 1f - sunVis);
             v.groundCol = new Color(0.16f, 0.15f, 0.11f) * Mathf.Lerp(0.4f, 1f, sunVis);
             float young = 1f - SS(0.5f * riseTime, 2f * riseTime, t);
             v.capAlbedo = Color.Lerp(new Color(0.5f, 0.47f, 0.44f), new Color(0.42f, 0.31f, 0.24f), young);
@@ -693,7 +693,7 @@ namespace BDNukes
             float humid = SS(0.2f, 0.65f, humidity) * (0.7f + 0.6f * overcast);
             float big = SS(1f, 3f, Mathf.Log10(Mathf.Max(W, 0.01f)));     // 10 kt .. 1 Mt
             float life = SS(0.3f * tauG, 1.0f * tauG, t) * (1f - SS(0.45f * riseTime, 1.0f * riseTime, t));
-            radius = Mathf.Min(capScale * capWidth * Mathf.Lerp(1.8f, 2.6f, big) * (0.75f + 0.25f * SS(0.3f * tauG, 3f * tauG, t)), 14000f);
+            radius = Mathf.Min(capScale * capWidth * Mathf.Lerp(1.3f, 1.75f, big) * (0.75f + 0.25f * SS(0.3f * tauG, 3f * tauG, t)), 10000f);
             thick = Mathf.Min(0.2f * capScale, 0.06f * radius);
             height = (0.75f + 0.2f * (1f - life)) * capScale;
             density = 0.12f * humid * life * Mathf.Lerp(0.5f, 1f, big);   // translucent: a veil, not a plate

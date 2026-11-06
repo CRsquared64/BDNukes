@@ -32,6 +32,7 @@ namespace BDNukes
             public Material mat;
             public Texture original;
             public RenderTexture rt;
+            public string heldPath;    // a coverage map we loaded through EVE's on-demand loader, released on restore
             public readonly List<Hole> holes = new List<Hole>();
         }
 
@@ -39,11 +40,13 @@ namespace BDNukes
         static Type cloudsObjectType;
         static PropertyInfo layerProp;
         static FieldInfo rotField, minAltField, maxAltField, bodyField, coverageField, matField;
-        static MethodInfo uvMethod;
+        static MethodInfo uvMethod, wrapperGetTex, loaderGet, loaderUnload;
+        static FieldInfo wrapperValue;
         static readonly Dictionary<object, Layer> layers = new Dictionary<object, Layer>();
         static readonly Vector4[] holeArr = new Vector4[MaxHoles];
         static readonly Vector4[] ringArr = new Vector4[MaxHoles];
         static Material holeMat;
+        static readonly List<string> heldPaths = new List<string>();   // reloaded maps whose layer has healed, released on scene end
         static double nextRedraw;
 
         static void Init()
@@ -68,6 +71,18 @@ namespace BDNukes
                 Type wrapper = coverageField != null ? coverageField.FieldType : null;
                 // a private static helper on EVE's TextureWrapper
                 uvMethod = wrapper != null ? wrapper.GetMethod("GetEquirectangularUV", all | BindingFlags.Static, null, new[] { typeof(Vector3) }, null) : null;
+                // EVE loads PluginData textures on demand and destroys them when their use count drops to zero. On a
+                // scene or SOI change the old layer's release can land after the new layer took its reference, so the
+                // material is left holding a destroyed texture. These let us find (or reload) the map ourselves.
+                if (wrapper != null)
+                {
+                    wrapperGetTex = wrapper.GetMethod("GetTexture", all, null, Type.EmptyTypes, null);
+                    wrapperValue = wrapper.GetField("value", all);
+                    var loader = wrapper.Assembly.GetType("Utils.TextureOnDemandLoader");
+                    const BindingFlags st = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+                    loaderGet = loader != null ? loader.GetMethod("GetTexture", st, null, new[] { typeof(string) }, null) : null;
+                    loaderUnload = loader != null ? loader.GetMethod("NotifyUnload", st, null, new[] { typeof(string) }, null) : null;
+                }
                 available = layerProp != null && rotField != null && minAltField != null && maxAltField != null && bodyField != null
                             && coverageField != null && matField != null && uvMethod != null;
                 if (!available)
@@ -125,11 +140,12 @@ namespace BDNukes
                     {
                         var mat = matField.GetValue(vol) as Material;
                         if (mat == null || !mat.HasProperty(CoverageProp)) { why += " no " + CoverageProp + " on the cloud material;"; continue; }
-                        var tex = mat.GetTexture(CoverageProp);
+                        string held;
+                        var tex = FindCoverage(vol, mat, out held);
                         // EVE can use a cubemap coverage; the hole pass only knows 2D lat/long maps
                         if (tex == null || tex.dimension != UnityEngine.Rendering.TextureDimension.Tex2D)
                         { why += " coverage is " + (tex == null ? "missing" : tex.dimension.ToString()) + ";"; continue; }
-                        layer = new Layer { volume = vol, mat = mat, original = tex };
+                        layer = new Layer { volume = vol, mat = mat, original = tex, heldPath = held };
                         // twice EVE's resolution (up to 8k): the hole and its ring are drawn far finer than one coverage
                         // texel (~2 km on Kerbin), so their edges don't show as blocks in the clouds
                         int maxTex = Mathf.Min(8192, SystemInfo.maxTextureSize);
@@ -219,18 +235,69 @@ namespace BDNukes
             if (done != null) foreach (var key in done) Restore(key);
         }
 
-        static void Restore(object key)
+        /// <summary>
+        /// The 2D coverage map a layer draws from. The material's own binding first; if EVE's on-demand loader has
+        /// destroyed that texture (the material then reads as null), the layer's TextureWrapper copy; failing that the
+        /// map is reloaded through EVE's loader and put back on the material, holding one use until we restore.
+        /// </summary>
+        static Texture FindCoverage(object vol, Material mat, out string held)
+        {
+            held = null;
+            var tex = mat.GetTexture(CoverageProp);
+            if (tex != null) return tex;
+            try
+            {
+                object wrap = coverageField.GetValue(vol);
+                if (wrap == null) return null;
+                if (wrapperGetTex != null && wrapperGetTex.Invoke(wrap, null) is Texture2D w && w != null)
+                {
+                    mat.SetTexture(CoverageProp, w);
+                    return w;
+                }
+                string path = wrapperValue != null ? wrapperValue.GetValue(wrap) as string : null;
+                if (string.IsNullOrEmpty(path) || loaderGet == null) return null;
+                if (loaderGet.Invoke(null, new object[] { path }) is Texture2D t && t != null)
+                {
+                    held = path;
+                    mat.SetTexture(CoverageProp, t);
+                    Debug.Log("[BDNukes]: EVE had dropped the coverage map " + path + "; reloaded it for cloud clearing.");
+                    return t;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[BDNukes]: Couldn't recover an EVE coverage map: " + (e.InnerException ?? e).Message);
+            }
+            return null;
+        }
+
+        static void Restore(object key, bool release = false)
         {
             if (!layers.TryGetValue(key, out var layer)) return;
             if (layer.mat != null && layer.original != null) layer.mat.SetTexture(CoverageProp, layer.original);
             if (layer.rt != null) { layer.rt.Release(); UnityEngine.Object.Destroy(layer.rt); }
+            // keep our use of a reloaded map while EVE's material still shows it; release it only when the layer is torn
+            // down (scene change), or EVE would destroy the texture under its own material again
+            if (layer.heldPath != null)
+            {
+                if (release || layer.mat == null) Release(layer.heldPath);
+                else heldPaths.Add(layer.heldPath);
+            }
             layers.Remove(key);
         }
 
         /// <summary>Puts every layer's own coverage map back (scene change, errors).</summary>
         public static void RestoreAll()
         {
-            foreach (var key in new List<object>(layers.Keys)) Restore(key);
+            foreach (var key in new List<object>(layers.Keys)) Restore(key, true);
+            foreach (var p in heldPaths) Release(p);
+            heldPaths.Clear();
+        }
+
+        static void Release(string path)
+        {
+            if (loaderUnload == null) return;
+            try { loaderUnload.Invoke(null, new object[] { path }); } catch { }
         }
     }
 }

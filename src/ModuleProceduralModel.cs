@@ -40,13 +40,22 @@ namespace BDNukes
             public float roll, rootFront, rootBack, tipFront, tipBack, span, thickness = 0.03f, shroudChord;
             public Color color;
             public string shroud = "none";
+            public string parent;   // optional TRANSFORM the fin set rides on (a dropped stage takes its fins along)
         }
 
         class TransformSpec
         {
-            public string name;
+            public string name, parent;
             public Vector3 position, forward, up;
             public bool hasUp;
+            // BDArmory exhaust prefabs (and KSP particle FX) stream along the transform's local +Y, with the
+            // identity rotation BDArmory gives them. So a plume transform's +Y is the exhaust direction ("forward"
+            // in the config) and its +Z a perpendicular, exactly like BDArmory's own missile models.
+            public bool plume;
+            // optional: the lathed body between these distances from the nose is built as its own mesh under this
+            // transform, so when BDArmory drops it as a booster (boostTransformName) the stage visibly falls away
+            public bool detach;
+            public float detachFrom, detachTo;
         }
 
         class Spec
@@ -246,6 +255,7 @@ namespace BDNukes
                     shroud = (fnode.GetValue("shroud") ?? "none").Trim().ToLowerInvariant(),
                 };
                 f.shroudChord = F(fnode, "shroudChord", Mathf.Abs(f.tipBack - f.tipFront));
+                f.parent = fnode.GetValue("parent")?.Trim();
                 f.color.a = 1f;
                 s.fins.Add(f);
             }
@@ -263,6 +273,16 @@ namespace BDNukes
                 };
                 if (t.forward.sqrMagnitude < 1e-8f) t.forward = noseDir;
                 if (tn.HasValue("up")) { t.up = V(tn.GetValue("up"), Vector3.up); t.hasUp = t.up.sqrMagnitude > 1e-8f; }
+                string lname = t.name.ToLowerInvariant();
+                t.plume = B(tn, "plume", lname.Contains("exhaust"));
+                t.parent = tn.GetValue("parent")?.Trim();
+                var dr = Floats(tn.GetValue("detach"));
+                if (dr.Length >= 2 && Mathf.Abs(dr[1] - dr[0]) > 1e-4f)
+                {
+                    t.detach = true;
+                    t.detachFrom = Mathf.Min(dr[0], dr[1]);
+                    t.detachTo = Mathf.Max(dr[0], dr[1]);
+                }
                 s.transforms.Add(t);
             }
 
@@ -278,10 +298,12 @@ namespace BDNukes
             foreach (var f in s.fins)
                 sb.Append(f.count).Append(':').Append(K(f.roll)).Append(':').Append(K(f.rootFront)).Append(':').Append(K(f.rootBack)).Append(':')
                   .Append(K(f.tipFront)).Append(':').Append(K(f.tipBack)).Append(':').Append(K(f.span)).Append(':').Append(K(f.thickness)).Append(':')
-                  .Append(K(f.color)).Append(':').Append(f.shroud).Append(':').Append(K(f.shroudChord)).Append(';');
+                  .Append(K(f.color)).Append(':').Append(f.shroud).Append(':').Append(K(f.shroudChord)).Append(':').Append(f.parent ?? "").Append(';');
             sb.Append("|T");
             foreach (var t in s.transforms)
-                sb.Append(t.name).Append(':').Append(K(t.position)).Append(':').Append(K(t.forward)).Append(':').Append(t.hasUp ? K(t.up) : "-").Append(';');
+                sb.Append(t.name).Append(':').Append(K(t.position)).Append(':').Append(K(t.forward)).Append(':').Append(t.hasUp ? K(t.up) : "-")
+                  .Append(':').Append(t.plume).Append(':').Append(t.parent ?? "").Append(':')
+                  .Append(t.detach ? K(t.detachFrom) + "-" + K(t.detachTo) : "-").Append(';');
             s.key = sb.ToString();
             return s;
         }
@@ -318,15 +340,19 @@ namespace BDNukes
 
             var body = new GameObject("Body") { layer = layer };
             body.transform.SetParent(geo.transform, false);
-            Mesh bodyMesh = CachedMesh("body|" + s.key, () => BuildLathe(s));
+            var cut = new List<Vector2>();
+            foreach (var t in s.transforms) if (t.detach) cut.Add(new Vector2(t.detachFrom, t.detachTo));
+            Mesh bodyMesh = CachedMesh("body|" + s.key, () => cut.Count == 0 ? BuildLathe(s) : BuildLatheRanges(s, Complement(cut, s.profile[0].x, s.profile[s.profile.Length - 1].x)));
             body.AddComponent<MeshFilter>().sharedMesh = bodyMesh;
             body.AddComponent<MeshRenderer>().sharedMaterial = BodyMaterial(s);
             Bounds bounds = bodyMesh.bounds;
 
+            var finObjects = new List<GameObject>();
             for (int i = 0; i < s.fins.Count; i++)
             {
                 var fs = s.fins[i];
                 var fins = new GameObject("Fins" + i) { layer = layer };
+                finObjects.Add(fins);
                 fins.transform.SetParent(geo.transform, false);
                 Mesh finMesh = CachedMesh("fins" + i + "|" + s.key, () => BuildFins(s, fs));
                 fins.AddComponent<MeshFilter>().sharedMesh = finMesh;
@@ -353,15 +379,56 @@ namespace BDNukes
                 col = box;
             }
 
+            var made = new List<KeyValuePair<TransformSpec, Transform>>();
             foreach (var t in s.transforms)
             {
                 var go = new GameObject(t.name) { layer = layer };
                 go.transform.SetParent(root.transform, false);
                 go.transform.localPosition = t.position;
                 Vector3 fwd = t.forward.normalized;
-                Vector3 up = t.hasUp ? t.up : Vector3.up;
-                if (Mathf.Abs(Vector3.Dot(fwd, up.normalized)) > 0.999f) up = Mathf.Abs(fwd.z) < 0.9f ? Vector3.forward : Vector3.up;
-                go.transform.localRotation = Quaternion.LookRotation(fwd, up);
+                if (t.plume)
+                {
+                    // +Y along the exhaust, +Z perpendicular (the "up" hint if given, else the part's side)
+                    Vector3 side = t.hasUp ? t.up.normalized : (s.axisY ? Vector3.forward : Vector3.up);
+                    side = Vector3.ProjectOnPlane(side, fwd);
+                    if (side.sqrMagnitude < 1e-6f) side = Vector3.ProjectOnPlane(Vector3.right, fwd);
+                    go.transform.localRotation = Quaternion.LookRotation(side.normalized, fwd);
+                }
+                else
+                {
+                    Vector3 up = t.hasUp ? t.up : Vector3.up;
+                    if (Mathf.Abs(Vector3.Dot(fwd, up.normalized)) > 0.999f) up = Mathf.Abs(fwd.z) < 0.9f ? Vector3.forward : Vector3.up;
+                    go.transform.localRotation = Quaternion.LookRotation(fwd, up);
+                }
+                if (t.detach)
+                {
+                    // the stage's own slice of the body, placed exactly where it was, riding on this transform
+                    var sg = new GameObject("StageBody") { layer = layer };
+                    sg.transform.SetParent(geo.transform, false);
+                    var ts = t;
+                    Mesh sm = CachedMesh("stage|" + t.name + "|" + K(t.detachFrom) + "|" + s.key,
+                        () => BuildLatheRanges(s, new List<Vector2> { new Vector2(ts.detachFrom, ts.detachTo) }));
+                    sg.AddComponent<MeshFilter>().sharedMesh = sm;
+                    sg.AddComponent<MeshRenderer>().sharedMaterial = BodyMaterial(s);
+                    sg.transform.SetParent(go.transform, true);
+                }
+                made.Add(new KeyValuePair<TransformSpec, Transform>(t, go.transform));
+            }
+            // nest transforms under their parent (keeping where they are), so a dropped stage takes its nozzles along
+            foreach (var kv in made)
+            {
+                if (string.IsNullOrEmpty(kv.Key.parent)) continue;
+                Transform p = null;
+                foreach (var o in made) if (o.Key.name == kv.Key.parent && o.Value != kv.Value) { p = o.Value; break; }
+                if (p != null) kv.Value.SetParent(p, true);
+                else Debug.LogWarning("[BDNukes]: TRANSFORM " + kv.Key.name + " names a missing parent " + kv.Key.parent);
+            }
+            for (int i = 0; i < s.fins.Count; i++)
+            {
+                if (string.IsNullOrEmpty(s.fins[i].parent)) continue;
+                Transform p = null;
+                foreach (var o in made) if (o.Key.name == s.fins[i].parent) { p = o.Value; break; }
+                if (p != null) finObjects[i].transform.SetParent(p, true);
             }
 
             builtKey = s.key;
@@ -433,6 +500,40 @@ namespace BDNukes
             AddCap(verts, norms, uvs, tris, profile[0], half, segs, s.length, true);
             AddCap(verts, norms, uvs, tris, profile[rings - 1], half, segs, s.length, false);
 
+            return FinishMesh("ProceduralBody", verts, norms, uvs, tris);
+        }
+
+        /// <summary>The parts of [x0, x1] not covered by any of the cut ranges.</summary>
+        static List<Vector2> Complement(List<Vector2> cuts, float x0, float x1)
+        {
+            cuts.Sort((a, b) => a.x.CompareTo(b.x));
+            var keep = new List<Vector2>();
+            float at = x0;
+            foreach (var c in cuts)
+            {
+                if (c.x > at + 1e-4f) keep.Add(new Vector2(at, Mathf.Min(c.x, x1)));
+                at = Mathf.Max(at, c.y);
+            }
+            if (at < x1 - 1e-4f) keep.Add(new Vector2(at, x1));
+            return keep;
+        }
+
+        /// <summary>A lathe of only the given [from, to] slices of the profile, each capped where it's cut.</summary>
+        static Mesh BuildLatheRanges(Spec s, List<Vector2> ranges)
+        {
+            var verts = new List<Vector3>(); var norms = new List<Vector3>(); var uvs = new List<Vector2>(); var tris = new List<int>();
+            foreach (var r in ranges)
+            {
+                var pts = new List<Vector2> { new Vector2(r.x, RadiusAt(s.profile, r.x)) };
+                foreach (var p in s.profile) if (p.x > r.x + 1e-4f && p.x < r.y - 1e-4f) pts.Add(p);
+                pts.Add(new Vector2(r.y, RadiusAt(s.profile, r.y)));
+                var sub = new Spec { length = s.length, segments = s.segments, profile = pts.ToArray() };
+                var m = BuildLathe(sub);
+                int baseIndex = verts.Count;
+                verts.AddRange(m.vertices); norms.AddRange(m.normals); uvs.AddRange(m.uv);
+                foreach (int i in m.triangles) tris.Add(baseIndex + i);
+                UnityEngine.Object.DestroyImmediate(m);
+            }
             return FinishMesh("ProceduralBody", verts, norms, uvs, tris);
         }
 

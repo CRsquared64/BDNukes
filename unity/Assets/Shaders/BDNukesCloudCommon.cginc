@@ -234,6 +234,9 @@ struct Sample
     float cond;      // fraction of the density that is condensation (white vapour)
     float groundHeat; // ground fire temperature at this point (0 = none)
     float billow;    // the cap's billow noise here: high on the tops of the lumps, low in the folds between them
+    float dust;      // fraction of the density that is ground dust (skirt, surge)
+    float dustUp;    // height through the dust layer 0 (ground) .. 1 (its top)
+    float dustLump;  // the dust's billow noise: high on the lump tops
 };
 
 // lobeMode: 0 = sample the lobe noise, 1 = most inflated (a cheap bound), 2 = average (cheap occluder)
@@ -305,6 +308,7 @@ Sample Cloud(float3 p, bool detail)
 {
     Sample s;
     s.density = 0.0; s.albedo = _CapAlbedo.rgb; s.cap = 0.0; s.core = 1.0; s.fireN = 0.5; s.hf = 0.0;
+    s.dust = 0.0; s.dustUp = 1.0; s.dustLump = 0.5;
     s.skip = 0.0; s.capY = 0.0; s.simHeat = 0.0; s.cond = 0.0; s.groundHeat = 0.0; s.billow = 0.6;
     float ns = _Density.w;
     float per = _Anim.w;
@@ -466,6 +470,8 @@ Sample Cloud(float3 p, bool detail)
         float top = _Skirt.x * lerp(0.85, 0.3, rr) * lerp(0.6, 1.3, nb);
         float sd = max(rr - 1.0, (sp.y - top) / max(_Skirt.x, 1.0)) + (0.5 - n) * 1.6;
         dustDen = saturate(-sd / 0.3) * _Skirt.y * lerp(0.6, 1.0, nb);
+        s.dustUp = saturate(sp.y / max(top, 1.0));
+        s.dustLump = n;
     }
     if (_Surge.z > 0.001)
     {
@@ -475,7 +481,13 @@ Sample Cloud(float3 p, bool detail)
         float3 vel = float3(gdir.x, 0.05, gdir.y) * _Skirt.w * 2.0;
         float n = smoothstep(0.35, 0.8, FlowNoise(gp, vel, ns * 2.0, per * 0.8, float3(0.8, 0.4, 0.1), 0));
         float tor = length(float2((gr - _Surge.x) / max(_Surge.w, 1.0), gp.y / max(_Surge.y, 1.0))) - 1.0 + (0.5 - n) * 1.2;
-        dustDen = max(dustDen, saturate(-tor / 0.2) * _Surge.z);
+        float surgeDen = saturate(-tor / 0.2) * _Surge.z;
+        if (surgeDen > dustDen)
+        {
+            s.dustUp = saturate(gp.y / max(_Surge.y, 1.0));
+            s.dustLump = n;
+        }
+        dustDen = max(dustDen, surgeDen);
     }
     dustDen = max(dustDen, footDust);
     // ground fire: the scorched ground under the fireball burns for the first seconds, flame tongues licking
@@ -590,8 +602,12 @@ Sample Cloud(float3 p, bool detail)
                 float vn = FlowNoise(vq, float3(vq.x, 0.0, vq.z) * 0.02, ns * 0.9, per * 1.6, float3(0.33, 0.66, 0.11), 0);
                 // torn into sheets and patches, with blue sky through the gaps, fraying to wisps at the rim
                 float tear = smoothstep(0.35, 0.7, 0.6 * vn + 0.4 * wisp);
-                float rim = 1.0 - smoothstep(0.45 + 0.35 * vn, 1.05, vr);
-                condDen = max(condDen, exp(-vy * vy * 2.5) * rim * tear * _Velum.z);
+                float rim = 1.0 - smoothstep(0.25 + 0.35 * vn, 1.05, vr);
+                // thin toward the rim so the lens has no hard outline against the sky
+                float thin = pow(max(1.0 - vr * vr, 0.0), 0.6);
+                // a thin veil, not a solid lens: lower density with a softer top and bottom so it never saturates
+                // into an opaque white slab with a hard outline
+                condDen = max(condDen, exp(-vy * vy * 1.6) * rim * thin * tear * 0.55 * _Velum.z);
             }
         }
     }
@@ -605,6 +621,7 @@ Sample Cloud(float3 p, bool detail)
         s.albedo = (capDen * _CapAlbedo.rgb + stemDen * _StemAlbedo.rgb + dustDen * _DustAlbedo.rgb + condDen * _CondAlbedo.rgb) * inv;
         s.cap = capDen * inv;
         s.cond = condDen * inv;
+        s.dust = dustDen * inv;
     }
     return s;
 }
@@ -633,7 +650,43 @@ float CloudCheap(float3 p)
             cap = lerp(cap, r * r * _Sim.w, _Sim.y * SimEdge(su));
         }
     }
-    return max(cap, stem);
+    float occ = max(cap, stem);
+
+    // dust skirt: the same lumpy mound as CloudSample, with the billows replaced by their mean
+    if (_Skirt.y > 0.001)
+    {
+        float3 sp = Stretch(p - _SkirtCenter.xyz, _WindFlow.w);
+        float rr = length(sp.xz) / max(_SkirtCenter.w, 1.0);
+        if (rr < 1.5 && sp.y < _Skirt.x * 2.0)
+        {
+            float top = _Skirt.x * lerp(0.85, 0.3, rr);
+            float sd = max(rr - 1.0, (sp.y - top) / max(_Skirt.x, 1.0));
+            occ = max(occ, saturate(-sd / 0.3 + 0.1) * _Skirt.y * 0.8);
+        }
+    }
+    // base surge: the torus rolling out along the ground
+    if (_Surge.z > 0.001)
+    {
+        float3 gp = Stretch(p - float3(_SkirtCenter.x, _GroundY.x, _SkirtCenter.z), _WindFlow.w * 0.5);
+        float gr = length(gp.xz);
+        float tor = length(float2((gr - _Surge.x) / max(_Surge.w, 1.0), gp.y / max(_Surge.y, 1.0))) - 1.0;
+        occ = max(occ, saturate(-tor / 0.2 + 0.1) * _Surge.z * 0.8);
+    }
+    // velum: the drooping lens, with its torn sheets averaged out (tear ~0.5) and the same rim thinning
+    if (_Velum.z > 0.001)
+    {
+        float3 vq = p - _CapCenter.xyz - float3(0.0, _Velum.w, 0.0);
+        float vr = length(vq.xz) / max(_Velum.x, 1.0);
+        if (vr < 1.05)
+        {
+            float lens = max(1.0 - vr * vr, 0.0);
+            float droop = 0.22 * _Velum.x * vr * vr;
+            float vy = (vq.y + droop) / (max(_Velum.y, 1.0) * (lens + 0.04));
+            float rim = 1.0 - smoothstep(0.45, 1.05, vr);
+            occ = max(occ, exp(-vy * vy * 1.6) * rim * pow(lens, 0.6) * 0.28 * _Velum.z);
+        }
+    }
+    return occ;
 }
 
 // ------------------------------------------------------------------------------------------------

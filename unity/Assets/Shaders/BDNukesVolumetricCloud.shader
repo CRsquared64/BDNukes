@@ -195,10 +195,19 @@ Shader "BDNukes/VolumetricCloud"
                         float ao = lerp(1.0, lerp(0.48, 1.12, fold), sm.cap);
                         amb *= ao;
                         direct *= lerp(1.0, lerp(0.72, 1.06, fold), sm.cap);
+                        // ground dust: the bottom of the layer sees little sky (it's under the rest of the dust) and the
+                        // folds between its rolling lumps are shaded, so the skirt and surge read as heaped, churning
+                        // dust instead of an evenly lit sheet
+                        if (sm.dust > 0.01)
+                        {
+                            float lump = smoothstep(0.2, 0.9, sm.dustLump);
+                            amb *= lerp(1.0, lerp(0.35, 1.0, sm.dustUp) * lerp(0.6, 1.1, lump), sm.dust);
+                            direct *= lerp(1.0, lerp(0.45, 1.0, sm.dustUp) * lerp(0.55, 1.05, lump), sm.dust);
+                        }
 
                         // soot on the burning shell (where the flicker noise is low), fresh debris colour elsewhere
                         float fireMask = smoothstep(0.3, 0.8, sm.fireN);
-                        float3 alb = sm.albedo;
+                        float3 alb = sm.albedo * lerp(1.0, 0.82, sm.dust);
                         // the lump tops are fresher, paler cloud; the folds hold darker dust
                         alb *= lerp(1.0, lerp(0.82, 1.08, fold), sm.cap);
                         alb = lerp(alb, float3(0.07, 0.06, 0.055), _Fire.w * sm.cap * saturate(0.4 + sm.core) * (1.0 - 0.7 * fireMask));
@@ -207,7 +216,18 @@ Shader "BDNukes/VolumetricCloud"
                         // the fireball lights its own smoke, the stem and the skirt
                         float3 fv = p - _CapCenter.xyz;
                         float fd2 = dot(fv, fv) / max(_Glow.a * _Glow.a, 1.0);
-                        lit += alb * _Glow.rgb / (1.0 + 3.0 * fd2);
+                        // shadowed by whatever cloud lies between the sample and the fireball (two cheap steps), and
+                        // brighter on the side facing it, so the surge and skirt read as lumpy forms, not lit discs
+                        float glowFall = 1.0 / (1.0 + 3.0 * fd2);
+                        if (glowFall > 0.02 && sm.cap < 0.5)
+                        {
+                            float fl = sqrt(dot(fv, fv));
+                            float3 fdir = -fv / max(fl, 1.0);
+                            float gl = min(fl, 0.6 * cs) * 0.5;
+                            float godd = (CloudCheap(p + fdir * (gl * 0.5)) + CloudCheap(p + fdir * (gl * 1.5))) * gl;
+                            glowFall *= exp(-sigmaK * godd) * lerp(0.35, 1.0, saturate(0.5 + 0.5 * fdir.y));
+                        }
+                        lit += alb * _Glow.rgb * glowFall;
                         // the vapour above catches the fire's light from far further: the glowing underside of the veil
                         lit += alb * _Glow.rgb * sm.cond * 0.7 / (1.0 + 0.35 * fd2);
 
