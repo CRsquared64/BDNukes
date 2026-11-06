@@ -44,6 +44,9 @@ namespace BDNukes
         internal static void BeforeCutoff(MissileLauncher ml)
         {
             if (!Planned(ml, out var plan)) return;
+            // the cut-off and BDArmory's terminal guidance both read TargetPosition: keep it on the planned point
+            ml.TargetAcquired = true;
+            ml.TargetPosition = plan.target.World;
             var state = ml.MissileState;
             if (state != MissileBase.MissileStates.Boost && state != MissileBase.MissileStates.Cruise) return;
             if (CutoffDone(ml)) { ml.Throttle = 0f; return; }

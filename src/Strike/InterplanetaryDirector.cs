@@ -16,6 +16,19 @@ namespace BDNukes
         public double burstUT;               // when the Kepler arc reaches the burst height over the aim point
         public string state = "flying";      // flying, done, lost
         public double dieAt = -1d;           // UT to remove the RV vessel after a loaded detonation
+        // the planned arc's elements round the target body: inc, ecc, sma, LAN, argPe, mEp, epoch (null: none)
+        public double[] plan;
+
+        public Orbit PlanOrbit(CelestialBody body)
+        {
+            if (plan == null || plan.Length != 7 || body == null) return null;
+            return new Orbit(plan[0], plan[1], plan[2], plan[3], plan[4], plan[5], plan[6], body);
+        }
+
+        public void SetPlan(Orbit o)
+        {
+            plan = o == null ? null : new[] { o.inclination, o.eccentricity, o.semiMajorAxis, o.LAN, o.argumentOfPeriapsis, o.meanAnomalyAtEpoch, o.epoch };
+        }
 
         static string F(double v) => v.ToString("R", CultureInfo.InvariantCulture);
 
@@ -27,6 +40,7 @@ namespace BDNukes
             n.AddValue("burstUT", F(burstUT));
             n.AddValue("state", state);
             n.AddValue("dieAt", F(dieAt));
+            if (plan != null) n.AddValue("plan", string.Join(",", Array.ConvertAll(plan, F)));
             return n;
         }
 
@@ -39,6 +53,16 @@ namespace BDNukes
             n.TryGetValue("burstUT", ref w.burstUT);
             w.state = n.GetValue("state") ?? "flying";
             n.TryGetValue("dieAt", ref w.dieAt);
+            string ps = n.GetValue("plan");
+            if (!string.IsNullOrEmpty(ps))
+            {
+                string[] parts = ps.Split(',');
+                var el = new double[parts.Length];
+                bool ok = parts.Length == 7;
+                for (int i = 0; ok && i < parts.Length; i++)
+                    ok = double.TryParse(parts[i].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out el[i]);
+                if (ok) w.plan = el;
+            }
             return w;
         }
     }
@@ -485,6 +509,7 @@ namespace BDNukes
                     {
                         var o = new Orbit();
                         o.UpdateFromStateVectors(ri.xzy, (v + dv).xzy, tgt, now);
+                        w.SetPlan(o);
                         w.id = SpawnRV(f, ap, o, i);
                         spawned++;
                     }
@@ -544,6 +569,8 @@ namespace BDNukes
                     }
                 }
 
+                if (rv != null) KeepOnPlan(w, rv, tgt, now);
+
                 if (rv != null && rv.loaded && !rv.packed && HighLogic.LoadedSceneIsFlight)
                 {
                     double ground = Ground(tgt, rv.latitude, rv.longitude);
@@ -573,6 +600,27 @@ namespace BDNukes
                 KillVessel(w.id);
             }
             if (!any) f.state = "Done";
+        }
+
+        /// <summary>
+        /// Puts an RV back on its planned arc if it has drifted off it (unpacking, Krakensbane, collisions with the
+        /// other RVs). Only well before the burst and well above the air, so drag and the terminal fall are left alone.
+        /// </summary>
+        static void KeepOnPlan(InterplanetaryWarhead w, Vessel rv, CelestialBody tgt, double now)
+        {
+            if (w.plan == null || rv == null || rv.orbit == null || tgt == null) return;
+            if (now > w.burstUT - 45d) return;
+            if (rv.mainBody != tgt || rv.altitude < tgt.atmosphereDepth + 20000d) return;
+            Orbit plan;
+            try { plan = w.PlanOrbit(tgt); }
+            catch (Exception e) { Debug.LogWarning("[BDNukes]: Starlance: bad planned orbit: " + e.Message); w.plan = null; return; }
+            if (plan == null) return;
+            Vector3d rp = plan.getRelativePositionAtUT(now), vp = plan.getOrbitalVelocityAtUT(now);
+            Vector3d r = rv.orbit.getRelativePositionAtUT(now), v = rv.orbit.getOrbitalVelocityAtUT(now);
+            if ((r - rp).magnitude <= 2000d && (v - vp).magnitude <= 5d) return;
+            Debug.Log(string.Format(CultureInfo.InvariantCulture, "[BDNukes]: Starlance: {0} was {1:0} m / {2:0.0} m/s off its arc; put back on it.",
+                rv.vesselName, (r - rp).magnitude, (v - vp).magnitude));
+            SetOrbit(rv.id, tgt, rp, vp, now, true);
         }
 
         bool DetonateLoaded(InterplanetaryFlight f, InterplanetaryWarhead w, Vessel rv)

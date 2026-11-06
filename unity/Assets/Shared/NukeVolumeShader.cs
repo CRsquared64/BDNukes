@@ -96,7 +96,7 @@ namespace BDNukes
             }
             if (v.skirtDensity > 0.001f || v.surgeDensity > 0.001f)
             {
-                float r = Mathf.Max(v.skirtR * 1.4f, v.surgeR + v.surgeWidth * 1.5f);
+                float r = Mathf.Max(v.skirtR * 1.7f, v.surgeR + v.surgeWidth * 1.6f);
                 float h = Mathf.Max(v.skirtH * 1.7f, v.surgeH * 1.5f);
                 min = Vector3.Min(min, v.skirtCenter - new Vector3(r, 0f, r));
                 max = Vector3.Max(max, v.skirtCenter + new Vector3(r, h, r));
@@ -161,9 +161,11 @@ namespace BDNukes
             max = Vector3.Max(max, capFar + new Vector3(capHalfW, capHalfH, capHalfW) * 0.5f);
             if (v.skirtDensity > 0.001f || v.surgeDensity > 0.001f)
             {
+                // the same reach as the skirt's own box, so the box never cuts the sheet's rim off square
+                float dr = Mathf.Max(v.skirtR * 1.7f, v.surgeR + v.surgeWidth * 1.6f);
                 Vector3 dustFar = v.skirtCenter + down * (Mathf.Max(v.skirtR, v.surgeR) * v.dustStretch);
-                min = Vector3.Min(min, dustFar - new Vector3(v.skirtR, 0f, v.skirtR));
-                max = Vector3.Max(max, dustFar + new Vector3(v.skirtR, v.skirtH * 1.7f, v.skirtR));
+                min = Vector3.Min(min, dustFar - new Vector3(dr, 0f, dr));
+                max = Vector3.Max(max, dustFar + new Vector3(dr, v.skirtH * 1.7f, dr));
             }
             if (v.stemDensity > 0.001f)
             {
@@ -365,7 +367,7 @@ namespace BDNukes
             v.skirtH = R * (0.6f + 1.0f * (1f - Mathf.Exp(-tt / 8f)));
             {
                 float growK = 1f - Mathf.Exp(-tt / 10f);
-                v.skirtR = Mathf.Lerp(v.skirtR, (0.4f + 1.2f * growK) * capRadius, column);
+                v.skirtR = Mathf.Lerp(v.skirtR, (0.3f + 0.6f * growK) * capRadius, column);
                 v.skirtH = Mathf.Lerp(v.skirtH, (0.08f + 0.1f * growK) * capRadius, column);
             }
             v.skirtDensity = Mathf.Lerp(0.75f, 0.16f, column) * SS(0.2f, 1.2f, t);

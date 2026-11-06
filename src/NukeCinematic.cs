@@ -1043,7 +1043,7 @@ namespace BDNukes
                 // a sub-kiloton column kicks up a dust skirt far wider than its tiny fireball: a low, flat sheet
                 // spreading out along the ground around the column's foot
                 float growK = 1f - Mathf.Exp(-tt / 10f);
-                vs.skirtR = Mathf.Lerp(vs.skirtR, (0.4f + 1.2f * growK) * capRadius, column);
+                vs.skirtR = Mathf.Lerp(vs.skirtR, (0.3f + 0.6f * growK) * capRadius, column);
                 vs.skirtH = Mathf.Lerp(vs.skirtH, (0.08f + 0.1f * growK) * capRadius, column);
                 vs.skirtDensity = Mathf.Lerp(0.75f, 0.16f, column) * SS(tg + 0.2f, tg + 1.2f, t) * FadeOut * groundFactor;
                 vs.skirtThin = 0.35f;

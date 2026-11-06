@@ -86,6 +86,9 @@ namespace BDNukes
                 wm.designatedGPSInfo = new GPSTargetInfo(coords, t.name, null);
                 ml.Team = wm.Team;
             }
+            // a GPS point picked earlier in the missile's own menu (gpsSet) overrides targetGPSCoords in flight
+            ml.gpsSet = false;
+            ml.assignedGPSCoords = coords;
             ml.targetGPSCoords = coords;
             ml.TargetAcquired = true;
             ml.TargetPosition = t.World;

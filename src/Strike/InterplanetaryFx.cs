@@ -88,6 +88,7 @@ namespace BDNukes
         GameObject go;
         Light light;
         LineRenderer streak;
+        ParticleSystem glow;
         float flashStart = -100f, flashLen = 2.2f;
         float streakStart = -100f;
         public float charge;   // 0..1
@@ -117,6 +118,45 @@ namespace BDNukes
             streak.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             streak.receiveShadows = false;
             streak.enabled = false;
+
+            // a camera-facing glow: in vacuum the light has nothing to fall on, so this is what you actually see
+            var gg = new GameObject("Glow");
+            gg.transform.SetParent(go.transform, false);
+            glow = gg.AddComponent<ParticleSystem>();
+            glow.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = glow.main;
+            main.loop = false;
+            main.playOnAwake = false;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.startSpeed = 0f;
+            main.maxParticles = 4;
+            var em = glow.emission;
+            em.enabled = false;
+            var shape = glow.shape;
+            shape.enabled = false;
+            var r = glow.GetComponent<ParticleSystemRenderer>();
+            r.sharedMaterial = NukeAssets.Glow;
+            r.renderMode = ParticleSystemRenderMode.Billboard;
+            r.alignment = ParticleSystemRenderSpace.View;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            r.maxParticleSize = 4f;
+            glow.Play();
+        }
+
+        void EmitGlow(Vector3 pos, float size, Color c)
+        {
+            if (glow == null || NukeAssets.Glow == null) return;
+            glow.Clear();
+            if (size <= 0.01f || c.a <= 0.003f) return;
+            glow.Emit(new ParticleSystem.EmitParams
+            {
+                position = pos,
+                startSize = size,
+                startLifetime = 1f,
+                startColor = c,
+                applyShapeToPosition = false,
+            }, 1);
         }
 
         public void Flash(bool withStreak)
@@ -132,6 +172,7 @@ namespace BDNukes
             bool streaking = Time.time - streakStart < 3f;
             if (charge <= 0.001f && !flashing && !streaking)
             {
+                if (glow != null) glow.Clear();
                 if (go != null && go.activeSelf) go.SetActive(false);
                 return;
             }
@@ -143,6 +184,14 @@ namespace BDNukes
             float pulse = 0.85f + 0.15f * Mathf.Sin(Time.time * (6f + 30f * charge));
             light.intensity = Mathf.Max(charge * charge * 4f * pulse, k * k * 8f);
             light.range = Mathf.Max(40f + 260f * charge, k * 6000f);
+
+            // charging: a pulsing blue-white ball growing round the bus; the jump: a blinding white bloom
+            float cg = charge * pulse;
+            float size = Mathf.Max(6f + 40f * cg * cg, k * k * 400f);
+            Color gc = k > cg
+                ? Color.Lerp(DriveColor, Color.white, k) * new Color(1f, 1f, 1f, Mathf.Clamp01(k * 1.2f))
+                : new Color(DriveColor.r, DriveColor.g, DriveColor.b, Mathf.Clamp01(0.25f + 0.75f * cg));
+            EmitGlow(pos, charge > 0.001f || flashing ? size : 0f, gc);
 
             if (streaking && velDir.sqrMagnitude > 0.5f)
             {

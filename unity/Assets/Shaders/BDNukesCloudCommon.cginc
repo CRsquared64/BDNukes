@@ -469,7 +469,8 @@ Sample Cloud(float3 p, bool detail)
         // a low, lumpy heap: tallest around the stem's foot, sloping out to the rim
         float top = _Skirt.x * lerp(0.85, 0.3, rr) * lerp(0.6, 1.3, nb);
         float sd = max(rr - 1.0, (sp.y - top) / max(_Skirt.x, 1.0)) + (0.5 - n) * 1.6;
-        dustDen = saturate(-sd / 0.3) * _Skirt.y * lerp(0.6, 1.0, nb);
+        // fade out before the 1.5 radius cut-off, so the rim is soft and round, never a hard edge
+        dustDen = saturate(-sd / 0.3) * _Skirt.y * lerp(0.6, 1.0, nb) * smoothstep(1.5, 1.15, rr);
         s.dustUp = saturate(sp.y / max(top, 1.0));
         s.dustLump = n;
     }
