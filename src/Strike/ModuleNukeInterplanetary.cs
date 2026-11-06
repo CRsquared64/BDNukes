@@ -122,6 +122,11 @@ namespace BDNukes
                     new Stage { thrust = stage2Thrust, ispVac = stage2IspVac, ispSL = stage2IspSL, burnTime = stage2BurnTime, dry = stage2DryMass, transform = stage2Transform, exhaust = stage2Exhaust },
                     new Stage { thrust = stage3Thrust, ispVac = stage3IspVac, ispSL = stage3IspSL, burnTime = stage3BurnTime, dry = stage3DryMass, transform = stage3Transform, exhaust = stage3Exhaust },
                 };
+                // on a big world (real scale) the stages need SpeedScale times the speed to make orbit: thrust and Isp
+                // both up by it, so the propellant load (thrust / Isp x burn time) stays the same
+                float kv = (float)NukeScale.SpeedScale;
+                if (kv > 1.001f)
+                    foreach (var st in all) { st.thrust *= kv; st.ispVac *= kv; st.ispSL *= kv; }
                 int n = Mathf.Clamp(stageCount, 1, 3);
                 stages = new Stage[n];
                 Array.Copy(all, stages, n);

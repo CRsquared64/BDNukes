@@ -60,6 +60,22 @@ namespace BDNukes
         /// <summary>Home orbit over Kerbin's (the size of the system), or 1 when the scaling is off.</summary>
         public static double SystemSize => Active ? Math.Max(1d, system) : 1d;
 
+        const double KerbinOrbitSpeed = 2425.6d;   // m/s: sqrt(mu / R), the speed for a low circular orbit
+
+        /// <summary>
+        /// Home world's low-orbit speed over Kerbin's, or 1 when the scaling is off: what a missile's speed has to grow
+        /// by to throw its warhead the same fraction of the way round the planet (~3.3 on real-scale Earth).
+        /// </summary>
+        public static double SpeedScale
+        {
+            get
+            {
+                if (!Active || home == null) return 1d;
+                double v = Math.Sqrt(home.gravParameter / home.Radius) / KerbinOrbitSpeed;
+                return double.IsNaN(v) || v < 1d ? 1d : v;
+            }
+        }
+
         /// <summary>The radiation front's (and BDNukes' light's) speed, m/s.</summary>
         public static double WaveSpeed => Math.Max(1e3d, NukeSettings.Current.waveSpeed * 1000d) * SystemSize;
 
@@ -104,10 +120,17 @@ namespace BDNukes
         }
     }
 
-    /// <summary>On a big world, BDArmory's launch range for BDNukes ballistic missiles grows with the planet.</summary>
+    /// <summary>
+    /// On a big world, BDNukes ballistic missiles are scaled to it: their motors give SpeedScale times the speed (thrust
+    /// and burn time each up by its square root, the fuel unchanged), so a missile reaches as far round the planet as
+    /// it does round Kerbin, and BDArmory's launch range grows with the planet. On Kerbin nothing changes.
+    /// </summary>
     [HarmonyPatch(typeof(MissileLauncher), "OnStart")]
     internal static class Patch_MissileLauncher_ScaleRange
     {
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MissileLauncher, object> done =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<MissileLauncher, object>();
+
         static void Postfix(MissileLauncher __instance)
         {
             try
@@ -116,13 +139,30 @@ namespace BDNukes
                 if (__instance.GuidanceMode != MissileBase.GuidanceModes.AGMBallistic) return;
                 if (__instance.thrust <= 0f && __instance.cruiseThrust <= 0f) return;
                 if (__instance.part.FindModuleImplementing<ModuleNukeCloudProfile>() == null) return;
+                if (done.TryGetValue(__instance, out _)) return;
+                done.Add(__instance, null);
                 double k = NukeScale.Planet;
                 if (k <= 1d) return;
-                __instance.maxStaticLaunchRange = (float)(__instance.maxStaticLaunchRange * k);
+
+                // the launch range is saved with the craft: scale the part's own value, so a reload doesn't compound it
+                var prefab = __instance.part.partInfo != null && __instance.part.partInfo.partPrefab != null
+                    ? __instance.part.partInfo.partPrefab.FindModuleImplementing<MissileLauncher>() : null;
+                float baseRange = prefab != null ? prefab.maxStaticLaunchRange : __instance.maxStaticLaunchRange;
+                __instance.maxStaticLaunchRange = Mathf.Max(__instance.maxStaticLaunchRange, (float)(baseRange * k));
+
+                float s = (float)Math.Sqrt(NukeScale.SpeedScale);
+                if (s > 1.001f)
+                {
+                    __instance.thrust *= s;
+                    __instance.cruiseThrust *= s;
+                    __instance.boostTime *= s;
+                    __instance.cruiseTime *= s;
+                    Debug.Log($"[BDNukes]: {__instance.shortName}: motor scaled for {FlightGlobals.GetHomeBody()?.bodyName}: thrust and burn time x{s:0.00} ({s * s:0.00}x the speed).");
+                }
             }
             catch (Exception e)
             {
-                Debug.LogWarning("[BDNukes]: Couldn't scale a missile's launch range: " + e.Message);
+                Debug.LogWarning("[BDNukes]: Couldn't scale a missile for this planet: " + e.Message);
             }
         }
     }

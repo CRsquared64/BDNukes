@@ -4,6 +4,7 @@
 
 ### Added
 - **Bigger-planet support** (Real Solar System, Sol, rescaled systems): on a home world at least 1.5x Kerbin's radius (`planetScaleThreshold`, off with `planetScaleCompat = false`), the radiation front and the light of distant bursts scale with the size of the system, weather heights (tropopause, humid air, haze) follow the real air instead of the atmosphere's height, and BDArmory's launch range for BDNukes ballistic missiles grows with the planet. On Kerbin-sized systems nothing changes.
+- On a bigger planet, BDNukes ballistic missiles get motors to match: thrust and burn time are scaled so they reach as far round the planet as they do round Kerbin (intercontinental on real-scale Earth), and the Starlance's stages make orbit. The launch range no longer grows again each time a craft is reloaded.
 - Strike planner: KSCSwitcher launch sites on the home world, and about 90 real cities as targets on Earth. Stock planet names in settings (Kerbin, Jool) stand in for the home world and Jupiter.
 
 ### Fixed
