@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0 - the ICBM update
+
+### Changed
+- **Ballistic missiles allow for drag when they cut the motor.** The cut-off used to stop the motor once the drag-free trajectory reached 5% past the target. At long range that left the warhead tens of km long: a Trident II fired 730 km came down about 25 km past the target. The missile's drag is now measured in flight (KSP's drag, which dwarfs BDArmory's own missile drag), and the cut-off flies the coast with it through the atmosphere a few times a second, cutting once the warhead would come down on the target. The cut is logged with the drag loss and the drag area. New `ModuleNukeCloudProfile` fields `ballisticDrag` and `ballisticDragScale`; `ballisticCutoffMargin` now defaults to 1.
+- **BDArmory-fired ICBMs fly the planner's guidance.** A BDNukes ballistic missile that BDArmory or the AI fires at a target more than 30 km away now flies the round-planet pitch program and steering assist, following BDArmory's target if it moves.
+- **Salvos share one cloud.** A burst that goes off inside a cloud still forming (a MIRV's warheads, or a salvo) gets its flash, fireball and shock but no cloud, firestorm, cloud-deck hole or sea waves of its own; the first burst's cloud stands for them all. Its crater, scorch, flattened trees, fallout footprint and damage are unchanged. An 8-warhead MIRV used to build eight volumetric clouds over each other. Settings `salvoMerge`, `salvoMergeWindow`, `salvoMergeRadius`.
+- **Less exhaust smoke from the ICBMs.** BDArmory's large exhaust piled up into a huge cloud round a slow, heavy missile leaving the pad. The Minuteman III, R-36M2 (both), SS-20, Pershing II, Trident II, Spartan and Nike Hercules now emit about a third of the smoke, in smaller, shorter-lived puffs. New `ModuleNukeCloudProfile` field `exhaustSmoke`.
+- Planner strikes log their flight every 4 s under power (height, speed, the pitch of the velocity, nose and aim, and the predicted range), so a shot that goes wrong can be read back from the log.
+
+### Fixed
+- **Heavy ICBMs went into space** instead of to the target. BDArmory steers a missile only within its maxAoA of the airflow and with a slowly ramping torque, which couldn't pitch a heavy missile over: it climbed straight up until it was too fast to turn. A steering assist now turns the nose onto the guidance aim at up to 6°/s, held within 15° of the airflow in dense air and freer as the air thins, and the pitch-over now goes by speed as well as height.
+- **Frame rate collapsed after a burst under EVE clouds** when EVE changed the shader on a cloud layer's material: the cloud-hole code asked it for its coverage map every frame, and each time Unity logged an error. Such a layer is now let go.
+
 ## 1.2.0
 
 ### Added

@@ -141,6 +141,14 @@ namespace BDNukes
             photoMode == PhotoMode.Slow ? NukeSettings.Current.photoModeSlowRate : 1f;
 
         public void Register(NukeCinematic c) { if (!active.Contains(c)) active.Add(c); }
+
+        /// <summary>The live burst whose young cloud a new one at pos goes off inside (a MIRV, a salvo), or null.</summary>
+        public NukeCinematic MergeLeader(CelestialBody body, Vector3 pos, float W)
+        {
+            for (int i = 0; i < active.Count; i++)
+                if (active[i] != null && active[i].CanLead(body, pos, W)) return active[i];
+            return null;
+        }
         public void Unregister(NukeCinematic c) { active.Remove(c); }
 
         /// <summary>

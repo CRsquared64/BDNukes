@@ -117,6 +117,9 @@ namespace BDNukes
         public bool burstLOD = true;               // fewer particles per detonation when many are active
         public float minLODScale = 0.25f;          // floor on the particle-count scale
         public float soundMergeWindow = 0.4f;      // s; no new crack/rumble if another started this recently
+        public bool salvoMerge = true;             // a burst inside a just-formed cloud (MIRV, salvo) gets no cloud of its own
+        public float salvoMergeWindow = 6f;        // s after the first burst that later ones still merge into its cloud
+        public float salvoMergeRadius = 1.2f;      // x the first cloud's cap radius: how far out bursts still merge
         public float maxScreenFlash = 0.9f;        // cap on the combined screen flash
 
         // wind, fallout and radiation
@@ -433,6 +436,9 @@ namespace BDNukes
             n.TryGetValue("burstLOD", ref burstLOD);
             n.TryGetValue("minLODScale", ref minLODScale);
             n.TryGetValue("soundMergeWindow", ref soundMergeWindow);
+            n.TryGetValue("salvoMerge", ref salvoMerge);
+            n.TryGetValue("salvoMergeWindow", ref salvoMergeWindow);
+            n.TryGetValue("salvoMergeRadius", ref salvoMergeRadius);
             n.TryGetValue("maxScreenFlash", ref maxScreenFlash);
 
             n.TryGetValue("windSpeed", ref windSpeed);
@@ -551,6 +557,8 @@ namespace BDNukes
             regimeBlend = Mathf.Clamp(regimeBlend, 0.02f, 2f);
             minLODScale = Mathf.Clamp(minLODScale, 0.05f, 1f);
             soundMergeWindow = Mathf.Max(0f, soundMergeWindow);
+            salvoMergeWindow = Mathf.Max(0f, salvoMergeWindow);
+            salvoMergeRadius = Mathf.Max(0f, salvoMergeRadius);
             maxScreenFlash = Mathf.Clamp01(maxScreenFlash);
             windSpeed = Mathf.Clamp(windSpeed, 0f, 60f);
             windShear = Mathf.Clamp(windShear, 0.5f, 5f);

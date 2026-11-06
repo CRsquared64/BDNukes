@@ -17,8 +17,10 @@ namespace BDNukes
     /// After BDArmory's ballistic guidance has run each frame, this predicts the drag-free impact point from the
     /// current state vector: a Kepler conic around the body (inertial velocity, the body's real gravitational
     /// parameter) cut at the target's radius, with the target carried round by the planet's rotation over the
-    /// time of flight. Once the predicted downrange angle reaches the target's (times ballisticCutoffMargin), the
-    /// motor is cut for good (Throttle 0, which BDArmory's boost/cruise routines also use to stop the exhaust and
+    /// time of flight. Once that drag-free range reaches the target, a second prediction flies the coast with the
+    /// missile's own drag (measured in flight as drag force over dynamic pressure; KSP's drag cubes, which dwarf
+    /// BDArmory's missile drag) through the atmosphere, a few times a second. Once the range with drag reaches the
+    /// target's (times ballisticCutoffMargin), the motor is cut for good (Throttle 0, which BDArmory's boost/cruise routines also use to stop the exhaust and
     /// the fuel burn). The missile then coasts and BDArmory's own guidance and fuzes take it from there.
     ///
     /// Only for MissileLaunchers that have thrust and a ModuleNukeCloudProfile with ballisticCutoff = true
@@ -69,6 +71,7 @@ namespace BDNukes
             Vector3 targetW = ml.TargetPosition;
             if (targetW == Vector3.zero) return;
 
+            MeasureDrag(v, prof);
             Vector3d r = v.CoMD - body.position;
             Vector3d vel = v.obt_velocity;
             Vector3d rt = (Vector3d)targetW - body.position;
@@ -88,15 +91,111 @@ namespace BDNukes
                 Vector3d tHoriz = rtAtImpact - rHat * Vector3d.Dot(rtAtImpact, rHat);
                 if (Vector3d.Dot(vHoriz, tHoriz) <= 0d) return;
                 targetAngle = Math.Acos(Math.Max(-1d, Math.Min(1d, Vector3d.Dot(rHat, rtAtImpact.normalized))));
-                if (sweep < targetAngle * Math.Max(0.5f, prof.ballisticCutoffMargin)) return;
-                rangeDeg = sweep * 180d / Math.PI;
+                double margin = Math.Max(0.5f, prof.ballisticCutoffMargin);
+                // drag only shortens the flight: while the drag-free range is short, so is the real one
+                if (sweep < targetAngle * margin) return;
+                bool withDrag = prof.ballisticDrag && body.atmosphere && prof.cutCdA > 0d;
+                if (withDrag)
+                {
+                    // the drag prediction is a few hundred steps: a few times a second, its offsets carried in between
+                    if (!prof.cutHaveDrag || Time.time >= prof.cutNextSim)
+                    {
+                        prof.cutNextSim = Time.time + 0.2f;
+                        if (CoastWithDrag(body, r, vel, v.totalMass, prof.cutCdA * Math.Max(0f, prof.ballisticDragScale), targetRadius,
+                                out double dragSweep, out double dragTof))
+                        {
+                            double targetAtDrag = Math.Acos(Math.Max(-1d, Math.Min(1d, Vector3d.Dot(rHat, RotateWithBody(body, rt, dragTof).normalized))));
+                            prof.cutDragLoss = sweep - dragSweep;
+                            prof.cutTargetShift = targetAtDrag - targetAngle;
+                            prof.cutHaveDrag = true;
+                        }
+                        else prof.cutHaveDrag = false;   // no impact within the steps allowed: not yet
+                    }
+                    if (!prof.cutHaveDrag) return;
+                    if (sweep - prof.cutDragLoss < (targetAngle + prof.cutTargetShift) * margin) return;
+                }
+                rangeDeg = (withDrag ? sweep - prof.cutDragLoss : sweep) * 180d / Math.PI;
+                if (withDrag) targetAngle += prof.cutTargetShift;
             }
 
             prof.ballisticCutoffDone = true;
             ml.Throttle = 0f;
             Debug.Log(o == Outcome.Impact
-                ? $"[BDNukes]: {ml.shortName}: motor cut, ballistic range {rangeDeg * Math.PI / 180d * targetRadius / 1000d:0.0} km for a target {targetAngle * targetRadius / 1000d:0.0} km downrange (flight time {tof:0} s)."
+                ? $"[BDNukes]: {ml.shortName}: motor cut, ballistic range {rangeDeg * Math.PI / 180d * targetRadius / 1000d:0.0} km for a target {targetAngle * targetRadius / 1000d:0.0} km downrange (flight time {tof:0} s"
+                  + (prof.ballisticDrag && body.atmosphere && prof.cutCdA > 0d
+                      ? $"; drag takes {prof.cutDragLoss * targetRadius / 1000d:0.0} km off the vacuum range, CdA {prof.cutCdA:0.000} m^2)."
+                      : ", no drag allowed for).")
                 : $"[BDNukes]: {ml.shortName}: motor cut, trajectory no longer comes back down to the target.");
+        }
+
+        /// <summary>
+        /// The missile's drag area (drag force over dynamic pressure, m^2: kN / kPa) from KSP's per-part drag, smoothed
+        /// over a second or two so it follows the booster dropping off. Only in air thick enough to read it.
+        /// </summary>
+        static void MeasureDrag(Vessel v, ModuleNukeCloudProfile prof)
+        {
+            double q = v.dynamicPressurekPa;
+            if (q < 0.3d) return;
+            double f = 0d;
+            for (int i = 0; i < v.parts.Count; i++) f += v.parts[i].dragScalar;
+            if (f <= 0d || double.IsNaN(f)) return;
+            double cda = f / q;
+            prof.cutCdA = prof.cutCdA <= 0d ? cda : prof.cutCdA + (cda - prof.cutCdA) * Math.Min(1d, TimeWarp.fixedDeltaTime / 1.5d);
+        }
+
+        /// <summary>
+        /// Flies the unpowered coast from (r, v) (body-centred, inertial) with gravity and drag (cdA m^2 on massT
+        /// tonnes, against the air turning with the body) until it comes down through rImpact. sweep is the angle
+        /// from r to the impact point (rad), tof the time to it (s). False if it does not come down within an hour.
+        /// </summary>
+        internal static bool CoastWithDrag(CelestialBody body, Vector3d r, Vector3d v, double massT, double cdA, double rImpact,
+            out double sweep, out double tof)
+        {
+            sweep = tof = 0d;
+            if (massT <= 0d) return false;
+            double mu = body.gravParameter, top = body.Radius + body.atmosphereDepth;
+            Vector3d r0 = r;
+            double t = 0d;
+            Vector3d a = Accel(body, r, v, mu, massT, cdA, top);
+            for (int i = 0; i < 40000 && t < 3600d; i++)
+            {
+                double rm = r.magnitude;
+                // coarse steps in vacuum, fine ones in the air where the drag changes fast
+                double dt = rm > top + 2000d ? 1d : 0.1d;
+                Vector3d rPrev = r;
+                // velocity Verlet (the drag for the new point taken at the old velocity)
+                r += v * dt + a * (0.5d * dt * dt);
+                Vector3d aNew = Accel(body, r, v, mu, massT, cdA, top);
+                v += (a + aNew) * (0.5d * dt);
+                a = aNew;
+                t += dt;
+                double rn = r.magnitude;
+                if (rn <= rImpact && Vector3d.Dot(r, v) < 0d)
+                {
+                    double f = (rPrev.magnitude - rImpact) / Math.Max(1e-6d, rPrev.magnitude - rn);
+                    Vector3d hit = rPrev + (r - rPrev) * f;
+                    tof = t - dt * (1d - f);
+                    sweep = Math.Acos(Math.Max(-1d, Math.Min(1d, Vector3d.Dot(r0.normalized, hit.normalized))));
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        static Vector3d Accel(CelestialBody body, Vector3d r, Vector3d v, double mu, double massT, double cdA, double top)
+        {
+            double rm = r.magnitude;
+            Vector3d a = r * (-mu / (rm * rm * rm));
+            if (rm >= top || cdA <= 0d) return a;
+            double alt = rm - body.Radius;
+            double p = FlightGlobals.getStaticPressure(alt, body);
+            if (p <= 0d) return a;
+            double rho = FlightGlobals.getAtmDensity(p, FlightGlobals.getExternalTemperature(alt, body), body);
+            Vector3d air = v - body.getRFrmVel(body.position + r);
+            double s = air.magnitude;
+            if (s < 1e-3d) return a;
+            // kN / t = m/s^2: 0.5 rho s^2 (Pa) / 1000 * cdA (m^2) / mass (t)
+            return a - air * (0.5d * rho * s * cdA / (1000d * massT));
         }
 
         /// <summary>

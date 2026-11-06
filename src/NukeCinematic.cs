@@ -79,6 +79,9 @@ namespace BDNukes
         double setupGroundAlt;
         float groundFactor; // 1 = surface burst, 0 = no ground interaction
         bool groundFx, stemFx, ringFx, sparksFx;
+        // one of a salvo (a MIRV's warheads, say): it went off inside a cloud that has only just formed, so it gets
+        // its flash, fireball and shock but no cloud of its own; the first burst's cloud stands for them all
+        bool merged;
 
         // --- regime weights: air (mushroom), high altitude (red fireball), vacuum (debris shell); they sum to 1 ---
         float airW, hiW, vacW;
@@ -176,6 +179,24 @@ namespace BDNukes
                 Destroy(go);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Whether a new burst of yield w at world position pos goes off inside this one's young cloud and should merge
+        /// into it: an air burst of its own (not merged itself, not restored) on the same body, gone off no more than
+        /// salvoMergeWindow seconds ago, with the new one under its cap and of no more than about twice the yield.
+        /// </summary>
+        internal bool CanLead(CelestialBody b, Vector3 pos, float w)
+        {
+            if (merged || restored || !airFx || underwater || b != body || expired) return false;
+            float age = (float)(NukeFXManager.FxTime - spawnTime - delay);
+            if (age > s.salvoMergeWindow || w > 2.5f * W) return false;
+            Vector3 here = body.GetWorldSurfacePosition(lat, lon, alt);
+            Vector3 up = (here - (Vector3)body.position).normalized;
+            Vector3 d = pos - here;
+            float vert = Mathf.Abs(Vector3.Dot(d, up));
+            float horiz = (d - up * Vector3.Dot(d, up)).magnitude;
+            return horiz < s.salvoMergeRadius * capRadius && vert < Mathf.Max(3f * R, 0.5f * capRadius);
         }
 
         public static void Spawn(Vector3 worldPos, float yield, float delay, NukeCloudProfile profile = null)
@@ -300,8 +321,11 @@ namespace BDNukes
             stemFx = airFx && hb < 6f * R;
             ringFx = airFx && s.condensationRings && densRatio > 0.2f && prof.lowYield < 0.01f;
             sparksFx = airFx && hb < 1.5f * R;
+            if (!restored && airFx && !underwater && s.salvoMerge && NukeFXManager.Existing != null)
+                merged = NukeFXManager.Existing.MergeLeader(body, pos, W) != null;
             SetupLightning();
             SetupEarlyFx();
+            if (merged) lightningFx = machFx = false;
 
             // high-altitude fireball: thin air lets it grow far bigger, and it floats up fast with no mushroom
             Rh = R * Mathf.Clamp(0.8f * Mathf.Pow(1.225f / Mathf.Max(rho, 1e-4f), 1f / 3f), 1f, 8f);
@@ -312,6 +336,8 @@ namespace BDNukes
             lifeVac = 25f;
             if (vacFx || hiFx) SetupField(pos);
             life = Mathf.Max(Mathf.Max(airFx ? lifeAir : 0f, vacFx ? lifeVac : 0f), Mathf.Max(hiFx ? Mathf.Max(lifeHi, auroraFootL != null ? lifeVac : 0f) : 0f, waterFx ? lifeWater : 0f));
+            // a merged burst lives as long as its fireball glows
+            if (merged) life = Mathf.Min(life, 3f * tauG + 8f);
             // a restored cloud that has already run its course (settings changed since, say) is dropped, not rebuilt
             // and destroyed again every persistence tick with a fresh fallout plume each time
             if (restored && !replay && NukeFXManager.FxTime - spawnTime - delay > life)
@@ -339,13 +365,13 @@ namespace BDNukes
             Build();
             if (!restored) PlanCrater();
             // the blast blows a hole in EVE's cloud decks within reach of the shock
-            if (airFx && body.atmosphere && !restored)
+            if (airFx && body.atmosphere && !restored && !merged)
                 // out to roughly the 1 psi ring, and always well past the cap so the shove shows around it
                 NukeCloudClearing.Blast(body, pos, alt, Mathf.Max(4f * Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale), 2.2f * capRadius),
                     c, 300f * yieldTimeScale);
             SpawnAftermath();
-            if (!restored) NukeWorldEffects.Detonation(body, lat, lon, alt + groundY, W, R, hb, overOcean, airFx && !underwater, falloutK, windHeading, wind, spawnTime, delay);
-            if (!restored)
+            if (!restored) NukeWorldEffects.Detonation(body, lat, lon, alt + groundY, W, R, hb, overOcean, airFx && !underwater, falloutK, windHeading, wind, spawnTime, delay, !merged);
+            if (!restored && !merged)
             {
                 try { NukeWaterWaves.Spawn(body, lat, lon, alt, W, R, c, spawnTime, delay); }
                 catch (System.Exception e) { Debug.LogWarning("[BDNukes]: Water waves failed: " + e.Message); }
@@ -362,10 +388,14 @@ namespace BDNukes
                     W = W, bulb = shapeBulb, windHeading = windHeading, windSeed = windSeed, profile = request, live = this,
                     hasGround = true, groundAlt = setupGroundAlt, overOcean = overOcean,
                 };
-                NukePersistence.RememberForReplay(rec);    // kept for "Replay last detonation", saved or not
-                if (s.persistentClouds) record = NukePersistence.Add(rec);
+                // a merged burst leaves no cloud to bring back or replay: the salvo's first burst stands for it
+                if (!merged)
+                {
+                    NukePersistence.RememberForReplay(rec);    // kept for "Replay last detonation", saved or not
+                    if (s.persistentClouds) record = NukePersistence.Add(rec);
+                }
             }
-            if (!restored || replay) NukeCinematicCamera.OnDetonation(this);
+            if ((!restored || replay) && !merged) NukeCinematicCamera.OnDetonation(this);
         }
 
         /// <summary>
@@ -383,7 +413,7 @@ namespace BDNukes
             rScorch = R * Mathf.Lerp(1.8f, 1.1f, Mathf.Clamp01(hb / (1.2f * R)));
             rOuter = Mathf.Max(3f * R, 0.45f * 650f * Mathf.Pow(W, 1f / 3f) * s.sizeScale);
             scorchFx = s.scorchMarks && !overOcean && hb < 1.2f * R;
-            firesFx = s.lingeringFires && !overOcean && airFx && body.atmosphereContainsOxygen && hb < 8f * R;
+            firesFx = s.lingeringFires && !overOcean && airFx && body.atmosphereContainsOxygen && hb < 8f * R && !merged;
             if (replay)
             {
                 // a replay leaves no mark: no scorch or fires, and only the fallout plume's visuals (no dose)
@@ -391,7 +421,7 @@ namespace BDNukes
                 if (!s.falloutCloud) falloutK = 0f;
             }
             groundEffects = scorchFx || firesFx;
-            debrisFx = (!restored || replay) && NukeDebrisTrails.Wanted(s, body, airFx, overOcean, hb, R);
+            debrisFx = (!restored || replay) && !merged && NukeDebrisTrails.Wanted(s, body, airFx, overOcean, hb, R);
         }
 
         /// <summary>
@@ -547,7 +577,10 @@ namespace BDNukes
             BuildLayers(seed);
             BuildLightning(seed);
             BuildEarlyFx(seed);
-            if (airFx && body.atmosphere && s.shockDistortion > 0f && NukeVolumetric.Available)
+            if (merged)
+                foreach (var l in new[] { capSmoke, capDetail, capUpper })
+                    if (l != null) l.SetVisible(false);
+            if (airFx && body.atmosphere && s.shockDistortion > 0f && NukeVolumetric.Available && !merged)
             {
                 shockMat = NukeVolumetric.MakeShockMaterial();
                 if (shockMat != null)
@@ -557,7 +590,7 @@ namespace BDNukes
                     shockDome.transform.SetParent(transform, false);
                 }
             }
-            if (airFx && !underwater && s.volumetricClouds && NukeVolumetric.Available)
+            if (airFx && !underwater && s.volumetricClouds && NukeVolumetric.Available && !merged)
             {
                 volume = new NukeVolumetric(transform);
                 foreach (var l in new[] { capSmoke, capDetail, capUpper, fireCore, capGlow, skirt, stem, surge, collars, wilson, machRing })
@@ -638,18 +671,18 @@ namespace BDNukes
                 if (stacked) capUpper = Make(cap, "CapUpper", NukeAssets.Smoke, 300, seed + 16, true);
                 capGlow = Make(cap, "CapGlow", NukeAssets.Glow, 110, seed + 11, true);
                 fireCore = Make(cap, "Fireball", NukeAssets.Glow, 45, seed + 12, true);
-                if (ringFx)
+                if (ringFx && !merged)
                 {
                     ringLayers = new Layer[3];
                     for (int k = 0; k < 3; k++)
                         ringLayers[k] = Make(rings, "CondensationRing" + k, NukeAssets.Mist, 220, seed + 20 + k, false);
                 }
-                if (groundFx)
+                if (groundFx && !merged)
                 {
                     skirt = Make(ground, "DustSkirt", NukeAssets.Smoke, 320, seed + 30, false);
                     surge = Make(ground, "BaseSurge", NukeAssets.Smoke, 280, seed + 31, false);
                 }
-                if (stemFx)
+                if (stemFx && !merged)
                 {
                     stem = Make(ground, "Stem", NukeAssets.Smoke, 420, seed + 32, false);
                     if (prof.stemCollars > 0)
@@ -819,9 +852,12 @@ namespace BDNukes
                 else
                 {
                     UpdateFireball();
-                    UpdateCapSmoke();
-                    if (capDetail != null) UpdateCapDetail();
-                    if (capUpper != null) UpdateCapUpper();
+                    if (!merged)
+                    {
+                        UpdateCapSmoke();
+                        if (capDetail != null) UpdateCapDetail();
+                        if (capUpper != null) UpdateCapUpper();
+                    }
                     UpdateCapGlow();
                 }
                 if (ringLayers != null && volume == null) for (int k = 0; k < ringLayers.Length; k++) UpdateRing(k);

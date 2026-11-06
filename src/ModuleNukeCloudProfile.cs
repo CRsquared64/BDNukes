@@ -27,8 +27,28 @@ namespace BDNukes
         /// drag-free trajectory reaches the target, instead of BDArmory's slow throttle-back (see NukeBallisticCutoff).
         /// </summary>
         [KSPField] public bool ballisticCutoff = true;
-        /// <summary>Cut when the predicted vacuum range is this multiple of the target range (above 1 allows for drag).</summary>
-        [KSPField] public float ballisticCutoffMargin = 1.05f;
+        /// <summary>Cut when the predicted range is this multiple of the target range.</summary>
+        [KSPField] public float ballisticCutoffMargin = 1f;
+        /// <summary>
+        /// Predict the coast with drag (the missile's own drag, measured in flight) rather than in vacuum, so the warhead
+        /// comes down on the target instead of the drag-free point beyond it.
+        /// </summary>
+        [KSPField] public bool ballisticDrag = true;
+        /// <summary>Scale on the measured drag in that prediction (above 1 cuts later, for a draggier re-entry).</summary>
+        [KSPField] public float ballisticDragScale = 1f;
+
+        // in-flight drag estimate and the last drag prediction (NukeBallisticCutoff); not saved
+        [NonSerialized] internal double cutCdA;          // m^2: drag force / dynamic pressure, smoothed
+        [NonSerialized] internal double cutDragLoss;     // rad: drag-free sweep minus the sweep with drag
+        [NonSerialized] internal double cutTargetShift;  // rad: target angle at the drag flight time minus at the drag-free one
+        [NonSerialized] internal bool cutHaveDrag;
+        [NonSerialized] internal float cutNextSim;
+
+        /// <summary>
+        /// Scale on the smoke from BDArmory's exhaust effects (emission, particle size and life); 1 leaves them as
+        /// they are. BDArmory's largeExhaust piles up into a huge cloud round a slow heavy missile leaving the pad.
+        /// </summary>
+        [KSPField] public float exhaustSmoke = 1f;
 
         /// <summary>Set once the motor has been cut; it never relights.</summary>
         [KSPField(isPersistant = true)] public bool ballisticCutoffDone;

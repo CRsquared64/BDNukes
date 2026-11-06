@@ -192,8 +192,13 @@ namespace BDNukes
             // keep our maps bound every frame, but only redraw them a few times a second (a full-planet blit each)
             if (now < nextRedraw)
             {
+                List<object> lost = null;
                 foreach (var kv in layers)
-                    if (kv.Value.mat != null && kv.Value.mat.GetTexture(CoverageProp) != kv.Value.rt) kv.Value.mat.SetTexture(CoverageProp, kv.Value.rt);
+                {
+                    if (!Bindable(kv.Value)) { (lost = lost ?? new List<object>()).Add(kv.Key); continue; }
+                    if (kv.Value.mat.GetTexture(CoverageProp) != kv.Value.rt) kv.Value.mat.SetTexture(CoverageProp, kv.Value.rt);
+                }
+                if (lost != null) foreach (var key in lost) Restore(key);
                 return;
             }
             // while a front is still sweeping the deck, redraw often enough for the push to move smoothly
@@ -207,7 +212,7 @@ namespace BDNukes
             {
                 var layer = kv.Value;
                 layer.holes.RemoveAll(h => now - h.start > h.hold + h.heal);
-                if (layer.holes.Count == 0 || layer.mat == null)
+                if (layer.holes.Count == 0 || !Bindable(layer))
                 {
                     (done = done ?? new List<object>()).Add(kv.Key);
                     continue;
@@ -234,6 +239,13 @@ namespace BDNukes
             }
             if (done != null) foreach (var key in done) Restore(key);
         }
+
+        /// <summary>
+        /// The layer's material is still there and still has the coverage map. EVE can swap the shader on it (a quality
+        /// or scattering change) or rebuild it; asking a material without the property for it logs an error each time,
+        /// which at every frame is a slideshow. Such a layer is dropped instead.
+        /// </summary>
+        static bool Bindable(Layer layer) => layer.mat != null && layer.rt != null && layer.mat.HasProperty(CoverageProp);
 
         /// <summary>
         /// The 2D coverage map a layer draws from. The material's own binding first; if EVE's on-demand loader has
@@ -274,7 +286,7 @@ namespace BDNukes
         static void Restore(object key, bool release = false)
         {
             if (!layers.TryGetValue(key, out var layer)) return;
-            if (layer.mat != null && layer.original != null) layer.mat.SetTexture(CoverageProp, layer.original);
+            if (layer.mat != null && layer.original != null && layer.mat.HasProperty(CoverageProp)) layer.mat.SetTexture(CoverageProp, layer.original);
             if (layer.rt != null) { layer.rt.Release(); UnityEngine.Object.Destroy(layer.rt); }
             // keep our use of a reloaded map while EVE's material still shows it; release it only when the layer is torn
             // down (scene change), or EVE would destroy the texture under its own material again

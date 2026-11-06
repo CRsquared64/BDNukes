@@ -14,7 +14,7 @@ namespace BDNukes
         /// <param name="groundAlt">ASL of the ground under the burst (0 over the sea)</param>
         /// <param name="airBurst">the burst is in air (not underwater, not a vacuum look)</param>
         public static void Detonation(CelestialBody body, double lat, double lon, double groundAlt, float W, float R, float hb,
-            bool overOcean, bool airBurst, float falloutK, float windHeading, NukeWind wind, double spawnTime, float delay)
+            bool overOcean, bool airBurst, float falloutK, float windHeading, NukeWind wind, double spawnTime, float delay, bool fires = true)
         {
             var s = NukeSettings.Current;
             if (body == null) return;
@@ -37,7 +37,8 @@ namespace BDNukes
             catch (Exception e) { Debug.LogWarning("[BDNukes]: Fallout footprint failed: " + e.Message); }
             try
             {
-                if (s.firestorm && airBurst && !overOcean && body.atmosphereContainsOxygen && W >= s.firestormMinYield)
+                // a burst merged into a salvo's cloud leaves the firestorm to the first one (they'd overlap anyway)
+                if (fires && s.firestorm && airBurst && !overOcean && body.atmosphereContainsOxygen && W >= s.firestormMinYield)
                     NukeFirestorm.Spawn(body, lat, lon, groundAlt, W, R, hb, wind, spawnTime, delay);
             }
             catch (Exception e) { Debug.LogWarning("[BDNukes]: Firestorm failed: " + e.Message); }
