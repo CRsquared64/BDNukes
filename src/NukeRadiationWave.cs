@@ -100,7 +100,7 @@ namespace BDNukes
                     offset = (Vector3d)pos - body.position,
                     ut0 = Now + Mathf.Max(0f, delay),
                     W = W,
-                    speed = Math.Max(1e3d, s.waveSpeed * 1000d),
+                    speed = NukeScale.WaveSpeed,
                     pulse = Math.Max(5d, s.wavePulse),
                     maxRadius = reach,
                 };

@@ -586,7 +586,7 @@ namespace BDNukes
             ScreenMessages.PostScreenMessage($"Starlance: light drive charging ({chargeTime:0} s)", 4f, ScreenMessageStyle.UPPER_CENTER);
         }
 
-        double LightSpeed => Math.Max(1000d, Mathf.Clamp(lightFraction, 0.001f, 1f) * NukeSettings.Current.waveSpeed * 1000d);
+        double LightSpeed => Math.Max(1000d, Mathf.Clamp(lightFraction, 0.001f, 1f) * NukeScale.WaveSpeed);
 
         double ArrivalAlt(CelestialBody b)
         {

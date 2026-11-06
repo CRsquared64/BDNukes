@@ -122,7 +122,7 @@ namespace BDNukes
             double now = Now;
             // keep a burst at least until its light (travelling with the radiation front) could have crossed the
             // whole system, so the long-range view can still show it arriving
-            double crossing = 3e11d / Math.Max(1e5d, NukeSettings.Current.waveSpeed * 1000d) + 600d;
+            double crossing = 3e11d * NukeScale.SystemSize / NukeScale.WaveSpeed + 600d;
             records.RemoveAll(r => now - r.ut > Math.Max(MarkerLife(r), crossing));
             if (Current != null && !records.Contains(Current)) Current = null;
         }

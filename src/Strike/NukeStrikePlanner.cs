@@ -176,6 +176,31 @@ namespace BDNukes
                 }
         }
 
+        /// <summary>
+        /// The launch sites KSCSwitcher offers on the home world (Real Solar System and Sol put the real spaceports
+        /// there: Cape Canaveral, Baikonur, Kourou and the rest), read from its config.
+        /// </summary>
+        void AddKscSwitcherSites(CelestialBody b)
+        {
+            if (b != FlightGlobals.GetHomeBody() || GameDatabase.Instance == null) return;
+            foreach (var root in GameDatabase.Instance.GetConfigNodes("KSCSWITCHER"))
+            {
+                var sites = root.GetNode("LaunchSites");
+                if (sites == null) continue;
+                foreach (var site in sites.GetNodes("Site"))
+                {
+                    var city = site.GetNode("PQSCity");
+                    if (city == null || !city.HasValue("latitude") || !city.HasValue("longitude")) continue;
+                    string name = site.GetValue("displayName") ?? site.GetValue("name");
+                    if (string.IsNullOrEmpty(name)) continue;
+                    if (name.StartsWith("#")) name = KSP.Localization.Localizer.Format(name.Split(new[] { "//" }, StringSplitOptions.None)[0].Trim());
+                    if (double.TryParse(city.GetValue("latitude"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double lat)
+                        && double.TryParse(city.GetValue("longitude"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double lon))
+                        AddPoi("Launch site: " + name, b, lat, lon);
+                }
+            }
+        }
+
         void AddPoi(string name, CelestialBody b, object latitude, object longitude)
         {
             if (string.IsNullOrEmpty(name) || latitude == null || longitude == null) return;
@@ -191,6 +216,10 @@ namespace BDNukes
             pois.Clear();
             if (b == null) return;
             AddStockSites(b);
+            try { AddKscSwitcherSites(b); }
+            catch (Exception e) { Debug.LogWarning("[BDNukes]: Strike planner couldn't read KSCSwitcher's launch sites: " + e.Message); }
+            if (string.Equals(b.bodyName, "Earth", StringComparison.OrdinalIgnoreCase))
+                foreach (var c in WorldCities.All) AddPoi("City: " + c.name, b, c.lat, c.lon);
             try { AddKerbalKonstructs(b); }
             catch (Exception e) { Debug.LogWarning("[BDNukes]: Strike planner couldn't read Kerbal Konstructs: " + e.Message); }
             // vessels on the ground there (bases, other people's silos)

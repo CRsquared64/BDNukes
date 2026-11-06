@@ -1,4 +1,6 @@
 using System;
+using BDArmory.Guidances;
+using BDArmory.Settings;
 using BDArmory.Weapons.Missiles;
 using HarmonyLib;
 using UnityEngine;
@@ -50,6 +52,27 @@ namespace BDNukes
     {
         internal enum Outcome { Short, Impact, Beyond }
 
+        static readonly System.Reflection.FieldInfo burnedFuel = AccessTools.Field(typeof(MissileLauncher), "burnedFuelMass");
+
+        /// <summary>
+        /// BDArmory's boost (and cruise) only ends once its fuel is burnt, and with the throttle at 0 none ever is:
+        /// the booster would never drop. Marks the stage's fuel spent so it ends now and the booster separates.
+        /// </summary>
+        static void EndBoost(MissileLauncher ml)
+        {
+            try
+            {
+                if (burnedFuel == null) return;
+                float burned = (float)burnedFuel.GetValue(ml);
+                float spent = ml.MissileState == MissileBase.MissileStates.Boost ? ml.boosterFuelMass : ml.boosterFuelMass + ml.cruiseFuelMass;
+                if (burned < spent) burnedFuel.SetValue(ml, spent);
+                // and its timer, so it ends this frame rather than at the stage's planned burnout
+                if (ml.MissileState == MissileBase.MissileStates.Boost) ml.boostTime = 0f;
+                else if (ml.MissileState == MissileBase.MissileStates.Cruise) ml.cruiseTime = 0f;
+            }
+            catch (Exception e) { Debug.LogWarning("[BDNukes]: Couldn't end the boost after the motor cut: " + e.Message); }
+        }
+
         internal static void Apply(MissileLauncher ml)
         {
             var part = ml.part;
@@ -59,6 +82,7 @@ namespace BDNukes
             if (prof.ballisticCutoffDone)
             {
                 ml.Throttle = 0f;
+                EndBoost(ml);   // a cut in the boost carries on into the cruise stage, which must end too
                 return;
             }
             if (ml.thrust <= 0f && ml.cruiseThrust <= 0f) return; // glide bombs: nothing to cut
@@ -71,7 +95,7 @@ namespace BDNukes
             Vector3 targetW = ml.TargetPosition;
             if (targetW == Vector3.zero) return;
 
-            MeasureDrag(v, prof);
+            MeasureDrag(ml, v, prof);
             Vector3d r = v.CoMD - body.position;
             Vector3d vel = v.obt_velocity;
             Vector3d rt = (Vector3d)targetW - body.position;
@@ -120,6 +144,7 @@ namespace BDNukes
 
             prof.ballisticCutoffDone = true;
             ml.Throttle = 0f;
+            EndBoost(ml);
             Debug.Log(o == Outcome.Impact
                 ? $"[BDNukes]: {ml.shortName}: motor cut, ballistic range {rangeDeg * Math.PI / 180d * targetRadius / 1000d:0.0} km for a target {targetAngle * targetRadius / 1000d:0.0} km downrange (flight time {tof:0} s"
                   + (prof.ballisticDrag && body.atmosphere && prof.cutCdA > 0d
@@ -129,18 +154,35 @@ namespace BDNukes
         }
 
         /// <summary>
-        /// The missile's drag area (drag force over dynamic pressure, m^2: kN / kPa) from KSP's per-part drag, smoothed
-        /// over a second or two so it follows the booster dropping off. Only in air thick enough to read it.
+        /// The missile's drag area (drag force over dynamic pressure, m^2: kN / kPa). BDArmory flies its missiles with
+        /// its own aero (currDragArea and its drag curve, nose-on), which stock's per-part drag doesn't see, so that is
+        /// counted from the missile's own numbers, in vacuum too; any stock drag on the parts is measured on top,
+        /// smoothed over a second or two so it follows the booster dropping off.
         /// </summary>
-        static void MeasureDrag(Vessel v, ModuleNukeCloudProfile prof)
+        static void MeasureDrag(MissileLauncher ml, Vessel v, ModuleNukeCloudProfile prof)
         {
+            double bda = 0d;
+            try
+            {
+                if (ml.aero && ml.currDragArea > 0f)
+                    bda = 1000d * ml.currDragArea * BDArmorySettings.GLOBAL_DRAG_MULTIPLIER
+                        * Math.Max(0f, MissileGuidance.DefaultDragCurve.Evaluate(0f));
+            }
+            catch { bda = 0d; }
+            if (double.IsNaN(bda) || bda < 0d) bda = 0d;
+
             double q = v.dynamicPressurekPa;
-            if (q < 0.3d) return;
-            double f = 0d;
-            for (int i = 0; i < v.parts.Count; i++) f += v.parts[i].dragScalar;
-            if (f <= 0d || double.IsNaN(f)) return;
-            double cda = f / q;
-            prof.cutCdA = prof.cutCdA <= 0d ? cda : prof.cutCdA + (cda - prof.cutCdA) * Math.Min(1d, TimeWarp.fixedDeltaTime / 1.5d);
+            if (q >= 0.3d)
+            {
+                double f = 0d;
+                for (int i = 0; i < v.parts.Count; i++) f += v.parts[i].dragScalar;
+                if (f > 0d && !double.IsNaN(f))
+                {
+                    double cda = f / q;
+                    prof.cutStockCdA = prof.cutStockCdA <= 0d ? cda : prof.cutStockCdA + (cda - prof.cutStockCdA) * Math.Min(1d, TimeWarp.fixedDeltaTime / 1.5d);
+                }
+            }
+            prof.cutCdA = bda + prof.cutStockCdA;
         }
 
         /// <summary>

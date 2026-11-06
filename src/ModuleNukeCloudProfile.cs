@@ -42,6 +42,7 @@ namespace BDNukes
         [NonSerialized] internal double cutDragLoss;     // rad: drag-free sweep minus the sweep with drag
         [NonSerialized] internal double cutTargetShift;  // rad: target angle at the drag flight time minus at the drag-free one
         [NonSerialized] internal bool cutHaveDrag;
+        [NonSerialized] internal double cutStockCdA;     // m^2: the part of cutCdA measured from stock drag
         [NonSerialized] internal float cutNextSim;
 
         /// <summary>
@@ -189,7 +190,7 @@ namespace BDNukes
             float dust = water ? 0f : landDust * gf;
 
             // humid air near sea level condenses into collars and whitens the cloud
-            float depth = env.body != null && env.body.atmosphere ? (float)env.body.atmosphereDepth : 70000f;
+            float depth = (float)NukeScale.AirDepth(env.body);
             float lowAir = Mathf.Clamp01(1f - (float)env.alt / (0.08f * depth));
             humidity = lowAir * (water ? 1f : 0.85f * (1f - dryness));
 

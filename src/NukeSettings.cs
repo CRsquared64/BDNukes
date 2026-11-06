@@ -117,6 +117,8 @@ namespace BDNukes
         public bool burstLOD = true;               // fewer particles per detonation when many are active
         public float minLODScale = 0.25f;          // floor on the particle-count scale
         public float soundMergeWindow = 0.4f;      // s; no new crack/rumble if another started this recently
+        public bool planetScaleCompat = true;      // scale for a home world much bigger than Kerbin (RSS, Sol); see NukeScale
+        public float planetScaleThreshold = 1.5f;  // x Kerbin's radius from which it applies
         public bool salvoMerge = true;             // a burst inside a just-formed cloud (MIRV, salvo) gets no cloud of its own
         public float salvoMergeWindow = 6f;        // s after the first burst that later ones still merge into its cloud
         public float salvoMergeRadius = 1.2f;      // x the first cloud's cap radius: how far out bursts still merge
@@ -436,6 +438,8 @@ namespace BDNukes
             n.TryGetValue("burstLOD", ref burstLOD);
             n.TryGetValue("minLODScale", ref minLODScale);
             n.TryGetValue("soundMergeWindow", ref soundMergeWindow);
+            n.TryGetValue("planetScaleCompat", ref planetScaleCompat);
+            n.TryGetValue("planetScaleThreshold", ref planetScaleThreshold);
             n.TryGetValue("salvoMerge", ref salvoMerge);
             n.TryGetValue("salvoMergeWindow", ref salvoMergeWindow);
             n.TryGetValue("salvoMergeRadius", ref salvoMergeRadius);

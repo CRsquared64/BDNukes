@@ -279,7 +279,7 @@ namespace BDNukes
             groundFactor = Mathf.Clamp01(1f - hb / (3f * R));
 
             // --- cloud character ---
-            float tropo = (float)(body.atmosphere ? body.atmosphereDepth * s.tropopauseFraction : 0d);
+            float tropo = (float)(body.atmosphere ? NukeScale.AirDepth(body) * s.tropopauseFraction : 0d);
             var env = new NukeCloudEnv
             {
                 body = body, lat = lat, lon = lon, alt = alt, W = W, R = R, hb = hb,
@@ -1218,6 +1218,9 @@ namespace BDNukes
             vs.capAlbedo = CapColor(0f) * 0.8f * Mathf.Lerp(1f, 0.6f, prof.dustiness * groundFactor);
             // a small burst's column is sunlit dust and debris, light tan, hardly any soot
             vs.capAlbedo = Color.Lerp(vs.capAlbedo, new Color(0.80f, 0.70f, 0.56f), 0.75f * column);
+            // a big cap is mostly ice and condensed water above the dust (the dirt rides in the stem and the cap's
+            // underside): pale grey-white from above, not charcoal, even from a surface burst
+            vs.capAlbedo = Color.Lerp(vs.capAlbedo, CondWhite * 0.88f, 0.5f * SS(100f, 2000f, W) * (1f - column));
             vs.stemAlbedo = Color.Lerp(stemLow, stemHigh, 0.4f) * 0.85f;
             vs.dustAlbedo = Color.Lerp(skirtDark, skirtLight, 0.55f) * 0.95f;
             if (overOcean)
@@ -1253,7 +1256,9 @@ namespace BDNukes
             vs.planetCenter = transform.InverseTransformPoint(body.position);
             // the ground at ground zero as a sphere: rays stop at it, so the ground in front of the cloud hides it
             // even where the terrain shader leaves no depth (Parallax), and the planet hides it from orbit
-            vs.planetRadius = (float)(body.Radius + System.Math.Max(0d, alt + groundY)) - 8f;
+            // the sphere is at the lowest ground round the burst, not ground zero's, or the dust over lower ground
+            // around it would be sliced off flat
+            vs.planetRadius = (float)(body.Radius + System.Math.Max(0d, System.Math.Min(alt + groundY, LowestGroundAround()))) - 8f;
 
             // quality where it shows: a cloud that's a speck on screen, or one of a salvo, gets fewer steps
             Camera cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
@@ -1268,6 +1273,37 @@ namespace BDNukes
             steps *= Mathf.Clamp(1f / Mathf.Sqrt(Mathf.Max(1, active)), 0.35f, 1f);
             steps *= NukeFXManager.StepScale; // adaptive performance
             volume.Update(ref vs, Mathf.Clamp(Mathf.RoundToInt(steps), 16, 128));
+        }
+
+        double lowestGround = double.NaN;
+
+        /// <summary>
+        /// The lowest ground (or sea) altitude within the dust's reach of ground zero, sampled once: the volumetric
+        /// cloud's ray cut-off sphere sits at it, so a burst on a hillside keeps its skirt down the slope.
+        /// </summary>
+        double LowestGroundAround()
+        {
+            if (!double.IsNaN(lowestGround)) return lowestGround;
+            double low = alt + groundY;
+            try
+            {
+                if (body.pqsController != null)
+                {
+                    double reach = Mathf.Clamp(2.5f * capRadius, 4f * R, 30000f);
+                    double cosLat = System.Math.Max(0.05d, System.Math.Cos(lat * System.Math.PI / 180d));
+                    foreach (double f in new[] { 0.15d, 0.35d, 0.6d, 1d })
+                        for (int k = 0; k < 16; k++)
+                        {
+                            double a = k * System.Math.PI / 8d, d = f * reach / body.Radius * 180d / System.Math.PI;
+                            double g = body.TerrainAltitude(lat + d * System.Math.Cos(a), lon + d * System.Math.Sin(a) / cosLat, true);
+                            if (body.ocean && g < 0d) g = 0d;
+                            if (g < low) low = g;
+                        }
+                }
+            }
+            catch { }
+            lowestGround = low;
+            return low;
         }
 
         /// <summary>
@@ -1294,7 +1330,7 @@ namespace BDNukes
             if (s.atmosphericHaze && body.atmosphere && cam != null)
             {
                 // optical depth ~ distance through air of the average density along the line of sight
-                float H = Mathf.Max(1000f, (float)body.atmosphereDepth / 12f); // scale height (~5.8 km on Kerbin)
+                float H = Mathf.Max(1000f, (float)NukeScale.AirDepth(body) / 12f); // scale height (~5.8 km on Kerbin)
                 float meanAlt = Mathf.Max(0f, 0.5f * (camAlt + Mathf.Lerp(groundASL, capASL, 0.5f)));
                 float tau = camDist / s.hazeVisibility * Mathf.Exp(-meanAlt / H);
                 // under a deck the air is murkier too

@@ -93,7 +93,7 @@ namespace BDNukes
             var s = NukeSettings.Current;
             if (s.beltAllAtmospheres && body.atmosphere) return true;
             foreach (var name in s.beltBodies.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-                if (string.Equals(name.Trim(), body.bodyName, StringComparison.OrdinalIgnoreCase)) return true;
+                if (NukeScale.NameMatches(name, body)) return true;
             return false;
         }
 

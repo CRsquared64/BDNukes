@@ -122,7 +122,7 @@ namespace BDNukes
                 float pxAngle = cam.fieldOfView * Mathf.Deg2Rad / Mathf.Max(Screen.height, 1);
                 float scaledPerM = 1f / ScaledSpace.ScaleFactor;
                 CelestialBody sun = Planetarium.fetch.Sun;
-                double lightSpeed = Math.Max(1e5d, s.waveSpeed * 1000d);
+                double lightSpeed = Math.Max(1e5d, NukeScale.WaveSpeed);
 
                 for (int i = 0; i < records.Count; i++)
                 {
