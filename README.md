@@ -54,9 +54,25 @@ All weapons are on their own **BDNukes** page in the VAB/SPH part list, sorted i
 | R-36M2 Mod 6 | ICBM, single warhead | 20 Mt |
 | AN602 Tsar Bomba | free-fall bomb with retarding chute | 50 Mt |
 
+Fictional strike vehicles, flown from the strike planner (below):
+
+| Vehicle | Type | Yield |
+|---|---|---|
+| OKV Orbital Interceptor | radar-cued space interceptor with RCS divert | 0.1 kt |
+| OSV Orbital Strike Vehicle | orbit-to-ground strike on the current body or its moons | 10 kt |
+| Starlance | interplanetary: self-flown ascent, light-drive bus, 10 re-entry vehicles | 10 × 5 Mt |
+
 The **Project Orion** nuclear pulse drive (10 m pusher plate, burning Nuclear Pulse Units) is in Engines.
 
 Real dimensions, masses and burn times. Minimum launch ranges keep AI launchers outside their own blast. Ballistic missiles cut their motors once the trajectory reaches the target.
+
+### Strike planner
+Open it from its toolbar button in flight. It lists the strike weapons on the active vessel: BDArmory GPS ballistic missiles and the vehicles above.
+1. Pick a body, then a target. You can use Kerbal Konstructs sites (if installed), the stock launch sites, a click in map view or on the ground, typed coordinates, or the point under a satellite.
+2. Check that the weapon can reach the target, then launch.
+3. Optionally follow the weapon in with the camera, then use the button to go back to the launcher.
+
+Starlance needs a designator: another craft with a probe core or antenna already orbiting the target body.
 
 ## Effects
 - **Volumetric clouds (Windows / DirectX 11):** the fireball, cap, stem, skirt, surge and condensation are one raymarched volume of self-shadowing billows that flow, roll and drift with the wind. Ground bursts up to 150 kt play a baked Mantaflow simulation of the cloud forming. The fireball lights terrain and craft, the cloud casts its shadow, and the shock front bends the light behind it.
@@ -114,6 +130,8 @@ dotnet build -c Release
 The project expects the repo to sit inside your KSP folder (`<KSP>/BDNukes`). Otherwise pass `-p:KSPDir="C:\path\to\Kerbal Space Program"` or set the `KSPDIR` environment variable. Add `-p:SkipInstall=true` while KSP is running.
 The build writes `BDNukes.dll` to `GameData/BDNukes/Plugins` and copies the mod folder into your KSP install.
 
+To check the strike and interplanetary orbit maths without KSP: `dotnet run -c Release --project tests/StrikeMath`.
+
 To build a release zip: `powershell -ExecutionPolicy Bypass -File tools/package.ps1` → `release/BDNukes-<version>.zip`.
 
 ## Layout
@@ -124,6 +142,7 @@ GameData/BDNukes/         distributable mod folder
   Parts/                  the weapons
   BulletDefs/             nuclear round and its ammo
   Patches/                Module Manager patches for BDArmory's own nuclear parts
+tests/StrikeMath/         standalone checks of the strike orbit maths
 tools/package.ps1         release packaging
 ckan/BDNukes.netkan       CKAN metadata
 docs/                     design contract, roadmap, publishing guide
