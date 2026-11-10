@@ -227,7 +227,9 @@ namespace BDNukes
                 foreach (var kv in layers)
                 {
                     if (!Bindable(kv.Value)) { (lost = lost ?? new List<object>()).Add(kv.Key); continue; }
-                    if (kv.Value.mat.GetTexture(CoverageProp) != kv.Value.rt) kv.Value.mat.SetTexture(CoverageProp, kv.Value.rt);
+                    // set, not read back: EVE's shader doesn't declare the map as a texture property, so every
+                    // GetTexture on it logs an error (hundreds a minute while a hole was open)
+                    kv.Value.mat.SetTexture(CoverageProp, kv.Value.rt);
                 }
                 if (lost != null) foreach (var key in lost) Restore(key);
                 return;
@@ -266,7 +268,7 @@ namespace BDNukes
                 holeMat.SetVectorArray("_HoleRing", ringArr);
                 holeMat.SetFloat("_HoleCount", n);
                 Graphics.Blit(layer.original, layer.rt, holeMat);
-                if (layer.mat.GetTexture(CoverageProp) != layer.rt) layer.mat.SetTexture(CoverageProp, layer.rt);
+                layer.mat.SetTexture(CoverageProp, layer.rt);
             }
             if (done != null) foreach (var key in done) Restore(key);
         }
@@ -286,7 +288,8 @@ namespace BDNukes
         static Texture FindCoverage(object vol, Material mat, out string held)
         {
             held = null;
-            var tex = mat.GetTexture(CoverageProp);
+            // only asked of the material when its shader declares the map; otherwise GetTexture just logs an error
+            var tex = mat.shader != null && mat.shader.FindPropertyIndex(CoverageProp) >= 0 ? mat.GetTexture(CoverageProp) : null;
             if (tex != null) return tex;
             try
             {

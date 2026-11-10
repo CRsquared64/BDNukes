@@ -109,7 +109,26 @@ namespace BDNukes
             double radius = body.Radius + Math.Max(0d, alt);
             double cosLat = Math.Max(0.01d, Math.Cos(lat * Math.PI / 180d));
 
-            var offsets = bus.FootprintOffsets(bus.warheads - 1);
+            // warheads the bus released in flight burst where they are; only any still aboard are scattered
+            int aboard = bus.warheads - 1, flown = 0;
+            var salvo = NukeMirvSalvo.For(nukePart);
+            if (salvo != null)
+            {
+                aboard = salvo.StillAboard;
+                foreach (var kv in salvo.Detonate(body, position, Math.Max(0d, hAbove), bus.interval))
+                {
+                    try
+                    {
+                        NukeFX.CreateExplosion(kv.Key, type, vesselName, weaponName, delay + kv.Value, blastRadius, yield, thermalShock, emp,
+                            blastSound, flashModel, shockModel, blastModel, plumeModel, debrisModel, modelPath, soundPath,
+                            nukePart, null, sourceVelocity, bulletHitRegistered);
+                        flown++;
+                    }
+                    catch (Exception e) { Debug.LogError("[BDNukes]: MIRV warhead failed: " + e); }
+                }
+            }
+
+            var offsets = bus.FootprintOffsets(aboard);
             float d = delay;
             for (int i = 0; i < offsets.Length; i++)
             {
@@ -131,7 +150,7 @@ namespace BDNukes
                     Debug.LogError("[BDNukes]: MIRV warhead " + (i + 2) + " failed: " + e);
                 }
             }
-            Debug.Log($"[BDNukes]: MIRV bus released {offsets.Length + 1} warheads over a {bus.spread:0} m footprint.");
+            Debug.Log($"[BDNukes]: MIRV bus: {flown} released warheads burst where they came down, {offsets.Length} still aboard burst round the impact point, plus the bus's own ({bus.spread:0} m footprint).");
         }
 
         static double GroundAlt(CelestialBody body, double lat, double lon)

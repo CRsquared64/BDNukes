@@ -15,7 +15,7 @@ The path is: GitHub repo → GitHub release with the zip → forum thread (optio
 powershell -ExecutionPolicy Bypass -File tools/package.ps1
 ```
 This writes `release/BDNukes-<version>.zip`, containing `GameData/BDNukes/` (DLL, configs, shader bundle, LICENSE, README,
-CHANGELOG) and the example craft under `Ships/`. `GameData/BDNukes/PluginData` (your own settings) is left out.
+CHANGELOG, THIRD-PARTY.md). It adds the example craft under `Ships/` only if a `Ships/` folder exists in the repo (the 1.0 templates were dropped). `GameData/BDNukes/PluginData` (your own settings) is left out.
 CKAN finds the `BDNukes` folder by the mod identifier, and manual installers just drop `GameData` into KSP.
 
 ## 3. GitHub

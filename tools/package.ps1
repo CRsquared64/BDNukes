@@ -36,6 +36,7 @@ $pluginData = Join-Path $stageMod "PluginData"
 if (Test-Path $pluginData) { Remove-Item $pluginData -Recurse -Force }
 Copy-Item (Join-Path $repo "LICENSE") $stageMod
 Copy-Item (Join-Path $repo "README.md") $stageMod
+if (Test-Path (Join-Path $repo "THIRD-PARTY.md")) { Copy-Item (Join-Path $repo "THIRD-PARTY.md") $stageMod }
 Copy-Item (Join-Path $repo "CHANGELOG.md") $stageMod
 # example craft go to <KSP>/Ships/VAB and Ships/SPH
 $ships = Join-Path $repo "Ships"

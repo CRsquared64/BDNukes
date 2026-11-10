@@ -2,7 +2,7 @@
 
 Cinematic, physically grounded nuclear weapons for [BDArmory Plus (BDA+)](https://github.com/BrettRyland/BDArmory) in Kerbal Space Program 1.12.
 
-BDNukes adds 15 real-world nuclear weapons, from the 20-ton Davy Crockett to the 50-megaton Tsar Bomba. It replaces BDArmory's nuclear visuals and sound with a full effect whose size *and* character follow yield and burst environment, and it fixes several BDArmory nuclear bugs.
+BDNukes adds 20 real-world nuclear weapon types (21 with Little Boy and Fat Man counted separately), from the 20-ton Davy Crockett to the 50-megaton Tsar Bomba. It replaces BDArmory's nuclear visuals and sound with a full effect whose size *and* character follow yield and burst environment, and it fixes several BDArmory nuclear bugs.
 BDArmory's blast and thermal damage model is kept; BDNukes corrects its vacuum timing and EMP.
 
 ![Volumetric mushroom clouds](docs/screenshots/11-volumetric-fire.jpg)

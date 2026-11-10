@@ -42,6 +42,7 @@ namespace BDNukes
         [NonSerialized] internal double cutDragLoss;     // rad: drag-free sweep minus the sweep with drag
         [NonSerialized] internal double cutTargetShift;  // rad: target angle at the drag flight time minus at the drag-free one
         [NonSerialized] internal bool cutHaveDrag;
+        [NonSerialized] internal double cutTof;          // s, last drag-free time of flight from the boost (0: none yet)
         [NonSerialized] internal double cutStockCdA;     // m^2: the part of cutCdA measured from stock drag
         [NonSerialized] internal float cutNextSim;
 

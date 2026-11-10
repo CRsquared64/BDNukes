@@ -84,7 +84,7 @@ namespace BDNukes
         static bool resolved, available;
         static Type maskType;
         static IDictionary maskedPerQuad, scatterQuadData, scatterBodies;
-        static FieldInfo fBlocked, fRadius, fPosition, fAngle, fColorMap, fNormPos, fRot, fFastScatters, fScatterName;
+        static FieldInfo fBlocked, fRadius, fPosition, fAngle, fColorMap, fColorMapT2D, fNormPos, fRot, fFastScatters, fScatterName;
         static MethodInfo mQuadDestroyed, mQuadVisibleBuilt;
         static readonly object[] arg = new object[1];
         static Texture2D maskTex;
@@ -133,6 +133,8 @@ namespace BDNukes
                 fPosition = maskType.GetField("position", I);
                 fAngle = maskType.GetField("angle", I);
                 fColorMap = maskType.GetField("colorMap", I);
+                fColorMapT2D = maskType.GetField("colorMapT2D", I);
+                if (fColorMapT2D != null && !typeof(Texture2D).IsAssignableFrom(fColorMapT2D.FieldType)) fColorMapT2D = null;
                 fNormPos = maskType.GetField("normalisedPosition", I);
                 fRot = maskType.GetField("rot", I);
                 scatterQuadData = compType.GetField("scatterQuadData", S)?.GetValue(null) as IDictionary;
@@ -182,6 +184,36 @@ namespace BDNukes
             maskTex.Apply(false, false);
             UnityEngine.Object.DontDestroyOnLoad(maskTex);
             return maskTex;
+        }
+
+        static MapSO maskMap;
+
+        static MapSO MaskMap()
+        {
+            if (maskMap != null) return maskMap;
+            maskMap = ScriptableObject.CreateInstance<MapSO>();
+            maskMap.CreateMap(MapSO.MapDepth.RGB, MaskTexture());
+            UnityEngine.Object.DontDestroyOnLoad(maskMap);
+            return maskMap;
+        }
+
+        /// <summary>
+        /// Drops a quad's Parallax scatters before its terrain is rebuilt. Parallax builds a quad's scatters when the
+        /// quad is built (with BurstPQS, from inside PQS.BuildQuad) and keys them by the quad, so a quad rebuilt in
+        /// place without this would be added twice and Parallax throws.
+        /// </summary>
+        internal static void DropScatters(PQ q)
+        {
+            Resolve();
+            if (scatterQuadData == null || mQuadDestroyed == null || q == null) return;
+            try
+            {
+                if (!scatterQuadData.Contains(q)) return;
+                arg[0] = q;
+                mQuadDestroyed.Invoke(null, arg);
+            }
+            catch (Exception e) { Debug.LogWarning("[BDNukes]: Couldn't drop a quad's scatters before a rebuild: " + (e.InnerException ?? e).Message); }
+            finally { arg[0] = null; }
         }
 
         /// <summary>The body's Parallax scatter names, split into trees/bushes and everything.</summary>
@@ -239,7 +271,11 @@ namespace BDNukes
             fRadius.SetValue(h, (double)f.killRadius * 1.12);
             fPosition?.SetValue(h, (Vector3)n);
             fAngle?.SetValue(h, 0f);
-            fColorMap.SetValue(h, MaskTexture());
+            // ParallaxContinued 2.x takes the mask as a texture, older builds (Sol ships one) as a MapSO
+            fColorMap.SetValue(h, typeof(MapSO).IsAssignableFrom(fColorMap.FieldType) ? (object)MaskMap() : MaskTexture());
+            // builds that keep the MapSO also read a texture copy of it (built in OnSetup, which a holder never runs)
+            // for the scatter compute shader; left null, every masked quad's scatters fail to build
+            fColorMapT2D?.SetValue(h, MaskTexture());
             fNormPos.SetValue(h, n);
             // as PQSMod_MapDecalVertexRemoveScatter.OnSetup builds it
             fRot.SetValue(h, Quaternion.AngleAxis(0f, Vector3.up) * Quaternion.FromToRotation((Vector3)n, Vector3.up));
@@ -398,10 +434,14 @@ namespace BDNukes
                             if (h != null && !ReferenceEquals(h, cur)) { maskedPerQuad[q] = h; masked++; }
                         }
                     }
-                    if (scatterQuadData.Contains(q))
+                    bool has = scatterQuadData.Contains(q);
+                    // a quad the crater rebuild dropped the scatters of (DropScatters) gets them back here, unless
+                    // BurstPQS already rebuilt them as the quad was built
+                    bool dropped = !has && onlyCrater != null && !q.isSubdivided && q.isVisible && q.gameObject.activeInHierarchy;
+                    if (has || dropped)
                     {
                         arg[0] = q;
-                        mQuadDestroyed.Invoke(null, arg);
+                        if (has) mQuadDestroyed.Invoke(null, arg);
                         mQuadVisibleBuilt.Invoke(null, arg);
                         arg[0] = null;
                         rebuilt++;

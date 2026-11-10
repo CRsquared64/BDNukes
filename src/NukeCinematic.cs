@@ -1295,11 +1295,31 @@ namespace BDNukes
             {
                 double a = k * System.Math.PI / 2d + 0.4d;
                 if (!NukeWeather.Sample(body, lat + d * System.Math.Cos(a), lon + d * System.Math.Sin(a) / cosLat, ringTmp)) return;
-                for (int i = 0; i < ringTmp.Count && i < ringDecks.Count; i++)
-                {
-                    var r = ringDecks[i];
-                    if (ringTmp[i].coverage > r.coverage) { r.coverage = ringTmp[i].coverage; ringDecks[i] = r; }
-                }
+                MaxInto();
+            }
+            // and along the way to the camera: a burst in a clear patch seen across overcast between it and the
+            // camera has that overcast in the way, not the clear sky round the burst
+            Camera cam = FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null;
+            if (cam == null) return;
+            Vector3d upB = (body.GetWorldSurfacePosition(lat, lon, 0d) - body.position).normalized;
+            Vector3d upC = ((Vector3d)cam.transform.position - body.position).normalized;
+            double ang = System.Math.Acos(System.Math.Max(-1d, System.Math.Min(1d, Vector3d.Dot(upB, upC))));
+            if (ang * body.Radius < reach || ang * body.Radius > 600000d) return;
+            foreach (double f in new[] { 0.2d, 0.45d, 0.7d, 0.95d })
+            {
+                // a normalised blend, not KSP's Vector3d.Slerp: that one threw MissingMethodException in game, every frame
+                Vector3d p = body.position + (upB * (1d - f) + upC * f).normalized * body.Radius;
+                if (!NukeWeather.Sample(body, body.GetLatitude(p), body.GetLongitude(p), ringTmp)) return;
+                MaxInto();
+            }
+        }
+
+        void MaxInto()
+        {
+            for (int i = 0; i < ringTmp.Count && i < ringDecks.Count; i++)
+            {
+                var r = ringDecks[i];
+                if (ringTmp[i].coverage > r.coverage) { r.coverage = ringTmp[i].coverage; ringDecks[i] = r; }
             }
         }
 
@@ -1308,20 +1328,56 @@ namespace BDNukes
         /// to the highest top of the decks with real cover, as opaque as they are together, open where the blast
         /// has cleared them. Zero (no deck) without EVE or with weather lighting off.
         /// </summary>
+        bool deckLogged;
+        Vector4 deckNow;   // DeckForShader, refreshed each frame: the particle layers hide behind it too
+
+        /// <summary>
+        /// How solid a volumetric deck looks for a given EVE coverage-map value. A thick (2-3 km) raymarched deck draws
+        /// as unbroken overcast from about 0.15 (Sol's Earth over southern England read 0.20 and was a white sheet, while
+        /// the old 0.1-0.45 ramp hid the mushroom at only 0.18), and broken cloud with sky between sits under ~0.05.
+        /// </summary>
+        static float CoverOpacity(float coverage) => 0.98f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.03f, 0.15f, coverage));
+
         Vector4 DeckForShader()
         {
             float lo = float.MaxValue, hi = float.MinValue, clearT = 1f;
             foreach (var d in ringDecks)
             {
-                if (d.coverage < 0.15f) continue;
+                // a thin high sheet (cirrus) is mostly see-through: counting it would stretch the deck up to its height
+                // and thin the rest out, so the real cumulus deck would hardly hide anything
+                if (d.coverage < 0.05f || d.topAlt - d.baseAlt < 2000f) continue;
                 lo = Mathf.Min(lo, d.baseAlt);
-                hi = Mathf.Max(hi, d.topAlt);
-                clearT *= 1f - 0.97f * d.coverage;
+                // the dense part: most of a cumulus deck's cloud is in its lower half (only the odd tower reaches the
+                // top), so the line of sight meets the deck lower and further out than the layer's top would say
+                hi = Mathf.Max(hi, d.baseAlt + 0.45f * (d.topAlt - d.baseAlt));
+                // EVE's coverage map value is not how solid the deck looks: its noise and cloud density turn a value of
+                // about a half into unbroken overcast, so a deck is opaque well before its coverage reaches 1 (taken
+                // straight, a 0.5 deck let half the fireball's light through and the bursts glowed through overcast)
+                clearT *= 1f - CoverOpacity(d.coverage);
+            }
+            if (!deckLogged && ringDecks.Count > 0 && hi <= lo)
+            {
+                // logged too when no deck counts, so a burst seen through cloud can be read back afterwards
+                deckLogged = true;
+                var sb0 = new System.Text.StringBuilder("[BDNukes]: Cloud deck round the burst too thin to hide it:");
+                foreach (var d in ringDecks) sb0.AppendFormat(" {0:0}-{1:0} m cover {2:0.00};", d.baseAlt, d.topAlt, d.coverage);
+                Debug.Log(sb0.ToString());
             }
             if (hi <= lo) return Vector4.zero;
+            if (!deckLogged)
+            {
+                deckLogged = true;
+                var sb = new System.Text.StringBuilder("[BDNukes]: Cloud deck round the burst:");
+                foreach (var d in ringDecks) sb.AppendFormat(" {0:0}-{1:0} m cover {2:0.00};", d.baseAlt, d.topAlt, d.coverage);
+                sb.AppendFormat(" hides the cloud at {0:0.00} opacity.", 1f - clearT);
+                Debug.Log(sb.ToString());
+            }
             Vector3d up = (transform.position - (Vector3)body.position);
             up = up.normalized;
-            float hole = NukeCloudClearing.ClearedRadius(body, up);
+            // the whole cleared hole is see-through: the cloud the blast pushed aside sits in the rim beyond it, and only
+            // cloud that is drawn should hide the mushroom (at half the radius, open sky inside the hole still cut the
+            // stem and smoke off at deck height). The shader fades in from 0.75 of this to all of it.
+            float hole = 1.1f * NukeCloudClearing.ClearedRadius(body, up);
             return new Vector4((float)(body.Radius + lo), (float)(body.Radius + hi), 1f - clearT, hole);
         }
 
@@ -1367,6 +1423,7 @@ namespace BDNukes
                 else decks.Clear();
                 SampleDeckRing();
             }
+            deckNow = DeckForShader();
             float groundASL = (float)(alt + groundY);
             float capASL = (float)alt + capPosL.y;
             double camAltD = cam != null ? body.GetAltitude(cam.transform.position) : alt;
@@ -1403,8 +1460,76 @@ namespace BDNukes
                     l.alphaMul = 1f - 0.3f * far;
                 }
                 else l.alphaMul = 1f - 0.75f * haze; // glows dim through the haze rather than turning grey
+                l.alphaMul *= DeckHide(l, cam);
             }
         }
+
+        /// <summary>
+        /// How much of a particle layer shows past the EVE cloud deck (1: all, 0: none). The volumetric cloud hides
+        /// behind the deck in its shader; the particle layers (fireball glow, Wilson cloud, base surge, water spray
+        /// and rings) didn't, so a sea burst under overcast showed its rings and glow on top of the clouds from above.
+        /// A layer is hidden by the deck's opacity when it and the camera are on opposite sides of the deck and the
+        /// line of sight crosses the deck outside the hole the blast has cleared.
+        /// </summary>
+        float DeckHide(Layer l, Camera cam)
+        {
+            Vector4 dk = deckNow;
+            if (dk.z <= 0.01f || cam == null || l.ps == null) return 1f;
+            var rend = l.ps.GetComponent<ParticleSystemRenderer>();
+            if (rend == null || !rend.enabled) return 1f;
+            Vector3d centre = body.position;
+            Vector3d camP = cam.transform.position;
+            Vector3d layP = rend.bounds.center;
+            double rc = (camP - centre).magnitude, rl = (layP - centre).magnitude;
+            double lo = dk.x, hi = dk.y;
+            bool camAbove = rc > hi, camBelow = rc < lo;
+            // the part of the layer on the far side of the deck: its centre, give or take half its height
+            double half = 0.5d * rend.bounds.size.y;
+            float behind;
+            if (camAbove) behind = (float)Clamp01d((lo - (rl - half)) / System.Math.Max(1d, 2d * half));
+            else if (camBelow) behind = (float)Clamp01d(((rl + half) - hi) / System.Math.Max(1d, 2d * half));
+            else return 1f;   // inside the deck: EVE's own fog does the work
+            if (behind <= 0f) return 1f;
+            // where the line of sight meets the deck's middle, and how far that is from ground zero along the deck
+            double mid = 0.5d * (lo + hi);
+            Vector3d dir = layP - camP;
+            double len = dir.magnitude;
+            if (len < 1d) return 1f;
+            dir /= len;
+            Vector3d oc = camP - centre;
+            double bq = Vector3d.Dot(oc, dir), cq = oc.sqrMagnitude - mid * mid, disc = bq * bq - cq;
+            if (disc < 0d) return 1f;
+            double sq = System.Math.Sqrt(disc);
+            double t = camAbove ? -bq - sq : -bq + sq;
+            if (t < 0d || t > len) t = camAbove ? -bq + sq : -bq - sq;
+            if (t < 0d || t > len) return 1f;
+            Vector3d hit = camP + dir * t;
+            Vector3d upB = ((Vector3d)transform.position - centre).normalized;
+            Vector3d hitN = (hit - centre).normalized;
+            double across = System.Math.Acos(System.Math.Max(-1d, System.Math.Min(1d, Vector3d.Dot(upB, hitN)))) * mid;
+            float open = dk.w > 1f ? Mathf.Clamp01((dk.w - (float)across) / (0.25f * dk.w)) : 0f;   // same edge as the shader
+            // the cloud actually in the way: the deck where the line of sight crosses it (sampled twice a second per
+            // layer), not the average round the burst, so a gap shows the layer and solid cloud hides it fully
+            float opac = dk.z;
+            if (Time.time >= l.coverTime)
+            {
+                l.coverTime = Time.time + 0.5f;
+                l.hitOpacity = -1f;
+                if (NukeWeather.Sample(body, body.GetLatitude(hit), body.GetLongitude(hit), hitDecks))
+                {
+                    float best = 0f;
+                    foreach (var d in hitDecks)
+                        if (d.topAlt - d.baseAlt >= 2000f && d.baseAlt <= hi && d.topAlt >= lo) best = Mathf.Max(best, CoverOpacity(d.coverage));
+                    l.hitOpacity = best;
+                }
+            }
+            if (l.hitOpacity >= 0f) opac = Mathf.Max(l.hitOpacity, 0.5f * dk.z);
+            return 1f - opac * behind * (1f - open);
+        }
+
+        readonly List<NukeWeather.Deck> hitDecks = new List<NukeWeather.Deck>();
+
+        static double Clamp01d(double v) => v < 0d ? 0d : (v > 1d ? 1d : v);
 
         /// <summary>Fake volumetric lighting: sun diffuse + ambient + warm light from the fireball + backlit rim.</summary>
         Color Shade(Color baseCol, Vector3 nL, float fire, Vector3 toFireL)
@@ -2500,6 +2625,8 @@ namespace BDNukes
             public readonly bool soft;
             /// <summary>Per-frame multipliers the owner sets for distance and haze.</summary>
             public float sizeMul = 1f, alphaMul = 1f;
+            /// <summary>Opacity of the cloud deck where the line of sight to this layer crosses it (-1: not known), and when to sample it next.</summary>
+            public float hitOpacity = -1f, coverTime;
             float simRate = 1f;
 
             /// <param name="stretch">If above 0, particles are drawn as vertical streaks this many sizes long (rain-out).</param>

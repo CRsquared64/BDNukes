@@ -148,11 +148,13 @@ namespace BDNukes
             Vector3d vH = vel - up * Vector3d.Dot(vel, up), tH = rtF - up * Vector3d.Dot(rtF, up);
             double head = vH.sqrMagnitude > 1 && tH.sqrMagnitude > 1 ? Vector3d.Dot(vH.normalized, tH.normalized) : double.NaN;
             double tgtDeg = Vector3d.Angle(pos - body.position, rtF);
+            Vector3d nPlane = Vector3d.Cross(pos - body.position, rtF);
+            double across = nPlane.sqrMagnitude > 1 ? Vector3d.Dot(vel, nPlane.normalized) : double.NaN;   // what the coast carries sideways
             Debug.Log(string.Format(System.Globalization.CultureInfo.InvariantCulture,
                 "[BDNukes]: strike telemetry {0}: t {1:0.0} s {2} alt {3:0.0} km srf {4:0} m/s pitch vel {5:0.0} nose {6:0.0} aim {7} (nose off aim {8:0.0} deg) " +
-                "| {9} sweep {10:0.00} of {11:0.00} deg, heading {12:+0.00;-0.00} | throttle {13:0.00} packed {14} cut {15}",
+                "| {9} sweep {10:0.00} of {11:0.00} deg, heading {12:+0.00;-0.00}, across {16:+0;-0} m/s | throttle {13:0.00} packed {14} cut {15}",
                 ml.shortName, ml.TimeIndex, state, v.altitude / 1000d, v.srfSpeed, Pitch(v.srf_velocity), Pitch((Vector3d)nose), aimS, aimErr,
-                o, sweep * 180d / Math.PI, tgtDeg, head, ml.Throttle, v.packed, CutoffDone(ml)));
+                o, sweep * 180d / Math.PI, tgtDeg, head, ml.Throttle, v.packed, CutoffDone(ml), across));
         }
 
         /// <summary>
@@ -175,14 +177,52 @@ namespace BDNukes
                 double q = 0.5d * v.atmDensity * sv.sqrMagnitude;
                 float aoa = Mathf.Clamp(SteerAoADense + (90f - SteerAoADense) * (float)(1d - q / SteerThinQ), SteerAoADense, 90f);
                 Vector3 svn = sv.normalized;
-                float off = Vector3.Angle(svn, want);
-                if (off > aoa) want = Vector3.Slerp(svn, want, aoa / off).normalized;
+                if (NukeBallisticCutoff.TrimNormal(ml, out Vector3 n))
+                {
+                    // the limit goes on the pitch in the plane; the sideways trim is added on top. Clamped as one, a
+                    // big pitch-over ate the whole allowance and the sideways correction came late and overshot.
+                    float side = Vector3.Dot(want, n);
+                    Vector3 inPlane = want - n * side;
+                    if (inPlane.sqrMagnitude > 1e-6f)
+                    {
+                        inPlane.Normalize();
+                        float offIn = Vector3.Angle(svn, inPlane);
+                        if (offIn > aoa) inPlane = Vector3.Slerp(svn, inPlane, aoa / offIn).normalized;
+                        want = (inPlane * Mathf.Sqrt(Mathf.Max(0f, 1f - side * side)) + n * side).normalized;
+                    }
+                }
+                else
+                {
+                    float off = Vector3.Angle(svn, want);
+                    if (off > aoa) want = Vector3.Slerp(svn, want, aoa / off).normalized;
+                }
             }
             float angle = Vector3.Angle(fwd, want);
             Vector3 cur = rb.angularVelocity;
             Vector3 roll = fwd * Vector3.Dot(cur, fwd);
             Vector3 wanted = Vector3.zero;
-            if (angle > 0.05f)
+            if (NukeBallisticCutoff.TrimNormal(ml, out Vector3 pn))
+            {
+                // the pitch in the plane and the sideways trim each get their own turn rate: under one shared rate
+                // the small sideways correction waited behind the big pitch-over, came seconds late and the sideways
+                // speed swung back and forth (+-50 m/s, period ~12 s) right up to the motor cut
+                float sideF = Mathf.Asin(Mathf.Clamp(Vector3.Dot(fwd, pn), -1f, 1f)) * Mathf.Rad2Deg;
+                float sideW = Mathf.Asin(Mathf.Clamp(Vector3.Dot(want, pn), -1f, 1f)) * Mathf.Rad2Deg;
+                Vector3 fwdIn = fwd - pn * Vector3.Dot(fwd, pn), wantIn = want - pn * Vector3.Dot(want, pn);
+                if (fwdIn.sqrMagnitude > 1e-6f && wantIn.sqrMagnitude > 1e-6f)
+                {
+                    // turning about Cross(a, b) takes a towards b (as below)
+                    Vector3 pitchAxis = Vector3.Cross(fwdIn, wantIn);
+                    float pr = pitchAxis.sqrMagnitude > 1e-12f ? Mathf.Min(SteerRateDPS, Vector3.Angle(fwdIn, wantIn) * 1.5f) : 0f;
+                    if (pr > 0f) pitchAxis.Normalize();
+                    // sideways: about the axis in the plane across the nose, its sign from which way the nose must go
+                    Vector3 sideAxis = Vector3.Cross(pn, fwd).normalized;   // turning about it tips the nose towards +pn
+                    float sErr = sideW - sideF;
+                    float sr = Mathf.Sign(sErr) * Mathf.Min(SteerRateDPS, Mathf.Abs(sErr) * 1.5f);
+                    wanted = (pitchAxis * pr - sideAxis * sr) * Mathf.Deg2Rad;
+                }
+            }
+            else if (angle > 0.05f)
             {
                 Vector3 axis = Vector3.Cross(fwd, want).normalized;
                 wanted = axis * Mathf.Min(SteerRateDPS, angle * 1.5f) * Mathf.Deg2Rad;
@@ -249,6 +289,10 @@ namespace BDNukes
                 double el = Vector3d.Dot(d, up);
                 if (el < 0.02d) d = (d - up * el + up * 0.02d).normalized;
             }
+            // the speed across the plane through the missile and the target is cancelled by tipping the thrust sideways
+            // directly: the velocity correction above leaves ~150 m/s of the launch site's spin at the cut, which put
+            // a Trident's warheads 300 km beside a target 8700 km away
+            d = NukeBallisticCutoff.SidewaysTrim(ml, v, body, rtF, d);
             return (Vector3)(pos + d * 50000d);
         }
 

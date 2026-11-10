@@ -241,6 +241,14 @@ namespace BDNukes
             if (vessel.packed)
             {
                 throttle = 0f;
+                // rails warp while it's climbing or burning would freeze the flight (KSP can pack the craft before the
+                // autopilot gets a frame to refuse the warp): come back off rails, physics warp stays allowed
+                if ((phase == "Ascent" || phase == "Circularize") && vessel == FlightGlobals.ActiveVessel
+                    && TimeWarp.CurrentRateIndex > 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH)
+                {
+                    TimeWarp.SetRate(0, true);
+                    ScreenMessages.PostScreenMessage("Starlance: climbing under power, only physics warp (Alt + .) works now", 4f, ScreenMessageStyle.UPPER_CENTER);
+                }
                 // rails warp in the coast: come out of it in time for the circularisation burn
                 if (phase == "Coast" && vessel == FlightGlobals.ActiveVessel && TimeWarp.CurrentRateIndex > 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH)
                 {
@@ -295,7 +303,10 @@ namespace BDNukes
 
         void FlyAscent(CelestialBody body)
         {
-            if (TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
+            // the ascent is flown in physics: rails warp would freeze it, but physics warp (up to 4x) is fine, as the
+            // guidance steps with the physics frame. Dropping every warp here made a real-scale ascent unwatchably slow.
+            // In the coast, rails warp is allowed too: the packed vessel comes out of it before the circularisation burn.
+            if (phase != "Coast" && TimeWarp.CurrentRateIndex > 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH) TimeWarp.SetRate(0, true);
             var st = Stages;
             double parkAlt = ParkAlt(body);
             Vector3d pos = vessel.CoMD;

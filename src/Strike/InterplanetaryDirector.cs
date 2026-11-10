@@ -438,6 +438,12 @@ namespace BDNukes
             // never inside a body (start/end rounding, a moon on the way)
             double minR = soi.Radius + (soi.atmosphere ? soi.atmosphereDepth : 0d) + 5000d;
             if (rel.magnitude < minR) rel = rel.normalized * minR;
+            // The position is set here every frame, so the orbit's speed only has to point the right way. At the real
+            // drive speed (a large fraction of c on a real-scale system) the hyperbola's semi-major axis is about a
+            // centimetre, KSP's propagation of it loses all precision, puts the craft under the ground and its terrain
+            // check destroys it the moment it jumps. Ten times escape speed keeps the orbit well-conditioned.
+            double cap = 10d * Math.Sqrt(2d * soi.gravParameter / rel.magnitude);
+            if (vel.magnitude > cap) vel = vel.normalized * cap;
             SetOrbit(f.vesselId, soi, rel, vel, now, true);
         }
 

@@ -126,7 +126,17 @@ namespace BDNukes
         /// </summary>
         static void OnAnyPreCull(Camera c)
         {
-            if (c == null || lowResBuffer == null || !lowResCams.Contains(c)) return;
+            if (c == null || lowResBuffer == null) return;
+            // a telescope's copy of the flight camera (Tarsier Space Technology): it renders the same scene into its own
+            // view, so the cloud has to be drawn there too. Its settings are re-copied from the flight camera every frame,
+            // command buffers aren't, so the buffer goes on once.
+            if (!lowResCams.Contains(c))
+            {
+                if (!IsTelescopeCamera(c)) return;
+                if ((c.depthTextureMode & DepthTextureMode.Depth) == 0) c.depthTextureMode |= DepthTextureMode.Depth;
+                c.AddCommandBuffer(UnityEngine.Rendering.CameraEvent.AfterForwardAlpha, lowResBuffer);
+                lowResCams.Add(c);
+            }
             var t = c.targetTexture;
             if (t == null) return;
             var f = t.format;
@@ -136,6 +146,10 @@ namespace BDNukes
                 pausedCams.Add(c);
             }
         }
+
+        /// <summary>Tarsier Space Technology's telescope and ChemCam copies of the flight cameras (TST_Camera 00/01).</summary>
+        internal static bool IsTelescopeCamera(Camera c)
+            => HighLogic.LoadedSceneIsFlight && c.name.StartsWith("TST_Camera 0", System.StringComparison.Ordinal);
 
         static void OnAnyPostRender(Camera c)
         {

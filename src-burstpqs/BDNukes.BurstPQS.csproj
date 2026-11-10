@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Optional companion to BDNukes for BurstPQS (and so Mirage). KSP skips it when BurstPQS isn't installed.
+    Build:   dotnet build -c Release -p:BurstDir="<a KSP install with BurstPQS>"
+    Needs BDNukes built first (references ../GameData/BDNukes/Plugins/BDNukes.dll).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>BDNukes.BurstPQS</AssemblyName>
+    <RootNamespace>BDNukes.BurstPQSCompat</RootNamespace>
+    <LangVersion>8.0</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <BurstDir Condition="'$(BurstDir)' == ''">D:\Games\KSP-Sol</BurstDir>
+    <KSPManaged>$(BurstDir)\KSP_x64_Data\Managed</KSPManaged>
+    <RepoModDir>$(MSBuildProjectDirectory)\..\GameData\BDNukes</RepoModDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="$(KSPManaged)\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(KSPManaged)\UnityEngine.dll" Private="false" />
+    <Reference Include="$(KSPManaged)\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(BurstDir)\GameData\000_KSPBurst\Plugins\Unity.Burst.dll" Private="false" />
+    <Reference Include="$(BurstDir)\GameData\000_KSPBurst\Plugins\Unity.Collections.dll" Private="false" />
+    <Reference Include="$(BurstDir)\GameData\000_KSPBurst\Plugins\Unity.Mathematics.dll" Private="false" />
+    <Reference Include="$(BurstDir)\GameData\000_KSPBurst\Plugins\Unity.Jobs.dll" Private="false" />
+    <Reference Include="$(BurstDir)\GameData\BurstPQS\Plugins\BurstPQS.dll" Private="false" />
+    <Reference Include="$(RepoModDir)\Plugins\BDNukes.dll" Private="false" />
+  </ItemGroup>
+
+  <Target Name="CopyToRepoMod" AfterTargets="Build">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(RepoModDir)\Plugins" />
+  </Target>
+
+</Project>

@@ -33,10 +33,28 @@ namespace BDNukes
     {
         static bool loggedError;
 
-        static void Postfix(MissileLauncher __instance)
+        // BDArmory steers its boost at the target where it is now. Over a real-scale flight (half an hour) the planet
+        // turns under the missile, which also carries the launch site's spin sideways: hundreds of km off to one side.
+        // For its own steering it is handed the aim point that cancels that; the real target is put back after.
+        static void Prefix(MissileLauncher __instance, out Vector3 __state)
+        {
+            __state = __instance.TargetPosition;
+            try
+            {
+                // while climbing, ClimbAim steers at where the target will be and trims the sideways drift itself;
+                // CrossRangeAim's offset aim point is only the fallback for the rest of the burn
+                Vector3 aim;
+                if (NukeBallisticCutoff.ClimbAim(__instance, NukeBallisticCutoff.TargetAtImpact(__instance), out aim)) __instance.TargetPosition = aim;
+                else if (NukeBallisticCutoff.CrossRangeAim(__instance, out aim)) __instance.TargetPosition = aim;
+            }
+            catch (Exception) { __instance.TargetPosition = __state; }
+        }
+
+        static void Postfix(MissileLauncher __instance, Vector3 __state)
         {
             try
             {
+                __instance.TargetPosition = __state;
                 NukeBallisticCutoff.Apply(__instance);
             }
             catch (Exception e)
@@ -73,6 +91,167 @@ namespace BDNukes
             catch (Exception e) { Debug.LogWarning("[BDNukes]: Couldn't end the boost after the motor cut: " + e.Message); }
         }
 
+        /// <summary>
+        /// The point to hand BDArmory so its boost holds a proper climb. Its ballistic guidance aims BallisticAngle above
+        /// the line of sight to the target; as the missile climbs and moves downrange that line tips below the horizon,
+        /// so the climb flattens, and with an ICBM's delta-v (far more than a short shot needs, so the motor runs on
+        /// against the drag low down) the missile flew a long, flat, depressed path through the air: the warheads never
+        /// got above it to separate. Instead the boost holds a flight-path angle above the local horizon, towards the
+        /// target: steep while the air is thick, easing to the minimum-energy angle for the range left
+        /// (45 deg less a quarter of the arc to the target) by a third of the way up the atmosphere. The motor cut then
+        /// ends the burn on that arc, which tops out well above the air on any but the shortest shots.
+        /// </summary>
+        internal static bool ClimbAim(MissileLauncher ml, Vector3 aimTarget, out Vector3 fake)
+        {
+            fake = Vector3.zero;
+            var part = ml.part;
+            if (part == null) return false;
+            var prof = part.FindModuleImplementing<ModuleNukeCloudProfile>();
+            if (prof == null || !prof.ballisticCutoff || prof.ballisticCutoffDone) return false;
+            var state = ml.MissileState;
+            if (state != MissileBase.MissileStates.Boost && state != MissileBase.MissileStates.Cruise) return false;
+            if (!ml.TargetAcquired || aimTarget == Vector3.zero) return false;
+            Vessel v = ml.vessel;
+            if (v == null || v.packed || v.mainBody == null || v.verticalSpeed <= 0d) return false;
+            CelestialBody body = v.mainBody;
+            Vector3d com = v.CoMD;
+            Vector3d up = (com - body.position).normalized;
+            Vector3d t = (Vector3d)aimTarget - body.position;
+            Vector3d down = t - up * Vector3d.Dot(t, up);
+            if (down.sqrMagnitude < 1d) return false;
+            down = down.normalized;
+            double arc = Math.Acos(Math.Max(-1d, Math.Min(1d, Vector3d.Dot(up, t.normalized))));
+            double gamma = Math.Max(15d, 45d - arc * 180d / Math.PI / 4d);
+            if (body.atmosphere && body.atmosphereDepth > 0d)
+            {
+                double f = Math.Max(0d, Math.Min(1d, v.altitude / (body.atmosphereDepth / 3d)));
+                gamma += (80d - gamma) * (1d - f);
+            }
+            // BDArmory turns what it is given up by this much (MissileBase's BallisticGuidance): hand it a point that
+            // much below the climb wanted, as far away as the real one
+            double turn = Math.Max(0d, Math.Min(ml.maxOffBoresight * 0.9d, ml.BallisticAngle));
+            double a = (gamma - turn) * Math.PI / 180d;
+            Vector3d dir = down * Math.Cos(a) + up * Math.Sin(a);
+            dir = SidewaysTrim(ml, v, body, t, dir);
+            fake = (Vector3)(com + dir * Math.Max(1000d, ((Vector3d)aimTarget - com).magnitude));
+            return true;
+        }
+
+        /// <summary>
+        /// Tips the thrust sideways to null the missile's speed out of the plane through it and the target (where the
+        /// target will be at impact). The launch site's spin starts the missile with up to a few hundred m/s across that
+        /// plane; whatever is left at the cut carries through the coast. Turning the heading towards an offset aim point
+        /// (CrossRangeAim) barely tilts the thrust while the climb is steep, so 160 m/s survived to the cut in game and
+        /// the warheads came down 300 km beside the target. This sets the sideways share of the thrust directly: a
+        /// 2 s response, plus an integral term for the plane turning steadily as the predicted flight time grows.
+        /// </summary>
+        internal static Vector3d SidewaysTrim(MissileLauncher ml, Vessel v, CelestialBody body, Vector3d rtImpact, Vector3d dir)
+        {
+            double thrust = ml.MissileState == MissileBase.MissileStates.Boost ? ml.thrust : ml.cruiseThrust;
+            double accel = thrust * Math.Max(0f, ml.Throttle) / Math.Max(0.001d, v.totalMass);   // kN / t = m/s^2
+            if (accel < 1d) return dir;
+            Vector3d n = Vector3d.Cross(v.CoMD - body.position, rtImpact);
+            if (n.sqrMagnitude < 1d) return dir;
+            n = n.normalized;
+            double cross = Vector3d.Dot(v.obt_velocity, n);
+            const double tau = 2d, ti = 4d;
+            double now = Planetarium.GetUniversalTime();
+            var st = trim.GetOrCreateValue(ml);
+            double dt = st.time > 0d ? Math.Max(0d, Math.Min(0.1d, now - st.time)) : 0d;
+            st.time = now;
+            // only a little sideways tilt in the thick air near the ground, where it would mean a big angle of attack
+            double sMax = 0.5d;
+            if (body.atmosphere && body.atmosphereDepth > 0d)
+                sMax = 0.1d + 0.4d * Math.Max(0d, Math.Min(1d, v.altitude / (body.atmosphereDepth / 6d)));
+            double sRaw = -(cross + st.integ / ti) / (tau * accel);
+            // the integral only runs while the command isn't pinned at its limit: summed up while the nose couldn't
+            // follow, it overshot the other way once it could (a Rome shot swung -185, +75, -73, +112 m/s)
+            if (Math.Abs(sRaw) <= sMax || sRaw * cross > 0d)
+            {
+                double lim = 0.5d * tau * accel * ti;
+                st.integ = Math.Max(-lim, Math.Min(lim, st.integ + cross * dt));
+            }
+            double s = Math.Max(-sMax, Math.Min(sMax, sRaw));
+            st.normal = n;
+            st.normalTime = Time.time;
+            Vector3d inPlane = dir - n * Vector3d.Dot(dir, n);
+            if (inPlane.sqrMagnitude < 1e-6) return dir;
+            return inPlane.normalized * Math.Sqrt(1d - s * s) + n * s;
+        }
+
+        sealed class TrimState { public double integ, time; public Vector3d normal; public float normalTime; }
+
+        /// <summary>The plane the sideways trim is holding the missile to, if it set one this frame or the last.</summary>
+        internal static bool TrimNormal(MissileLauncher ml, out Vector3 n)
+        {
+            n = Vector3.zero;
+            if (ml == null || !trim.TryGetValue(ml, out var st) || Time.time - st.normalTime > 0.1f) return false;
+            n = (Vector3)st.normal;
+            return n.sqrMagnitude > 0.5f;
+        }
+        // per missile, dropped with it
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MissileLauncher, TrimState> trim =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<MissileLauncher, TrimState>();
+
+        /// <summary>
+        /// The point to steer the boost at so the coast comes down on the target, not beside it: the target carried
+        /// round by the planet's rotation over the flight, pushed against the missile's sideways (inertial) drift out
+        /// of the plane through it and the missile. Only while the motor burns, before the cut.
+        /// </summary>
+        /// <summary>The target carried round by the planet's rotation over the predicted flight time (as it is, if none).</summary>
+        internal static Vector3 TargetAtImpact(MissileLauncher ml)
+        {
+            Vector3 tp = ml.TargetPosition;
+            var v = ml.vessel;
+            var prof = ml.part != null ? ml.part.FindModuleImplementing<ModuleNukeCloudProfile>() : null;
+            if (tp == Vector3.zero || v == null || v.mainBody == null || prof == null) return tp;
+            CelestialBody body = v.mainBody;
+            Vector3d rt = (Vector3d)tp - body.position;
+            double R = rt.magnitude;
+            if (R < 1d) return tp;
+            Vector3d r = v.CoMD - body.position;
+            double angle = Math.Acos(Math.Max(-1d, Math.Min(1d, Vector3d.Dot(r.normalized, rt / R))));
+            double tof = prof.cutTof > 0d ? prof.cutTof : angle * R / 5000d;
+            return (Vector3)(body.position + RotateWithBody(body, rt, tof));
+        }
+
+        internal static bool CrossRangeAim(MissileLauncher ml, out Vector3 aim)
+        {
+            aim = Vector3.zero;
+            var part = ml.part;
+            if (part == null) return false;
+            var prof = part.FindModuleImplementing<ModuleNukeCloudProfile>();
+            if (prof == null || !prof.ballisticCutoff || prof.ballisticCutoffDone) return false;
+            var state = ml.MissileState;
+            if (state != MissileBase.MissileStates.Boost && state != MissileBase.MissileStates.Cruise) return false;
+            if (!ml.TargetAcquired || ml.TargetPosition == Vector3.zero) return false;
+            Vessel v = ml.vessel;
+            if (v == null || v.packed || v.mainBody == null) return false;
+            CelestialBody body = v.mainBody;
+            if (!body.rotates || body.rotationPeriod <= 0d) return false;
+            Vector3d r = v.CoMD - body.position;
+            Vector3d rt = (Vector3d)ml.TargetPosition - body.position;
+            double R = rt.magnitude;
+            if (R < 1d) return false;
+            // too close for the planet to turn noticeably under it: leave BDArmory's steering alone
+            double angle = Math.Acos(Math.Max(-1d, Math.Min(1d, Vector3d.Dot(r.normalized, rt / R))));
+            if (angle * R < 50000d) return false;
+            // the flight time: the drag-free prediction's once it has one, else a rough ~5 km/s average
+            double tof = prof.cutTof > 0d ? prof.cutTof : angle * R / 5000d;
+            Vector3d rtImpact = RotateWithBody(body, rt, tof);
+            Vector3d n = Vector3d.Cross(r, rtImpact);
+            if (n.sqrMagnitude < 1d) return false;
+            n = n.normalized;
+            // sideways speed out of the plane through the missile and where the target will be; it carries on
+            // through the coast, so steer against it, the harder the longer the flight
+            double cross = Vector3d.Dot(v.obt_velocity, n);
+            double shift = -cross * tof;
+            double maxShift = 0.35d * angle * R;
+            if (shift > maxShift) shift = maxShift; else if (shift < -maxShift) shift = -maxShift;
+            aim = (Vector3)(body.position + rtImpact + n * shift);
+            return true;
+        }
+
         internal static void Apply(MissileLauncher ml)
         {
             var part = ml.part;
@@ -106,6 +285,7 @@ namespace BDNukes
             if (o == Outcome.Short) return;
 
             double targetAngle = 0d, rangeDeg = 0d;
+            if (o == Outcome.Impact) prof.cutTof = tof;
             if (o == Outcome.Impact)
             {
                 Vector3d rtAtImpact = RotateWithBody(body, rt, tof);
@@ -303,7 +483,7 @@ namespace BDNukes
         }
 
         /// <summary>Where a surface point (relative to the body centre) will be after `seconds` of the body's rotation.</summary>
-        static Vector3d RotateWithBody(CelestialBody body, Vector3d rel, double seconds)
+        internal static Vector3d RotateWithBody(CelestialBody body, Vector3d rel, double seconds)
         {
             if (!body.rotates || body.rotationPeriod <= 0d || seconds <= 0d) return rel;
             Vector3 axis = ((Vector3)(body.GetWorldSurfacePosition(90d, 0d, 0d) - body.position)).normalized;

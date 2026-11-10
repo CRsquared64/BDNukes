@@ -166,4 +166,28 @@ namespace BDNukes
             }
         }
     }
+
+    /// <summary>
+    /// BDArmory's nuclear explosion slows its centre by the air density relative to Kerbin's at sea level, reading
+    /// Kerbin by name. In a system without a Kerbin (Real Solar System, Sol) older BDArmory builds throw on every
+    /// physics frame of every nuclear explosion. Newer builds fall back to Kerbin's figure; do the same here.
+    /// </summary>
+    [HarmonyPatch(typeof(BDArmory.FX.NukeFX), "KerbinSeaLevelAtmDensity", MethodType.Getter)]
+    internal static class Patch_NukeFX_KerbinDensity
+    {
+        const float KerbinSeaLevelDensity = 1.224977f;   // kg/m^3
+        static float cached = -1f;
+
+        static bool Prefix(ref float __result)
+        {
+            if (cached < 0f)
+            {
+                CelestialBody kerbin = FlightGlobals.fetch != null ? FlightGlobals.GetBodyByName("Kerbin") : null;
+                if (FlightGlobals.fetch == null) { __result = KerbinSeaLevelDensity; return false; }
+                cached = kerbin != null && kerbin.atmDensityASL > 0d ? (float)kerbin.atmDensityASL : KerbinSeaLevelDensity;
+            }
+            __result = cached;
+            return false;
+        }
+    }
 }

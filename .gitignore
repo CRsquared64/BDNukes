@@ -16,3 +16,10 @@ GameData/BDNukes/PluginData/
 
 # volumetric cloud shader bundle: built by unity/run-unity.ps1 BuildAll, attached to releases
 GameData/BDNukes/Shaders/*.shaders
+
+# other build output
+src-burstpqs/bin/
+src-burstpqs/obj/
+
+# old strike handoff scratch folder
+unfinished-strike/

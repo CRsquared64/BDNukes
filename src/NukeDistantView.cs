@@ -33,6 +33,7 @@ namespace BDNukes
         static readonly int ColorID = Shader.PropertyToID("_Color");
         static float warnAt;
         static readonly System.Collections.Generic.HashSet<NukeBurstRecord> seen = new System.Collections.Generic.HashSet<NukeBurstRecord>();
+        static readonly System.Collections.Generic.HashSet<NukeBurstRecord> seenScope = new System.Collections.Generic.HashSet<NukeBurstRecord>();
 
         void Start()
         {
@@ -103,23 +104,46 @@ namespace BDNukes
             return false;
         }
 
+        void OnEnable() { Camera.onPreCull += OnAnyPreCull; }
+        void OnDisable() { Camera.onPreCull -= OnAnyPreCull; }
+
         void LateUpdate()
+        {
+            bool map = MapView.MapIsEnabled || HighLogic.LoadedScene == GameScenes.TRACKSTATION;
+            var c = map ? PlanetariumCamera.Camera : (ScaledCamera.Instance != null ? ScaledCamera.Instance.cam : null);
+            if (c != null) DrawFor(c, map, c.fieldOfView * Mathf.Deg2Rad / Mathf.Max(Screen.height, 1));
+        }
+
+        /// <summary>
+        /// A telescope's copy of the scaled-space camera (Tarsier Space Technology) sees the same sky zoomed in, so the
+        /// bursts are drawn for it as well, sized for its own narrow view. It renders whenever its owner does, so the
+        /// sprites are queued here, just before it culls, rather than in LateUpdate.
+        /// </summary>
+        void OnAnyPreCull(Camera c)
+        {
+            if (c == null || !HighLogic.LoadedSceneIsFlight || MapView.MapIsEnabled) return;
+            if (!string.Equals(c.name, "TST_Camera ScaledSpace", StringComparison.Ordinal)) return;
+            int h = c.targetTexture != null ? c.targetTexture.height : Screen.height;
+            DrawFor(c, false, c.fieldOfView * Mathf.Deg2Rad / Mathf.Max(h, 1));
+        }
+
+        void DrawFor(Camera target, bool map, float pxAngle)
         {
             var records = NukeAlert.Records;
             if (records.Count == 0 || Planetarium.fetch == null || FlightGlobals.Bodies == null) return;
             var s = NukeSettings.Current;
             if (!s.distantView) return;
+            if (block == null) block = new MaterialPropertyBlock();
+            EnsureAssets();
+            if (glowMat == null || dustMat == null) return;
             try
             {
-                bool map = MapView.MapIsEnabled || HighLogic.LoadedScene == GameScenes.TRACKSTATION;
-                cam = map ? PlanetariumCamera.Camera : (ScaledCamera.Instance != null ? ScaledCamera.Instance.cam : null);
-                if (cam == null) return;
+                cam = target;
                 double now = Planetarium.GetUniversalTime();
                 Vector3 camScaled = cam.transform.position;
                 Vector3d camWorld = ScaledSpace.ScaledToLocalSpace(camScaled);
                 bool flight = HighLogic.LoadedScene == GameScenes.FLIGHT && !map;
                 double reach = flight ? LocalReach() : 0d;
-                float pxAngle = cam.fieldOfView * Mathf.Deg2Rad / Mathf.Max(Screen.height, 1);
                 float scaledPerM = 1f / ScaledSpace.ScaleFactor;
                 CelestialBody sun = Planetarium.fetch.Sun;
                 double lightSpeed = Math.Max(1e5d, NukeScale.WaveSpeed);
@@ -161,7 +185,8 @@ namespace BDNukes
                     float R = 70f * Mathf.Pow(W, 0.4f) * (r.space ? 2.2f : 1f);   // fireball radius (m); bigger in vacuum
                     // however far away, a bigger burst is a bigger, brighter point of light (x1 at 1 kt, ~x3 at 1 Mt)
                     float pxK = Mathf.Clamp(Mathf.Pow(W, 0.16f), 0.7f, 4f);
-                    if (seen.Add(r))
+                    // logged once per burst for the main view and once more for a telescope, so each can be confirmed
+                    if ((cam.name.StartsWith("TST_", StringComparison.Ordinal) ? seenScope : seen).Add(r))
                         Debug.Log(string.Format("[BDNukes]: Distant view: {0:0} kt burst at {1} seen from {2:0} km, {3:0.0} s after it went off.",
                             r.W, r.body, dist / 1000d, now - r.ut)
                             + string.Format(" Camera '{0}' (map {1}, far {2:0}, layer 10 drawn {3}, depth {4}), {5:0} scaled units off, a pixel there {6:0.0}; glow {7} ({8}).",

@@ -430,6 +430,7 @@ namespace BDNukes
                 if (!q.isBuilt) continue;
                 bool shown = !q.isSubdivided && q.isVisible && q.gameObject.activeInHierarchy;
                 QuadDestroyed(pqs, q);
+                NukeScatterFlatten.DropScatters(q);
                 if (!shown)
                 {
                     q.isBuilt = false; // PQ.SetVisible rebuilds it when it comes back into view

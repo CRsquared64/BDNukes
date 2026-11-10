@@ -60,6 +60,8 @@ namespace BDNukes
         }
 
         /// <summary>The volumetric cloud decks over a lat/lon, lowest first. Returns false if there's no EVE to ask.</summary>
+        static readonly float[] DeckHeights = { 0.15f, 0.3f, 0.5f, 0.7f };
+
         public static bool Sample(CelestialBody body, double lat, double lon, List<Deck> into)
         {
             into.Clear();
@@ -80,10 +82,16 @@ namespace BDNukes
                     if (vol == null || !ReferenceEquals(bodyField.GetValue(vol), body)) continue;
                     float lo = (float)minAltField.GetValue(vol), hi = (float)maxAltField.GetValue(vol);
                     if (hi <= lo) continue;
-                    args[0] = (Vector3)body.GetWorldSurfacePosition(lat, lon, 0.5 * (lo + hi));
-                    args[1] = 0f;
-                    args[2] = false;
-                    float cov = Mathf.Clamp01((float)sampleMethod.Invoke(vol, args));
+                    // EVE scales the map's cover by the cloud type's height profile: at one height (the middle) a
+                    // cumulus deck can read almost clear while it looks solid. The most cover over the depth is used.
+                    float cov = 0f;
+                    for (int h = 0; h < DeckHeights.Length; h++)
+                    {
+                        args[0] = (Vector3)body.GetWorldSurfacePosition(lat, lon, lo + DeckHeights[h] * (hi - lo));
+                        args[1] = 0f;
+                        args[2] = false;
+                        cov = Mathf.Max(cov, Mathf.Clamp01((float)sampleMethod.Invoke(vol, args)));
+                    }
                     into.Add(new Deck { baseAlt = lo, topAlt = hi, coverage = cov });
                 }
                 into.Sort((a, b) => a.baseAlt.CompareTo(b.baseAlt));

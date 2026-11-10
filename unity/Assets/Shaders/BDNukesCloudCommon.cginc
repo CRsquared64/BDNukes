@@ -79,7 +79,9 @@ float DeckT(float3 ro, float3 p)
     float u = abs(hc - hp) > 1.0 ? saturate((mid - hp) / (hc - hp)) : 0.0;
     float3 q = lerp(p, ro, u);
     float outside = smoothstep(0.75 * _Deck.w, _Deck.w + 1.0, length(q.xz));
-    return 1.0 - _Deck.z * saturate(f * 3.0) * outside;
+    // opaque once the line of sight has crossed ~1.2 km of deck, however thick the deck is (a real-scale deck is
+    // several km deep, and a fraction of it would leave a cloud seen from inside the murk crisp)
+    return 1.0 - _Deck.z * saturate(f * th / 1200.0) * outside;
 }
 
 
