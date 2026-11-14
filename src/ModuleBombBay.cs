@@ -413,6 +413,21 @@ namespace BDNukes
         // ----------------------------------------------------------------------------------------
 
         static readonly Dictionary<string, Material> skinCache = new Dictionary<string, Material>();
+        static readonly HashSet<string> warned = new HashSet<string>();
+        const int MaxSkin = 1024;
+
+        /// <summary>A texture by its GameDatabase url, or failing that by its file name anywhere in the database.</summary>
+        static Texture FindTexture(string url)
+        {
+            var db = GameDatabase.Instance;
+            Texture t = db.GetTexture(url, false);
+            if (t != null) return t;
+            string leaf = url.Substring(url.LastIndexOf('/') + 1);
+            foreach (var info in db.databaseTexture)
+                if (info != null && info.texture != null && info.name != null && info.name.EndsWith(leaf, StringComparison.OrdinalIgnoreCase))
+                    return info.texture;
+            return null;
+        }
 
         Material SkinMaterial(string key, string textureUrl, string patch, float density, Loop loop, Color tint, Func<Material> fallback, string tag = "")
         {
@@ -444,17 +459,21 @@ namespace BDNukes
         Texture2D MakeSkin(string textureUrl, string patch, float density, float perimeter)
         {
             if (string.IsNullOrEmpty(textureUrl) || GameDatabase.Instance == null) return null;
-            Texture src = GameDatabase.Instance.GetTexture(textureUrl, false);
-            if (src == null) { Debug.LogWarning("[BDNukes]: Bomb bay texture not installed: " + textureUrl + "; painting it plain."); return null; }
+            Texture src = FindTexture(textureUrl);
+            if (src == null)
+            {
+                if (warned.Add(textureUrl)) Debug.LogWarning("[BDNukes]: Bomb bay texture not installed: " + textureUrl + "; painting it plain.");
+                return null;
+            }
             var ci = CultureInfo.InvariantCulture;
             var f = (patch ?? "").Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
             float px, py, pw, ph;
             if (f.Length < 4 || !float.TryParse(f[0], NumberStyles.Float, ci, out px) || !float.TryParse(f[1], NumberStyles.Float, ci, out py) ||
                 !float.TryParse(f[2], NumberStyles.Float, ci, out pw) || !float.TryParse(f[3], NumberStyles.Float, ci, out ph))
             { px = 0f; py = 0f; pw = src.width; ph = src.height; }
-            // no bigger than 2048 on a side, at the density asked for or lower
-            float d = Mathf.Min(density, 2048f / Mathf.Max(perimeter, length));
-            int w = Mathf.Clamp(Mathf.RoundToInt(perimeter * d), 32, 2048), h = Mathf.Clamp(Mathf.RoundToInt(length * d), 32, 2048);
+            // no bigger than 1024 on a side, at the density asked for or lower, in multiples of 4 (it is compressed)
+            float d = Mathf.Min(density, MaxSkin / Mathf.Max(perimeter, length));
+            int w = Mathf.Clamp(Mathf.RoundToInt(perimeter * d / 4f) * 4, 32, MaxSkin), h = Mathf.Clamp(Mathf.RoundToInt(length * d / 4f) * 4, 32, MaxSkin);
             int iw = Mathf.Max(8, Mathf.RoundToInt(pw * d / density)), ih = Mathf.Max(8, Mathf.RoundToInt(ph * d / density));
 
             var piece = RenderTexture.GetTemporary(iw, ih, 0, RenderTextureFormat.ARGB32);
@@ -470,6 +489,7 @@ namespace BDNukes
                 RenderTexture.active = big;
                 var tex = new Texture2D(w, h, TextureFormat.RGBA32, true) { name = "BDNukesBay_" + System.IO.Path.GetFileName(textureUrl), wrapMode = TextureWrapMode.Repeat };
                 tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                tex.Compress(true);   // DXT5: a quarter of the memory
                 tex.Apply(true, true);
                 return tex;
             }

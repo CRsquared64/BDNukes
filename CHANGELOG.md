@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.4 - bomb bay textures
+
+### Fixed
+- The 2.5 m bomb bays couldn't find their Rockomax texture and stayed plain grey: a texture is now found by file name if its exact path isn't in the database, and a missing one logs a single warning.
+- Bomb bay textures were up to 2048 x 2048 and uncompressed (about 30 MB each on the long 2.5 m bay): they are now capped at 1024 on a side and compressed to DXT5.
+
 ## 1.3.3 - bomb bays, textured and resized
 
 ### Added
