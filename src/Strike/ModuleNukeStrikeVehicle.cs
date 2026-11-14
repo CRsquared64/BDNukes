@@ -12,6 +12,10 @@ namespace BDNukes
         [KSPField] public float propellantMass = 0.25f;
         [KSPField] public float stageMass = 0.04f;
         [KSPField] public float clearanceTime = 2f;
+        /// <summary>Speed of the rod as a fraction of the mod's light speed setting (NukeSettings.waveSpeed).</summary>
+        [KSPField] public float lightFraction = 1f;
+        /// <summary>Seconds the streak of the strike stays drawn after impact.</summary>
+        [KSPField] public float streakTime = 1.5f;
         [KSPField] public float attitudeGain = 4f;
         [KSPField] public float attitudeDamping = 3f;
         [KSPField] public float maxAngularAcceleration = 2f;
@@ -22,28 +26,47 @@ namespace BDNukes
         [KSPField(isPersistant = true)] public int targetBody = -1;
         [KSPField(isPersistant = true)] public double targetLatitude, targetLongitude, burstHeight, launchUT, arrivalUT;
         [KSPField(isPersistant = true)] public bool stageDropped;
-        [KSPField(isPersistant = true)] public int corrections;
         [KSPField(isPersistant = true)] public string sourceId = "";
         [KSPField(guiActive = true, guiName = "Propellant")] public string fuelStatus;
         StrikeTarget target;
         Vessel launcher;
-        Vector3d required;
-        double nextSolve, previousDistance = double.MaxValue;
         float retryAt;
         AudioSource motor;
         PartModule nuke;
         MethodInfo detonate;
         FieldInfo detonated;
-        double cachedAt = -100;
-        StrikeTarget cachedTarget;
-        Vector3d cachedDelta;
-        double cachedTime;
-        bool cachedResult;
 
         Part IStrikeWeapon.StrikePart => part;
-        string IStrikeWeapon.StrikeDescription => "Orbital vehicle: same body or a direct moon. " + phase;
-        double AvailableDelta => specificImpulse * 9.80665 * Math.Log((part.mass + part.GetResourceMass()) /
-            Math.Max(0.001, part.mass + part.GetResourceMass() - Math.Max(0, fuel)));
+        string IStrikeWeapon.StrikeDescription => "Orbital strike rod: straight line at light-drive speed, same body or a direct moon. " + phase;
+        double RodSpeed => Math.Max(1000d, Mathf.Clamp(lightFraction, 0.001f, 1f) * NukeScale.WaveSpeed);
+
+        /// <summary>
+        /// A straight line from the vehicle to the aim point: it must not pass through the planet it orbits, nor
+        /// through the body the target is on (before the aim point).
+        /// </summary>
+        static bool LineClear(Vessel v, StrikeTarget t, out string why)
+        {
+            Vector3d from = v.CoMD, to = t.World;
+            if (!Crosses(from, to, v.mainBody.position, v.mainBody.Radius - 50d, t.body == v.mainBody)) { }
+            else { why = "No clear line to the target: the planet is in the way."; return false; }
+            if (t.body != v.mainBody && Crosses(from, to, t.body.position, t.body.Radius, true))
+            { why = "No clear line to the target: the target is on the far side of its body."; return false; }
+            why = null;
+            return true;
+        }
+
+        /// <summary>True if the segment enters the sphere before it ends (the end may sit on the sphere's surface).</summary>
+        static bool Crosses(Vector3d a, Vector3d b, Vector3d centre, double radius, bool endOnSurface)
+        {
+            Vector3d d = b - a, f = a - centre;
+            double aa = Vector3d.Dot(d, d);
+            if (aa < 1d) return false;
+            double bb = 2d * Vector3d.Dot(f, d), cc = Vector3d.Dot(f, f) - radius * radius;
+            double disc = bb * bb - 4d * aa * cc;
+            if (disc <= 0d) return false;
+            double t1 = (-bb - Math.Sqrt(disc)) / (2d * aa);
+            return t1 > 1e-6 && t1 < (endOnSurface ? 1d - 1e-5 : 1d);
+        }
 
         bool IStrikeWeapon.CanReach(StrikeTarget t, out string why, out double flightTime)
         {
@@ -53,27 +76,20 @@ namespace BDNukes
             { why = "Launch from space."; return false; }
             if (t.body != vessel.mainBody && (t.body?.orbit == null || t.body.orbit.referenceBody != vessel.mainBody))
             { why = "Only the current body and its direct moons are in reach."; return false; }
-            double now = Planetarium.GetUniversalTime();
-            if (now - cachedAt > 5 || t.body != cachedTarget.body || t.lat != cachedTarget.lat || t.lon != cachedTarget.lon || t.height != cachedTarget.height)
-            {
-                cachedAt = now; cachedTarget = t;
-                cachedResult = StrikeTransfer.Plan(vessel, t, out cachedDelta, out cachedTime);
-            }
-            if (!cachedResult) { why = "No impact transfer found for this launch position."; return false; }
-            flightTime = cachedTime;
-            double margin = AvailableDelta - cachedDelta.magnitude - 100;
-            why = $"Delta-v margin: {margin:0} m/s (100 m/s correction reserve).";
-            return margin >= 0;
+            if (!LineClear(vessel, t, out why)) return false;
+            double distance = (t.World - vessel.CoMD).magnitude;
+            flightTime = clearanceTime + distance / RodSpeed;
+            why = $"Straight line, {NukeStrikeMath.Distance(distance)} at {RodSpeed / 1000d:0} km/s: {flightTime:0.0} s including the {clearanceTime:0} s separation.";
+            return true;
         }
 
         Vessel IStrikeWeapon.Launch(StrikeTarget t, out string status)
         {
-            cachedAt = -100;
             if (!((IStrikeWeapon)this).CanReach(t, out status, out var duration)) return null;
             launcher = vessel; sourceId = vessel.id.ToString();
             target = t; targetBody = t.body.flightGlobalsIndex; targetLatitude = t.lat; targetLongitude = t.lon; burstHeight = t.height;
             launchUT = Planetarium.GetUniversalTime(); arrivalUT = launchUT + duration;
-            required = cachedDelta; phase = "Separating";
+            phase = "Separating";
             TimeWarp.SetRate(0, true);
             part.decouple(1f);
             status = "Separating.";
@@ -121,51 +137,50 @@ namespace BDNukes
                 }
                 if (now - launchUT < clearanceTime) return;
                 vessel.vesselType = VesselType.Probe;
-                phase = "Burn";
+                phase = "Rod";
+                DropStage();
+                streak = RodStreak.Begin(vessel.mainBody, vessel.CoMD - vessel.mainBody.position);
                 if (motor != null) motor.PlayOneShot(GameDatabase.Instance.GetAudioClip("BDArmory/Sounds/launch"));
             }
-            double distance = (target.World - vessel.CoMD).magnitude;
-            if (vessel.mainBody == target.body && distance < Math.Max(15000, vessel.srfSpeed * 15))
-            { phase = "Terminal"; DropStage(); }
-            if (phase == "Terminal")
-            {
-                var relative = target.World - vessel.CoMD;
-                var relVelocity = target.body.getRFrmVel(target.World) - vessel.obt_velocity;
-                double closing = -Vector3d.Dot(relVelocity, relative.normalized);
-                var losRate = Vector3d.Cross(relative, relVelocity) / Math.Max(1, relative.sqrMagnitude);
-                var acceleration = 3 * Math.Max(0, closing) * Vector3d.Cross(losRate, relative.normalized);
-                if (acceleration.sqrMagnitude > 0.01 && fuel > 0) Burn(acceleration, 0.3f);
-                else Point(vessel.srf_velocity);
-                double agl = vessel.altitude - Math.Max(target.body.ocean ? 0 : double.MinValue, vessel.terrainAltitude);
-                double step = Math.Max(0, -vessel.verticalSpeed) * TimeWarp.fixedDeltaTime;
-                if (now - launchUT > clearanceTime + 1 && (agl <= burstHeight + step + 2 ||
-                    distance < Math.Max(10, vessel.srfSpeed * TimeWarp.fixedDeltaTime) ||
-                    distance > previousDistance && previousDistance < 500)) Fire();
-                previousDistance = distance;
-                return;
-            }
-            if (phase == "Coast")
-            {
-                Point(vessel.obt_velocity);
-                double fraction = (now - launchUT) / Math.Max(1, arrivalUT - launchUT);
-                if (corrections < 2 && fraction >= (corrections == 0 ? 0.4 : 0.75))
-                { corrections++; phase = "Correction"; nextSolve = 0; }
-                else return;
-            }
+            if (phase == "Rod") RodStep();
+        }
+
+        RodStreak streak;
+        bool arrived;
+
+        /// <summary>
+        /// The rod: it is carried in a straight line to the aim point at light-drive speed, a step per physics frame
+        /// (at the default setting that is the whole way in a frame or two from orbit). Real flight can't be simulated
+        /// at that speed: the air alone would destroy it, so it is moved directly and detonates on arrival.
+        /// </summary>
+        void RodStep()
+        {
             TimeWarp.SetRate(0, true);
-            if (now >= nextSolve)
+            if (arrived) { Fire(); return; }   // the detonation did not take on the first try: keep at it
+            Vector3d here = vessel.CoMD, aim = target.World;
+            Vector3d to = aim - here;
+            double distance = to.magnitude;
+            double step = RodSpeed * TimeWarp.fixedDeltaTime;
+            Point(to);
+            SetThrottle(1f);
+            if (distance <= step || distance < 2d)
             {
-                nextSolve = now + 0.2;
-                if (!StrikeTransfer.Solve(vessel, target, Math.Max(1, arrivalUT - now), out required))
-                { phase = "Coast"; return; }
-            }
-            if (required.magnitude < 2 || fuel <= 0)
-            {
-                phase = "Coast";
-                if (corrections >= 2 || fuel <= 0) DropStage();
+                MoveTo(aim);
+                if (streak != null) streak.End(target.body, aim - target.body.position, streakTime);
+                streak = null;
+                SetThrottle(0f);
+                arrived = true;
+                Fire();
                 return;
             }
-            Burn(required, Mathf.Clamp01((float)(required.magnitude * Math.Max(0.001, part.mass) / Math.Max(0.01, thrust) / 0.5)));
+            MoveTo(here + to / distance * step);
+            if (streak != null) streak.Follow(target.body, vessel.mainBody, vessel.CoMD - vessel.mainBody.position);
+        }
+
+        void MoveTo(Vector3d world)
+        {
+            vessel.SetPosition(world);
+            if (part.rb != null) { part.rb.velocity = Vector3.zero; part.rb.angularVelocity = Vector3.zero; }
         }
 
         void Point(Vector3d direction)
@@ -178,19 +193,6 @@ namespace BDNukes
             var error = axis.normalized * Mathf.Acos(Mathf.Clamp(Vector3.Dot(nose, wanted), -1, 1));
             part.rb.AddTorque(Vector3.ClampMagnitude(error * attitudeGain - part.rb.angularVelocity * attitudeDamping,
                 maxAngularAcceleration), ForceMode.Acceleration);
-        }
-
-        void Burn(Vector3d direction, float throttle)
-        {
-            Point(direction);
-            if (fuel <= 0 || Vector3d.Dot(part.transform.forward, direction.normalized) < 0.98) return;
-            float dt = TimeWarp.fixedDeltaTime;
-            float consumed = Math.Min(fuel, thrust * throttle / (specificImpulse * 9.80665f) * dt);
-            if (consumed <= 0) return;
-            float actualThrust = consumed * specificImpulse * 9.80665f / dt;
-            fuel -= consumed;
-            part.rb.AddForce(part.transform.forward * actualThrust, ForceMode.Force);
-            SetThrottle(actualThrust / thrust);
         }
 
         void SetThrottle(float value)
@@ -239,5 +241,65 @@ namespace BDNukes
         }
 
         void OnDestroy() { if (motor != null) Destroy(motor); }
+    }
+
+    /// <summary>
+    /// The line of the strike, drawn from where the rod left to where it is (and then to the aim point) and fading
+    /// out after impact. Both ends are kept relative to a body's centre, so the line stays put as the world moves.
+    /// </summary>
+    internal class RodStreak : MonoBehaviour
+    {
+        LineRenderer line;
+        CelestialBody fromBody, toBody;
+        Vector3d fromRel, toRel;
+        float endedAt = -1f, life = 1.5f;
+        double length;
+
+        public static RodStreak Begin(CelestialBody body, Vector3d rel)
+        {
+            var go = new GameObject("BDNukes rod streak");
+            var rs = go.AddComponent<RodStreak>();
+            rs.fromBody = rs.toBody = body; rs.fromRel = rs.toRel = rel;
+            rs.line = go.AddComponent<LineRenderer>();
+            Shader sh = Shader.Find("KSP/Particles/Additive") ?? Shader.Find("Sprites/Default");
+            rs.line.material = new Material(sh);
+            if (rs.line.material.HasProperty("_TintColor")) rs.line.material.SetColor("_TintColor", new Color(0.7f, 0.85f, 1f, 1f));
+            rs.line.positionCount = 2;
+            rs.line.useWorldSpace = true;
+            rs.line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            rs.line.receiveShadows = false;
+            return rs;
+        }
+
+        /// <summary>The rod is here (relative to the body it is flying over).</summary>
+        public void Follow(CelestialBody target, CelestialBody over, Vector3d rel) { toBody = over; toRel = rel; }
+
+        /// <summary>The rod hit: the line ends at the aim point and fades over `seconds`.</summary>
+        public void End(CelestialBody body, Vector3d rel, float seconds)
+        {
+            toBody = body; toRel = rel; life = Mathf.Max(0.2f, seconds); endedAt = Time.time;
+        }
+
+        void LateUpdate()
+        {
+            if (line == null || fromBody == null || toBody == null) { Destroy(gameObject); return; }
+            Vector3d a = fromBody.position + fromRel, b = toBody.position + toRel;
+            length = (b - a).magnitude;
+            float k = 1f;
+            if (endedAt >= 0f)
+            {
+                k = 1f - (Time.time - endedAt) / life;
+                if (k <= 0f) { Destroy(gameObject); return; }
+            }
+            line.SetPosition(0, (Vector3)a);
+            line.SetPosition(1, (Vector3)b);
+            // a thin bright thread from far away, thicker with length so it still reads from orbit
+            float w = (float)Math.Min(60d, Math.Max(1.5d, length * 0.0004d)) * k;
+            line.startWidth = w; line.endWidth = w * 0.15f;
+            var c = new Color(0.8f, 0.9f, 1f, k);
+            line.startColor = c; line.endColor = new Color(1f, 0.75f, 0.45f, k);
+        }
+
+        void OnDestroy() { if (line != null && line.material != null) Destroy(line.material); }
     }
 }

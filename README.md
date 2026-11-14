@@ -59,7 +59,7 @@ Fictional strike vehicles, flown from the strike planner (below):
 | Vehicle | Type | Yield |
 |---|---|---|
 | OKV Orbital Interceptor | radar-cued space interceptor with RCS divert | 0.1 kt |
-| OSV Orbital Strike Vehicle | orbit-to-ground strike on the current body or its moons | 10 kt |
+| OSV Orbital Strike Vehicle | a rod from the gods: separates, then flies a straight line at light-drive speed onto a point on the current body or its moons (needs a clear line to it) | 10 kt |
 | Starlance | interplanetary: self-flown ascent, light-drive bus, 10 re-entry vehicles | 10 × 5 Mt |
 
 The **Project Orion** nuclear pulse drive (10 m pusher plate, burning Nuclear Pulse Units) is in Engines.
@@ -73,6 +73,19 @@ Open it from its toolbar button in flight. It lists the strike weapons on the ac
 3. Optionally follow the weapon in with the camera, then use the button to go back to the launcher.
 
 Starlance needs a designator: another craft with a probe core or antenna already orbiting the target body.
+
+
+## Bomb bays
+Eight hollow fuselage sections that work like cargo bays: put a weapon inside, then open the belly doors to drop it. They are in the **Bomb Bays** page of the BDNukes tab and under Payload.
+
+| Bay | Shape | Length |
+|---|---|---|
+| Mk1 Bomb Bay, Short / Mk1 Bomb Bay | 1.25 m round (the Mk1 fuselage's width) | 2.0 / 4.0 m |
+| Rectangular Bomb Bay, Short / Rectangular Bomb Bay | the rectangular 2 m fuselage's cross-section (stacks with it) | 2.04 / 4.08 m |
+| Mk2 Bomb Bay / Mk2 Bomb Bay, Long | wide and low, the Mk2 fuselage's cross-section | 4.0 / 8.0 m |
+| 2.5 m Bomb Bay / 2.5 m Bomb Bay, Long | 2.5 m round | 4.0 / 8.5 m |
+
+A bay has an outer node at each end (it stacks into the fuselage) and an inner node at each end like a stock cargo bay. Weapons go inside on an inner node, or surface-attached to the inside of the roof with the doors open. The doors start open, like the stock bays', so a weapon can be placed; closing them shields what is inside from the airflow (`ModuleCargoBay`). Open them with the *Open Bay Doors* button or the *Toggle Bay Doors* action group, then fire the weapon as usual. The Tsar Bomba fits the long 2.5 m bay; Fat Man fits the 2.5 m or Mk2 bays; the B57, B61-12, B83, Little Boy, Genie and AIM-47 fit every 4 m bay.
 
 ## Effects
 - **Volumetric clouds (Windows / DirectX 11):** the fireball, cap, stem, skirt, surge and condensation are one raymarched volume of self-shadowing billows that flow, roll and drift with the wind. Ground bursts up to 150 kt play a baked Mantaflow simulation of the cloud forming. The fireball lights terrain and craft, the cloud casts its shadow, and the shock front bends the light behind it.

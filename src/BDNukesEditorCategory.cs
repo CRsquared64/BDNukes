@@ -9,7 +9,7 @@ namespace BDNukes
     /// Adds a "BDNukes" filter page to the VAB/SPH part list. It gathers every nuclear part:
     /// BDNukes' own, plus anything else carrying a BDArmory BDModuleNuke (e.g. the AIR-2 Genie,
     /// AIM-26 Falcon and BDArmory Extended's Small Nuclear Warhead). Parts are sorted into subcategories
-    /// by what they are.
+    /// by what they are; the bomb bays have a page of their own.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class BDNukesEditorCategory : MonoBehaviour
@@ -40,6 +40,7 @@ namespace BDNukes
                 AddSub(filter, "ICBMs & Reentry Vehicles", ap => IsNuke(ap) && Classify(ap) == Kind.Ballistic);
                 AddSub(filter, "Nuclear Artillery", ap => IsNuke(ap) && Classify(ap) == Kind.Artillery);
                 AddSub(filter, "Warheads", ap => IsNuke(ap) && Classify(ap) == Kind.Warhead);
+                AddSub(filter, "Bomb Bays", IsBay);
             }
             catch (Exception e)
             {
@@ -56,9 +57,13 @@ namespace BDNukes
 
         enum Kind { Bomb, Missile, Ballistic, Artillery, Warhead }
 
+        /// <summary>The bomb bays (hollow fuselage sections that carry weapons): not weapons themselves.</summary>
+        static bool IsBay(AvailablePart ap) => ap != null && ap.partConfig != null && FindModule(ap, "ModuleBombBay") != null;
+
         static bool IsNuke(AvailablePart ap)
         {
             if (ap == null || ap.partConfig == null) return false;
+            if (IsBay(ap)) return false;
             // the Orion pulse engine is propulsion, not a weapon: it lives in Engines
             if (FindModule(ap, "ModuleOrionPulseEngine") != null) return false;
             if (ap.name.StartsWith("bdnukes", StringComparison.OrdinalIgnoreCase)) return true;

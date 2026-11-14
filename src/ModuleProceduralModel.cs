@@ -826,7 +826,7 @@ namespace BDNukes
             return mat;
         }
 
-        static Material FinMaterial(Color color, float shininess)
+        internal static Material FinMaterial(Color color, float shininess)
         {
             string key = "fin|" + K(color) + "|" + K(shininess);
             if (materialCache.TryGetValue(key, out var mat) && mat != null) return mat;

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.2 - orbital strike rod, bomb bays
+
+### Added
+- **Bomb bays**: eight hollow fuselage sections with belly doors that work like cargo bays (Mk1 1.25 m round, the rectangular 2 m fuselage's cross-section, Mk2, and 2.5 m round, each in two lengths up to 8.5 m, long enough for the Tsar Bomba). Their models and the door animation are built in code (`ModuleBombBay`) and run through the stock `ModuleAnimateGeneric` and `ModuleCargoBay`, so the doors have a button and an action group and shield what is inside when closed. A new **Bomb Bays** page in the BDNukes tab.
+
+### Changed
+- **The OSV Orbital Strike Vehicle is now a rod from the gods.** It no longer burns to deorbit and re-enter: after separating from its carrier it travels in a straight line at light-drive speed (`lightFraction` of the radiation-wave speed, default all of it, `ModuleNukeStrikeVehicle`) and detonates on the aim point, leaving a bright streak from where it left to the target. From orbit that is a frame or two at the default speed. It needs a clear line to the target, so a point on the far side of the planet (or of a moon) is refused, and it needs no propellant or delta-v margin. The planner shows the distance, speed and flight time.
+
 ## 1.3.1 - ICBM climb, bigger planets, MIRV release
 
 ### Added
