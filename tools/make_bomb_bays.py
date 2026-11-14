@@ -5,21 +5,40 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 os.makedirs(OUT, exist_ok=True)
 
 # name, title, shape, length, width, height, corner, node size, bulkhead profile, tech, description of what it carries
+# Each bay is skinned from its counterpart's own texture: a patch of it (x, y, w, h in pixels from the top left)
+# tiled over the bay at `density` pixels per metre. The inside uses a second patch where the counterpart has an
+# interior (the Mk2 cargo bay's ribs, the rectangular fuselage's hex plating), else the outside's patch darkened.
+SKINS = {
+    # Mk1 fuselage (Squad)
+    'mk1': dict(texture='Squad/Parts/Structural/mk1Parts/Mk1Structural', texturePatch='520, 440, 490, 320', textureDensity=125),
+    # the rectangular 2 m fuselage (RetroFuture's rect2m)
+    'rect': dict(texture='RetroFuture/StockScheme/rectFuselage_DIF', texturePatch='240, 160, 360, 395', textureDensity=180,
+                 innerTexture='RetroFuture/StockScheme/rectFuselage_DIF', innerPatch='5, 5, 222, 710', innerDensity=200),
+    # the Mk2 fuselage, with the Mk2 cargo bay's own ribbed interior
+    'mk2': dict(texture='Squad/Parts/FuelTank/mk2FuselageLong/mk2Fuselage', texturePatch='300, 380, 135, 600', textureDensity=165,
+                innerTexture='Squad/Parts/Utility/mk2CargoBay/mk2CargoBay', innerPatch='305, 235, 280, 780', innerDensity=160),
+    # the 2.5 m Rockomax tank
+    'size2': dict(texture='Squad/Parts/FuelTank/RockomaxTanks/Assets/rockomax_16 [AlbedoM] BW', texturePatch='1050, 70, 830, 440', textureDensity=300,
+                  innerTexture='Squad/Parts/FuelTank/RockomaxTanks/Assets/rockomax_16 [AlbedoM] BW', innerPatch='1050, 1480, 250, 480', innerDensity=300),
+}
+SKIN_OF = {'bdnukesBayMk1S': 'mk1', 'bdnukesBayMk1': 'mk1', 'bdnukesBayRectS': 'rect', 'bdnukesBayRect': 'rect',
+           'bdnukesBayMk2': 'mk2', 'bdnukesBayMk2Long': 'mk2', 'bdnukesBay25': 'size2', 'bdnukesBay25Long': 'size2'}
+
 BAYS = [
-    ('bdnukesBayMk1S', 'Mk1 Bomb Bay, Short', 'round', 2.0, 1.25, 1.25, 0, 1, 'size1', 'advAerodynamics',
-     'A short 1.25 m round bomb bay in the Mk1 fuselage\'s width: a Davy Crockett, an orbital interceptor or a few small stores.'),
-    ('bdnukesBayMk1', 'Mk1 Bomb Bay', 'round', 4.0, 1.25, 1.25, 0, 1, 'size1', 'advAerodynamics',
-     'A 1.25 m round bomb bay in the Mk1 fuselage\'s width, long enough for the B57, B61-12, B83, Little Boy, Genie and AIM-47.'),
-    ('bdnukesBayRectS', 'Rectangular Bomb Bay, Short', 'rect', 2.04, 1.25, 1.36, 0.3, 1, 'mk1rect', 'advAerodynamics',
-     'A short bomb bay in the rectangular 2 m fuselage\'s cross-section; it stacks with the rectangular fuselage parts.'),
-    ('bdnukesBayRect', 'Rectangular Bomb Bay', 'rect', 4.08, 1.25, 1.36, 0.3, 1, 'mk1rect', 'advAerodynamics',
-     'A bomb bay in the rectangular fuselage\'s cross-section, twice its length: room for the B61-12, B83 or Little Boy.'),
+    ('bdnukesBayMk1S', 'Mk1 Bomb Bay, Short', 'round', 3.3, 1.25, 1.25, 0, 1, 'size1', 'advAerodynamics',
+     'A short 1.25 m round bomb bay in the Mk1 fuselage\'s width: one B57, Little Boy or Genie.'),
+    ('bdnukesBayMk1', 'Mk1 Bomb Bay', 'round', 6.6, 1.25, 1.25, 0, 1, 'size1', 'advAerodynamics',
+     'A long 1.25 m round bomb bay in the Mk1 fuselage\'s width: two bombs end to end.'),
+    ('bdnukesBayRectS', 'Rectangular Bomb Bay, Short', 'rect', 3.3, 1.25, 1.36, 0.3, 1, 'mk1rect', 'advAerodynamics',
+     'A short bomb bay in the rectangular 2 m fuselage\'s cross-section, for one B57, Little Boy or Genie; it stacks with the rectangular fuselage parts.'),
+    ('bdnukesBayRect', 'Rectangular Bomb Bay', 'rect', 6.12, 1.25, 1.36, 0.3, 1, 'mk1rect', 'advAerodynamics',
+     'A long bomb bay in the rectangular fuselage\'s cross-section, three of its 2.04 m lengths: room for two bombs.'),
     ('bdnukesBayMk2', 'Mk2 Bomb Bay', 'rect', 4.0, 2.5, 1.35, 0.5, 1, 'mk2', 'highAltitudeFlight',
-     'A wide, low bomb bay in the Mk2 fuselage\'s cross-section, with room for Fat Man and the lighter bombs side by side.'),
+     'A wide, low bomb bay in the Mk2 fuselage\'s cross-section, for the B57, B61-12, B83 and Little Boy.'),
     ('bdnukesBayMk2Long', 'Mk2 Bomb Bay, Long', 'rect', 8.0, 2.5, 1.35, 0.5, 1, 'mk2', 'highAltitudeFlight',
      'The Mk2 bomb bay at twice the length.'),
     ('bdnukesBay25', '2.5 m Bomb Bay', 'round', 4.0, 2.5, 2.5, 0, 2, 'size2', 'heavyAerodynamics',
-     'A 2.5 m round bomb bay for Fat Man and the heavier bombs.'),
+     'A 2.5 m round bomb bay for Fat Man and every lighter bomb.'),
     ('bdnukesBay25Long', '2.5 m Bomb Bay, Long', 'round', 8.5, 2.5, 2.5, 0, 2, 'size2', 'heavyAerodynamics',
      'A long 2.5 m round bomb bay: long enough for the AN602 Tsar Bomba.'),
 ]
@@ -79,13 +98,13 @@ PART:NEEDS[BDArmory]
 		height = {height}
 		cornerRadius = {corner}
 		animationName = BombBayDoors
-	}}
+{skin}	}}
 	MODULE
 	{{
 		name = ModuleAnimateGeneric
 		animationName = BombBayDoors
-		startEventGUIName = Close Bay Doors
-		endEventGUIName = Open Bay Doors
+		startEventGUIName = Close
+		endEventGUIName = Open
 		actionGUIName = Toggle Bay Doors
 		allowDeployLimit = true
 		revClampDirection = false
@@ -107,15 +126,35 @@ PART:NEEDS[BDArmory]
 }}
 '''
 
+BOMBS = [('B57', 3.0, 0.19), ('Little Boy', 3.0, 0.36), ('B61-12', 3.6, 0.17), ('B83', 3.7, 0.23),
+         ('Fat Man', 3.25, 0.76), ('AN602 Tsar Bomba', 8.0, 1.06)]
+WALL, RING, CLEAR = 0.06, 0.05, 0.1
+
+
+def fits(shape, length, width, height):
+    inner_len = length - 2 * RING - CLEAR
+    half_w, half_h = width / 2 - WALL, (width if shape == 'round' else height) / 2 - WALL
+    out = []
+    for n, l, r in BOMBS:
+        if l <= inner_len and r <= min(half_w, half_h):
+            out.append(n)
+    return out
+
+
 for (name, title, shape, length, width, height, corner, nodesize, bulkhead, tech, desc) in BAYS:
     perimeter = math.pi * width if shape == 'round' else 2 * (width + height)
     mass = round(0.02 * perimeter * length, 3)
     cost = int(150 + 1000 * mass)
+    skin = ''.join('\t\t%s = %s\n' % (k, v) for k, v in SKINS[SKIN_OF[name]].items())
     text = TEMPLATE.format(
+        skin=skin,
         name=name, title=title, shape=shape, length=length, width=width, height=height, corner=corner,
         nodesize=nodesize, bulkhead=bulkhead, tech=tech, desc=desc, mass=mass, cost=cost, entry=cost * 8,
         top=length / 2, bottom=-length / 2, itop=length / 2 - 0.02, ibottom=-(length / 2 - 0.02),
         look=max(length / 2, width / 2) + 0.3)
+    f = fits(shape, length, width, height)
+    assert f, name + ' carries no bomb'
+    print('%-18s %5.2f m  carries: %s' % (name, length, ', '.join(f)))
     with open(os.path.join(OUT, name + '.cfg'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(text)
 print(len(BAYS), 'bays written to', OUT)

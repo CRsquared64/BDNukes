@@ -39,6 +39,20 @@ namespace BDNukes
         [KSPField] public float openTime = 2.5f;
         [KSPField] public float endRing = 0.05f;
         [KSPField] public string animationName = "BombBayDoors";
+        /// <summary>
+        /// The counterpart part's texture (a GameDatabase url) and the patch of it, in pixels from its top left
+        /// (x, y, width, height), that skins the bay's outside; textureDensity is how many pixels of the patch
+        /// cover a metre of the bay. The patch is tiled (mirrored) over the whole outside. If the texture is not
+        /// installed the bay is painted with bodyColor. innerTexture / innerPatch / innerDensity skin the inside the
+        /// same way (the outside's patch, darkened by innerTint, if left out).
+        /// </summary>
+        [KSPField] public string texture = "";
+        [KSPField] public string texturePatch = "";
+        [KSPField] public float textureDensity = 128f;
+        [KSPField] public string innerTexture = "";
+        [KSPField] public string innerPatch = "";
+        [KSPField] public float innerDensity = 128f;
+        [KSPField] public float innerTint = 0.45f;
         [KSPField] public string bodyColor = "0.55,0.57,0.56";
         [KSPField] public string innerColor = "0.22,0.23,0.24";
         [KSPField] public float shininess = 0.35f;
@@ -88,8 +102,13 @@ namespace BDNukes
             Loop loop = MakeLoop();
             float half = length * 0.5f;
             string key = Key();
-            Material outer = ModuleProceduralModel.FinMaterial(ParseColor(bodyColor, new Color(0.55f, 0.57f, 0.56f)), shininess);
-            Material inner = ModuleProceduralModel.FinMaterial(ParseColor(innerColor, new Color(0.22f, 0.23f, 0.24f)), 0.15f);
+            Func<Material> plainOut = () => ModuleProceduralModel.FinMaterial(ParseColor(bodyColor, new Color(0.55f, 0.57f, 0.56f)), shininess);
+            Func<Material> plainIn = () => ModuleProceduralModel.FinMaterial(ParseColor(innerColor, new Color(0.22f, 0.23f, 0.24f)), 0.15f);
+            Material outer = SkinMaterial("out|" + key, texture, texturePatch, textureDensity, loop, Color.white, plainOut);
+            Material inner = !string.IsNullOrEmpty(innerTexture)
+                ? SkinMaterial("in|" + key, innerTexture, innerPatch, innerDensity, loop, Color.white, plainIn)
+                : SkinMaterial("out|" + key, texture, texturePatch, textureDensity, loop, new Color(innerTint, innerTint, innerTint, 1f), plainIn,
+                    "tint" + innerTint.ToString("R", CultureInfo.InvariantCulture));
             var mats = new[] { outer, inner };
 
             // the fixed hull: the roof and sides between the two door hinges, plus a short ring at each end all round
@@ -209,6 +228,8 @@ namespace BDNukes
             public readonly List<Vector2> N = new List<Vector2>();   // outward normals
             public int HingeR, HingeL;
             public int Count => P.Count;
+            public float[] Arc;           // distance round the outside from the belly's centre, 0..1, Count + 1 entries
+            public float Perimeter;
         }
 
         Loop MakeLoop()
@@ -223,6 +244,16 @@ namespace BDNukes
                 loop.N.Add(n);
                 loop.Q.Add(loop.P[i] - n * wall);
             }
+            loop.Arc = new float[count + 1];
+            float run = 0f;
+            for (int i = 0; i < count; i++)
+            {
+                loop.Arc[i] = run;
+                run += (loop.P[(i + 1) % count] - loop.P[i]).magnitude;
+            }
+            loop.Perimeter = Mathf.Max(0.01f, run);
+            for (int i = 0; i < count; i++) loop.Arc[i] /= loop.Perimeter;
+            loop.Arc[count] = 1f;
             return loop;
         }
 
@@ -325,11 +356,14 @@ namespace BDNukes
         void Strip(MeshData m, Loop loop, int i0, int i1, float y0, float y1, bool seams)
         {
             int cnt = loop.Count;
-            float u = 1f / Mathf.Max(1, cnt);
+            // u runs round the outside and v down the length, whichever piece the face belongs to, so the skin
+            // carries over from the hull to the doors
+            float v0 = (y0 + length * 0.5f) / length, v1 = (y1 + length * 0.5f) / length;
             for (int k = i0; k < i1; k++)
             {
                 int a = k % cnt, b = (k + 1) % cnt;
-                Vector2 ua = new Vector2(k * u, y0), ub = new Vector2((k + 1) * u, y0), uc = new Vector2((k + 1) * u, y1), ud = new Vector2(k * u, y1);
+                float u0 = loop.Arc[k], u1 = loop.Arc[k + 1];
+                Vector2 ua = new Vector2(u0, v0), ub = new Vector2(u1, v0), uc = new Vector2(u1, v1), ud = new Vector2(u0, v1);
                 Vector3 nA = new Vector3(loop.N[a].x, 0f, loop.N[a].y), nB = new Vector3(loop.N[b].x, 0f, loop.N[b].y);
                 m.Quad(m.Outside, m.At(loop.P[a], y0), m.At(loop.P[b], y0), m.At(loop.P[b], y1), m.At(loop.P[a], y1), nA, nB, nB, nA, ua, ub, uc, ud);
                 m.Quad(m.Inside, m.At(loop.Q[a], y0), m.At(loop.Q[b], y0), m.At(loop.Q[b], y1), m.At(loop.Q[a], y1), -nA, -nB, -nB, -nA, ua, ub, uc, ud);
@@ -373,6 +407,79 @@ namespace BDNukes
         }
 
         // ----------------------------------------------------------------------------------------
+
+        // ----------------------------------------------------------------------------------------
+        // Skins from the counterpart parts' own textures
+        // ----------------------------------------------------------------------------------------
+
+        static readonly Dictionary<string, Material> skinCache = new Dictionary<string, Material>();
+
+        Material SkinMaterial(string key, string textureUrl, string patch, float density, Loop loop, Color tint, Func<Material> fallback, string tag = "")
+        {
+            string full = key + "|" + textureUrl + "|" + patch + "|" + density.ToString("R", CultureInfo.InvariantCulture) + "|" + tag;
+            if (skinCache.TryGetValue(full, out var cached) && cached != null) return cached;
+            Material mat = null;
+            try
+            {
+                Texture2D tex = MakeSkin(textureUrl, patch, density, loop.Perimeter);
+                if (tex != null)
+                {
+                    Shader sh = Shader.Find("KSP/Specular") ?? Shader.Find("KSP/Diffuse") ?? Shader.Find("Standard");
+                    mat = new Material(sh) { mainTexture = tex };
+                    if (mat.HasProperty("_Color")) mat.SetColor("_Color", tint);
+                    if (mat.HasProperty("_SpecColor")) mat.SetColor("_SpecColor", new Color(0.3f, 0.3f, 0.3f));
+                    if (mat.HasProperty("_Shininess")) mat.SetFloat("_Shininess", shininess);
+                }
+            }
+            catch (Exception e) { Debug.LogWarning("[BDNukes]: Bomb bay skin from " + textureUrl + " failed: " + e.Message); }
+            if (mat == null) mat = fallback();
+            skinCache[full] = mat;
+            return mat;
+        }
+
+        /// <summary>
+        /// The patch of the source texture, tiled (mirrored) into a texture of the bay's own size at the given density.
+        /// The source may be unreadable (the texture loader drops its CPU copy), so it is copied on the GPU.
+        /// </summary>
+        Texture2D MakeSkin(string textureUrl, string patch, float density, float perimeter)
+        {
+            if (string.IsNullOrEmpty(textureUrl) || GameDatabase.Instance == null) return null;
+            Texture src = GameDatabase.Instance.GetTexture(textureUrl, false);
+            if (src == null) { Debug.LogWarning("[BDNukes]: Bomb bay texture not installed: " + textureUrl + "; painting it plain."); return null; }
+            var ci = CultureInfo.InvariantCulture;
+            var f = (patch ?? "").Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            float px, py, pw, ph;
+            if (f.Length < 4 || !float.TryParse(f[0], NumberStyles.Float, ci, out px) || !float.TryParse(f[1], NumberStyles.Float, ci, out py) ||
+                !float.TryParse(f[2], NumberStyles.Float, ci, out pw) || !float.TryParse(f[3], NumberStyles.Float, ci, out ph))
+            { px = 0f; py = 0f; pw = src.width; ph = src.height; }
+            // no bigger than 2048 on a side, at the density asked for or lower
+            float d = Mathf.Min(density, 2048f / Mathf.Max(perimeter, length));
+            int w = Mathf.Clamp(Mathf.RoundToInt(perimeter * d), 32, 2048), h = Mathf.Clamp(Mathf.RoundToInt(length * d), 32, 2048);
+            int iw = Mathf.Max(8, Mathf.RoundToInt(pw * d / density)), ih = Mathf.Max(8, Mathf.RoundToInt(ph * d / density));
+
+            var piece = RenderTexture.GetTemporary(iw, ih, 0, RenderTextureFormat.ARGB32);
+            var big = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32);
+            var prev = RenderTexture.active;
+            try
+            {
+                // pixel y runs down from the top; Unity's v runs up from the bottom
+                Graphics.Blit(src, piece, new Vector2(pw / src.width, ph / src.height), new Vector2(px / src.width, 1f - (py + ph) / src.height));
+                piece.wrapMode = TextureWrapMode.Mirror;
+                piece.filterMode = FilterMode.Bilinear;
+                Graphics.Blit(piece, big, new Vector2(w / (float)iw, h / (float)ih), Vector2.zero);
+                RenderTexture.active = big;
+                var tex = new Texture2D(w, h, TextureFormat.RGBA32, true) { name = "BDNukesBay_" + System.IO.Path.GetFileName(textureUrl), wrapMode = TextureWrapMode.Repeat };
+                tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                tex.Apply(true, true);
+                return tex;
+            }
+            finally
+            {
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(piece);
+                RenderTexture.ReleaseTemporary(big);
+            }
+        }
 
         string Key()
         {

@@ -1,9 +1,14 @@
 # Changelog
 
+## 1.3.3 - bomb bays, textured and resized
+
+### Added
+- **Bomb bays**: eight hollow fuselage sections with belly doors that work like cargo bays (Mk1 1.25 m round, the rectangular 2 m fuselage's cross-section, Mk2, and 2.5 m round; the shortest is 3.3 m, long enough for a B57 or Little Boy, and the longest, 8.5 m, takes the Tsar Bomba). Their models and the door animation are built in code (`ModuleBombBay`) and run through the stock `ModuleAnimateGeneric` and `ModuleCargoBay`, so the doors have a button and an action group, shield what is inside when closed, and open for a weapon fired from inside (BDArmory's own cargo bay handling). Each bay is skinned from its counterpart's own texture (Mk1 fuselage, RetroFuture's rectangular fuselage, Mk2 fuselage with the Mk2 cargo bay's ribbed inside, the 2.5 m Rockomax tank), tiled to its size on the GPU at load; a bay whose counterpart texture isn't installed is painted plain grey. A new **Bomb Bays** page in the BDNukes tab.
+
 ## 1.3.2 - orbital strike rod, bomb bays
 
 ### Added
-- **Bomb bays**: eight hollow fuselage sections with belly doors that work like cargo bays (Mk1 1.25 m round, the rectangular 2 m fuselage's cross-section, Mk2, and 2.5 m round, each in two lengths up to 8.5 m, long enough for the Tsar Bomba). Their models and the door animation are built in code (`ModuleBombBay`) and run through the stock `ModuleAnimateGeneric` and `ModuleCargoBay`, so the doors have a button and an action group and shield what is inside when closed. A new **Bomb Bays** page in the BDNukes tab.
+- **Bomb bays**: the first eight, hollow fuselage sections with belly doors that work like cargo bays (reworked in 1.3.3).
 
 ### Changed
 - **The OSV Orbital Strike Vehicle is now a rod from the gods.** It no longer burns to deorbit and re-enter: after separating from its carrier it travels in a straight line at light-drive speed (`lightFraction` of the radiation-wave speed, default all of it, `ModuleNukeStrikeVehicle`) and detonates on the aim point, leaving a bright streak from where it left to the target. From orbit that is a frame or two at the default speed. It needs a clear line to the target, so a point on the far side of the planet (or of a moon) is refused, and it needs no propellant or delta-v margin. The planner shows the distance, speed and flight time.

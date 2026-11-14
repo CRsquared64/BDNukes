@@ -76,16 +76,19 @@ Starlance needs a designator: another craft with a probe core or antenna already
 
 
 ## Bomb bays
-Eight hollow fuselage sections that work like cargo bays: put a weapon inside, then open the belly doors to drop it. They are in the **Bomb Bays** page of the BDNukes tab and under Payload.
+Eight hollow fuselage sections that work like cargo bays: put a weapon inside, then open the belly doors to drop it. They are on the **Bomb Bays** page of the BDNukes tab and under Payload. Every bay carries at least two of the nuclear bombs.
 
-| Bay | Shape | Length |
-|---|---|---|
-| Mk1 Bomb Bay, Short / Mk1 Bomb Bay | 1.25 m round (the Mk1 fuselage's width) | 2.0 / 4.0 m |
-| Rectangular Bomb Bay, Short / Rectangular Bomb Bay | the rectangular 2 m fuselage's cross-section (stacks with it) | 2.04 / 4.08 m |
-| Mk2 Bomb Bay / Mk2 Bomb Bay, Long | wide and low, the Mk2 fuselage's cross-section | 4.0 / 8.0 m |
-| 2.5 m Bomb Bay / 2.5 m Bomb Bay, Long | 2.5 m round | 4.0 / 8.5 m |
+| Bay | Shape | Length | Carries |
+|---|---|---|---|
+| Mk1 Bomb Bay, Short | 1.25 m round (the Mk1 fuselage's width) | 3.3 m | B57, Little Boy |
+| Mk1 Bomb Bay | 1.25 m round | 6.6 m | B57, Little Boy, B61-12, B83 (two end to end) |
+| Rectangular Bomb Bay, Short | the rectangular 2 m fuselage's cross-section (stacks with it) | 3.3 m | B57, Little Boy |
+| Rectangular Bomb Bay | the rectangular fuselage's cross-section | 6.12 m | B57, Little Boy, B61-12, B83 (two end to end) |
+| Mk2 Bomb Bay / Long | wide and low, the Mk2 fuselage's cross-section | 4.0 / 8.0 m | B57, Little Boy, B61-12, B83 |
+| 2.5 m Bomb Bay | 2.5 m round | 4.0 m | all of those and Fat Man |
+| 2.5 m Bomb Bay, Long | 2.5 m round | 8.5 m | all of those and the AN602 Tsar Bomba |
 
-A bay has an outer node at each end (it stacks into the fuselage) and an inner node at each end like a stock cargo bay. Weapons go inside on an inner node, or surface-attached to the inside of the roof with the doors open. The doors start open, like the stock bays', so a weapon can be placed; closing them shields what is inside from the airflow (`ModuleCargoBay`). Open them with the *Open Bay Doors* button or the *Toggle Bay Doors* action group, then fire the weapon as usual. The Tsar Bomba fits the long 2.5 m bay; Fat Man fits the 2.5 m or Mk2 bays; the B57, B61-12, B83, Little Boy, Genie and AIM-47 fit every 4 m bay.
+Each bay is skinned from its counterpart part's own texture. A bay has an outer node at each end (it stacks into the fuselage) and an inner node at each end like a stock cargo bay. Weapons are surface-attached to the inside of the roof with the doors open (the doors start open, like the stock bays', so a weapon can be placed). Closing the doors shields what is inside from the airflow (`ModuleCargoBay`). The doors have an *Open*/*Close* button and a *Toggle Bay Doors* action group. BDArmory opens a bay by itself for a weapon inside it (set *In Cargo Bay* on the weapon): select the weapon and fire as usual.
 
 ## Effects
 - **Volumetric clouds (Windows / DirectX 11):** the fireball, cap, stem, skirt, surge and condensation are one raymarched volume of self-shadowing billows that flow, roll and drift with the wind. Ground bursts up to 150 kt play a baked Mantaflow simulation of the cloud forming. The fireball lights terrain and craft, the cloud casts its shadow, and the shock front bends the light behind it.
